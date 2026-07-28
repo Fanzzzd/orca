@@ -1,0 +1,292 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B01APP000000000000000001 /* IrohProbeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01APP000000000000000001 /* IrohProbeApp.swift */; };
+		B01CON000000000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01CON000000000000000001 /* ContentView.swift */; };
+		B01PRB000000000000000001 /* ProbeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01PRB000000000000000001 /* ProbeModel.swift */; };
+		B01IRL000000000000000001 /* IrohLib in Frameworks */ = {isa = PBXBuildFile; productRef = P01IRL000000000000000001 /* IrohLib */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		F01APP000000000000000001 /* IrohProbeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IrohProbeApp.swift; sourceTree = "<group>"; };
+		F01CON000000000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		F01PRB000000000000000001 /* ProbeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeModel.swift; sourceTree = "<group>"; };
+		F01INF000000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F01PROD00000000000000001 /* IrohProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IrohProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		PH01FRM00000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B01IRL000000000000000001 /* IrohLib in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		G01ROOT00000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				G01SRC000000000000000001 /* IrohProbe */,
+				G01PROD00000000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		G01SRC000000000000000001 /* IrohProbe */ = {
+			isa = PBXGroup;
+			children = (
+				F01APP000000000000000001 /* IrohProbeApp.swift */,
+				F01CON000000000000000001 /* ContentView.swift */,
+				F01PRB000000000000000001 /* ProbeModel.swift */,
+				F01INF000000000000000001 /* Info.plist */,
+			);
+			path = IrohProbe;
+			sourceTree = "<group>";
+		};
+		G01PROD00000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F01PROD00000000000000001 /* IrohProbe.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		T01APP000000000000000001 /* IrohProbe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C01TGT000000000000000001 /* Build configuration list for PBXNativeTarget "IrohProbe" */;
+			buildPhases = (
+				PH01SRC00000000000000001 /* Sources */,
+				PH01FRM00000000000000001 /* Frameworks */,
+				PH01RES00000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = IrohProbe;
+			packageProductDependencies = (
+				P01IRL000000000000000001 /* IrohLib */,
+			);
+			productName = IrohProbe;
+			productReference = F01PROD00000000000000001 /* IrohProbe.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		P01PROJ00000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					T01APP000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = C01PRJ000000000000000001 /* Build configuration list for PBXProject "IrohProbe" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = G01ROOT00000000000000001;
+			packageReferences = (
+				R01IROH00000000000000001 /* XCRemoteSwiftPackageReference "iroh-ffi" */,
+			);
+			productRefGroup = G01PROD00000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				T01APP000000000000000001 /* IrohProbe */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		PH01RES00000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		PH01SRC00000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B01APP000000000000000001 /* IrohProbeApp.swift in Sources */,
+				B01CON000000000000000001 /* ContentView.swift in Sources */,
+				B01PRB000000000000000001 /* ProbeModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BC01PRJDBG00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		BC01PRJREL00000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		BC01TGTDBG00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 59AW6PWR73;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = IrohProbe/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Network,
+				);
+				/* Prefer dev.fanzzzd.irohprobe once team agreements are renewed.
+				   asdad12312 already has a local Xcode-managed profile listing fanzzzd. */
+				PRODUCT_BUNDLE_IDENTIFIER = asdad12312;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BC01TGTREL00000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 59AW6PWR73;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = IrohProbe/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Network,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = asdad12312;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C01PRJ000000000000000001 /* Build configuration list for PBXProject "IrohProbe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC01PRJDBG00000000000001 /* Debug */,
+				BC01PRJREL00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C01TGT000000000000000001 /* Build configuration list for PBXNativeTarget "IrohProbe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC01TGTDBG00000000000001 /* Debug */,
+				BC01TGTREL00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		R01IROH00000000000000001 /* XCRemoteSwiftPackageReference "iroh-ffi" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/n0-computer/iroh-ffi";
+			requirement = {
+				kind = exactVersion;
+				version = 1.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		P01IRL000000000000000001 /* IrohLib */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = R01IROH00000000000000001 /* XCRemoteSwiftPackageReference "iroh-ffi" */;
+			productName = IrohLib;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = P01PROJ00000000000000001 /* Project object */;
+}
