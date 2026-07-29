@@ -29,7 +29,7 @@ const STALE_SINCE_LAST_CONNECT_MS = 60_000
 const TAILSCALE_HINT = 'check Tailscale'
 
 export type ConnectionVerdict =
-  | { kind: 'normal'; label: string }
+  | { kind: 'normal'; label: string; hint?: string } // hint: optional iroh diagnostic
   | { kind: 'warning'; label: string; hint?: string } // "Can't connect"
   | {
       kind: 'unreachable'
@@ -49,11 +49,14 @@ export function classifyConnection(args: {
   // Optional pinned host endpoint — enables the Tailscale hint on
   // warning/unreachable verdicts. Callers without it get plain labels.
   endpoint?: string | null
+  // Compact iroh diagnostic when candidate (attempting/failed/skipped).
+  irohHint?: string | null
   nowMs?: number
 }): ConnectionVerdict {
   const { state, reconnectAttempts, lastConnectedAt } = args
   const now = args.nowMs ?? Date.now()
-  const hint = isTailscaleEndpoint(args.endpoint) ? TAILSCALE_HINT : undefined
+  const tailscaleHint = isTailscaleEndpoint(args.endpoint) ? TAILSCALE_HINT : undefined
+  const hint = mergeHints(tailscaleHint, args.irohHint)
 
   // Why: auth-failed means the desktop no longer recognizes this pairing (e.g. it
   // lost its device registry) — retrying can't fix it, only re-pairing can, so say so.
@@ -66,11 +69,19 @@ export function classifyConnection(args: {
     return { kind: 'normal', label: 'Connected' }
   }
   if (state === 'connecting' || state === 'handshaking') {
-    return { kind: 'normal', label: 'Connecting…' }
+    return {
+      kind: 'normal',
+      label: 'Connecting…',
+      ...(args.irohHint ? { hint: args.irohHint } : {})
+    }
   }
 
   if (state === 'disconnected') {
-    return { kind: 'normal', label: 'Disconnected' }
+    return {
+      kind: 'normal',
+      label: 'Disconnected',
+      ...(args.irohHint ? { hint: args.irohHint } : {})
+    }
   }
 
   // state === 'reconnecting' from here.
@@ -97,14 +108,36 @@ export function classifyConnection(args: {
     return { kind: 'warning', label: "Can't connect", hint }
   }
 
-  return { kind: 'normal', label: 'Reconnecting…' }
+  return {
+    kind: 'normal',
+    label: 'Reconnecting…',
+    ...(args.irohHint ? { hint: args.irohHint } : {})
+  }
+}
+
+function mergeHints(a?: string, b?: string | null): string | undefined {
+  if (a && b) {
+    return `${a}; ${b}`
+  }
+  return a ?? b ?? undefined
 }
 
 // Why: single place that turns a verdict into display text so every screen
-// renders the Tailscale hint the same way.
+// renders the Tailscale / iroh hint the same way.
 export function verdictDisplayLabel(verdict: ConnectionVerdict): string {
-  if ((verdict.kind === 'warning' || verdict.kind === 'unreachable') && verdict.hint) {
-    return `${verdict.label} — ${verdict.hint}`
+  const hint =
+    'hint' in verdict && typeof verdict.hint === 'string' && verdict.hint.length > 0
+      ? verdict.hint
+      : undefined
+  if (
+    hint &&
+    (verdict.kind === 'warning' || verdict.kind === 'unreachable' || verdict.kind === 'normal')
+  ) {
+    // Why: iroh attempt/fail lines are useful on reconnecting, not only unreachable.
+    if (verdict.kind === 'normal' && !hint.startsWith('Iroh')) {
+      return verdict.label
+    }
+    return `${verdict.label} — ${hint}`
   }
   return verdict.label
 }

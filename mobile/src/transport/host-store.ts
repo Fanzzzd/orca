@@ -150,11 +150,7 @@ async function doLoadHosts(): Promise<HostProfile[]> {
       ...stored,
       deviceToken: token,
       ...(overlay
-        ? {
-            endpoints: overlay.endpoints,
-            relayHostId: overlay.relayHostId,
-            relay: overlay.relay
-          }
+        ? { endpoints: overlay.endpoints, relayHostId: overlay.relayHostId, relay: overlay.relay }
         : {})
     })
   }
@@ -208,7 +204,8 @@ function toStored(host: HostProfile): StoredHostProfile {
     name: host.name,
     endpoint: host.endpoint,
     publicKeyB64: host.publicKeyB64,
-    lastConnected: host.lastConnected
+    lastConnected: host.lastConnected,
+    ...(host.iroh ? { iroh: host.iroh } : {})
   }
 }
 

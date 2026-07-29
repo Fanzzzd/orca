@@ -3,18 +3,13 @@ import type { MobileEndpointSupervisorDependencies } from './mobile-endpoint-sup
 import { RelayReconnectController } from './mobile-relay-reconnect-controller'
 import { RelayLeaseRotationTimer } from './mobile-relay-lease-rotation-timer'
 import { MobileEndpointHysteresis } from './mobile-endpoint-hysteresis'
+import { persistRelayHost } from './mobile-endpoint-supervisor-support'
 import {
-  encodeBase64Url,
-  isDirectorResolutionFailure,
-  persistRelayHost,
-  toError
-} from './mobile-endpoint-supervisor-support'
-import {
-  applyResumeConfirmation,
   mobileRelayCredentialNeedsRotation,
   rotateMobileRelayCredential
 } from './mobile-relay-credential-rotation'
 import type { MobileRelayCredentialBundle } from './mobile-relay-credential-bundle'
+import { recoverRelayWithCredentials } from './mobile-endpoint-relay-recovery'
 import type { StableLogicalRpcClient } from './stable-logical-rpc-client'
 import type { HostProfile } from './types'
 
@@ -49,16 +44,19 @@ export class MobileEndpointSupervisor {
       failureCooldownMs: FAILURE_COOLDOWN_MS,
       minimumDwellMs: MINIMUM_DWELL_MS
     })
-    this.relayReconnect = new RelayReconnectController(dependencies, this.recoverRelay.bind(this))
+    this.relayReconnect = new RelayReconnectController(
+      dependencies,
+      this.recoverFallback.bind(this)
+    )
     this.leaseRotation = new RelayLeaseRotationTimer(dependencies, () => {
       this.relayRotationPending = true
-      void this.recoverRelay(true)
+      void this.recoverFallback(true)
     })
   }
 
   async start(): Promise<void> {
     this.bundle = await this.dependencies.readBundle(this.host.id).catch(() => null)
-    if (this.stopped || !this.bundle || !this.host.relay) {
+    if (this.stopped || !this.hasRelay()) {
       return
     }
     this.unsubscribeState = this.logical.onStateChange((state) => {
@@ -68,15 +66,11 @@ export class MobileEndpointSupervisor {
         }
         this.scheduleDirectProbe()
       } else {
-        // Why: the direct client enters reconnecting after its first failed
-        // dial and may never publish disconnected while its retry loop lives.
         this.relayReconnect.handleStateFailure(this.logical, state)
       }
     })
     if (this.relayReconnect.needsRecovery(this.logical.getState())) {
-      // Why: the first direct dial can fail while encrypted relay credentials
-      // are still loading, before the supervisor subscribes to state changes.
-      await this.recoverRelay()
+      await this.recoverFallback()
     } else {
       this.scheduleDirectProbe()
     }
@@ -106,126 +100,43 @@ export class MobileEndpointSupervisor {
     this.leaseRotation.clear()
   }
 
-  private async recoverRelay(forceReplacement = false): Promise<void> {
-    // Why: connecting/handshaking is live direct progress; a relay dial would race it.
+  private hasRelay(): boolean {
+    return Boolean(this.bundle && this.host.relay)
+  }
+
+  /** Fallback on LAN failure: relay with stored credentials. */
+  private async recoverFallback(forceReplacement = false): Promise<void> {
     if (
       this.stopped ||
       !this.foreground ||
       this.operationInFlight ||
-      !this.bundle ||
-      !this.host.relay ||
       (!forceReplacement && !this.relayReconnect.needsRecovery(this.logical.getState()))
     ) {
       return
     }
-    // Why: revival and lease timers can overlap resume failures; one shared cooldown
-    // prevents PEER_DROPPED/LIMIT_EXCEEDED reconnect churn.
     if (this.relayReconnect.shouldDefer()) {
       return
     }
     this.operationInFlight = true
-    let lastError: Error | null = null
     let retryAfterOperation = false
     try {
-      const credentials = this.relayReconnect.eligibleCredentials(
-        this.bundle.current,
-        this.bundle.grace
-      )
-      for (const credential of credentials) {
-        const result = await this.tryRelayCredential(credential)
-        if (result.ok) {
-          retryAfterOperation = this.logical.getState() !== 'connected'
-          return
-        }
-        lastError = result.error
-        if (this.relayReconnect.shouldTryGraceAfterRelayFailure(result.error)) {
-          // Why: a rejected version stays invalid; retry only the grace credential.
-          this.relayReconnect.recordRejectedCredential(credential.version)
-        } else {
-          break
-        }
-      }
-      if (credentials.length > 0) {
-        // Why: cleanup may happen while a relay dial is awaiting the network;
-        // record its outcome without recreating a foreground retry timer.
-        const scheduleRetry = !forceReplacement && this.foreground && !this.stopped
-        this.relayReconnect.registerFailure(lastError, scheduleRetry)
+      if (this.hasRelay() && this.bundle) {
+        await recoverRelayWithCredentials(this.relayCtx(this.bundle), forceReplacement)
+        retryAfterOperation = this.logical.getState() !== 'connected'
       }
     } finally {
       this.operationInFlight = false
       if (forceReplacement && this.relayRotationPending && !this.stopped && this.foreground) {
         this.leaseRotation.armRetry(this.relayReconnect.retryDelayMs(5000))
       }
-      // Why: the active relay can drop while migration follow-up still owns the mutex.
       if (retryAfterOperation && !this.stopped && this.foreground) {
-        void this.recoverRelay()
+        void this.recoverFallback()
       }
-    }
-  }
-
-  private async tryRelayCredential(credential: {
-    token: string
-    version: number
-  }): Promise<{ ok: true } | { ok: false; error: Error }> {
-    const first = await this.openAndMigrateRelay(credential)
-    if (first.ok) {
-      return first
-    }
-    if (!isDirectorResolutionFailure(first.error) || !this.host.relay) {
-      return first
-    }
-    try {
-      const resolved = await this.dependencies.resolveRelay({
-        relay: this.host.relay,
-        resumeToken: credential.token
-      })
-      this.host = await persistRelayHost(this.host, resolved, this.dependencies.saveHost)
-      return await this.openAndMigrateRelay(credential)
-    } catch (error) {
-      return { ok: false, error: toError(error) }
-    }
-  }
-
-  private async openAndMigrateRelay(credential: {
-    token: string
-    version: number
-  }): Promise<{ ok: true } | { ok: false; error: Error }> {
-    // Why: director resolution and grace fallback can finish after background/stop.
-    if (this.stopped || !this.foreground || !this.host.relay || !this.bundle) {
-      return { ok: false, error: new Error('relay state missing') }
-    }
-    const session = this.dependencies.openRelay(
-      this.host.relay,
-      credential,
-      `confirm-${encodeBase64Url(this.dependencies.randomBytes(16))}`
-    )
-    try {
-      await this.logical.migrateTo(session, 'relay')
-      this.relayReconnect.setActiveSession(session)
-      if (!this.foreground) {
-        this.relayReconnect.suspendActiveRelay(this.logical)
-      }
-      this.relayRotationPending = false
-      this.hysteresis.recordMigration(this.dependencies.now())
-      const confirmation = session.getResumeConfirmation()
-      if (confirmation) {
-        this.bundle = applyResumeConfirmation(this.bundle, credential.version, confirmation)
-        // Why: the relay is already authenticated; a SecureStore failure must
-        // not open another socket or count against transport recovery backoff.
-        await this.dependencies.writeBundle(this.bundle).catch(() => {})
-      }
-      // Why: async persistence can finish after stop/background; never recreate a stale timer.
-      this.leaseRotation.scheduleFromLease(
-        this.stopped || !this.foreground ? null : session.getLeaseExpiresAt()
-      )
-      this.scheduleDirectProbe()
-      return { ok: true }
-    } catch (error) {
-      return { ok: false, error: session.getFailure() ?? toError(error) }
     }
   }
 
   private scheduleDirectProbe(delayMs = DIRECT_PROBE_INTERVAL_MS): void {
+    // Why: upgrade from relay back to LAN when the desk is on-network.
     if (
       this.stopped ||
       !this.foreground ||
@@ -253,8 +164,11 @@ export class MobileEndpointSupervisor {
     this.operationInFlight = true
     let successful: Awaited<ReturnType<typeof openAuthenticatedDirectEndpoint>> = null
     try {
-      const openDirect = this.dependencies.openDirect
-      successful = await openAuthenticatedDirectEndpoint(this.host, openDirect, 12_000)
+      successful = await openAuthenticatedDirectEndpoint(
+        this.host,
+        this.dependencies.openDirect,
+        12_000
+      )
       if (!successful) {
         this.hysteresis.recordDirectFailure(this.dependencies.now())
         return
@@ -272,9 +186,8 @@ export class MobileEndpointSupervisor {
     } finally {
       successful?.client.close()
       this.operationInFlight = false
-      // Why: a relay drop or backoff timer can arrive while the direct probe owns the mutex.
       if (this.relayRotationPending || this.logical.getState() !== 'connected') {
-        void this.recoverRelay(this.relayRotationPending)
+        void this.recoverFallback(this.relayRotationPending)
       }
       this.scheduleDirectProbe()
     }
@@ -300,12 +213,10 @@ export class MobileEndpointSupervisor {
         randomBytes: this.dependencies.randomBytes
       })
       this.bundle = result.bundle
-      // Why: a scheduled rotation can finish after the old credential enters the rejection gate.
       credentialRefreshed = true
       this.host = await persistRelayHost(this.host, result.relay, this.dependencies.saveHost)
     } catch {
-      // Why: pending material remains durable; the next authenticated direct
-      // opportunity must reconcile it before creating another install key.
+      // Why: pending material remains durable for the next authenticated path.
     } finally {
       if (credentialRefreshed) {
         this.relayReconnect.completeCredentialRefresh()
@@ -317,7 +228,7 @@ export class MobileEndpointSupervisor {
         this.foreground &&
         this.relayReconnect.needsRecovery(this.logical.getState())
       ) {
-        void this.recoverRelay()
+        void this.recoverFallback()
       }
     }
   }
@@ -326,6 +237,30 @@ export class MobileEndpointSupervisor {
     if (this.probeTimer) {
       this.dependencies.clearTimer(this.probeTimer)
       this.probeTimer = null
+    }
+  }
+
+  private relayCtx(_bundle: MobileRelayCredentialBundle) {
+    return {
+      logical: this.logical,
+      getHost: () => this.host,
+      getBundle: () => this.bundle!,
+      dependencies: this.dependencies,
+      relayReconnect: this.relayReconnect,
+      leaseRotation: this.leaseRotation,
+      hysteresis: this.hysteresis,
+      stopped: () => this.stopped,
+      foreground: () => this.foreground,
+      setHost: (host: HostProfile) => {
+        this.host = host
+      },
+      setBundle: (next: MobileRelayCredentialBundle) => {
+        this.bundle = next
+      },
+      clearRelayRotationPending: () => {
+        this.relayRotationPending = false
+      },
+      scheduleDirectProbe: () => this.scheduleDirectProbe()
     }
   }
 }

@@ -59,6 +59,16 @@ export type ConnectionState =
   | 'reconnecting'
   | 'auth-failed'
 
+// Why: 64-char hex EndpointId from iroh 1.1.0 (same pin as desktop pairing offers).
+const IrohEndpointIdSchema = z.string().regex(/^[0-9a-f]{64}$/)
+
+export type HostIrohEndpoint = {
+  endpointId: string
+  // Why: pairing-time dial hints — offline-LAN connect + skip discovery RTT.
+  relayUrl?: string
+  directAddresses?: string[]
+}
+
 export type HostProfile = {
   id: string
   name: string
@@ -69,6 +79,8 @@ export type HostProfile = {
   endpoints?: MobileAccessEndpoint[]
   relayHostId?: MobileRelayHostOverlay['relayHostId']
   relay?: MobileRelayHostOverlay['relay']
+  // Why: optional experimental dial target from pairing offers; reconnects reuse it.
+  iroh?: HostIrohEndpoint
 }
 
 export const HostProfileSchema = z.object({
@@ -83,7 +95,14 @@ export const HostProfileSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{16}$/)
     .optional(),
-  relay: MobileRelayEndpointSchema.optional()
+  relay: MobileRelayEndpointSchema.optional(),
+  iroh: z
+    .object({
+      endpointId: IrohEndpointIdSchema,
+      relayUrl: z.string().min(1).max(256).optional(),
+      directAddresses: z.array(z.string().min(1).max(64)).max(8).optional()
+    })
+    .optional()
 })
 
 // Why: persisted host record after the v0.0.3 keychain split. The
@@ -94,7 +113,14 @@ export const StoredHostProfileSchema = z.object({
   name: z.string().min(1),
   endpoint: z.string().min(1),
   publicKeyB64: z.string().min(1),
-  lastConnected: z.number().finite()
+  lastConnected: z.number().finite(),
+  iroh: z
+    .object({
+      endpointId: IrohEndpointIdSchema,
+      relayUrl: z.string().min(1).max(256).optional(),
+      directAddresses: z.array(z.string().min(1).max(64)).max(8).optional()
+    })
+    .optional()
 })
 
 export type StoredHostProfile = z.infer<typeof StoredHostProfileSchema>

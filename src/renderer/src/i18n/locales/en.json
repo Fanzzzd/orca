@@ -9468,7 +9468,10 @@
           "signIn": "Sign in",
           "signInAgain": "Sign in again",
           "localTitle": "LAN",
-          "localDescription": "Phone must be on this Wi‑Fi or your Tailscale. No sign-in."
+          "localDescription": "Phone must be on this Wi‑Fi or your Tailscale. No sign-in.",
+          "irohTitle": "Iroh",
+          "irohDescription": "Phone can be on cellular or any Wi‑Fi. No sign-in, no address setup. Direct P2P (hole-punched) with public relay fallback.",
+          "irohUnavailable": "Transport failed to bind. Restart Orca, or check logs."
         },
         "MobilePairingSetupSection": {
           "title": "Pair a phone",
@@ -9479,7 +9482,8 @@
           "step2LocalDescription": "The phone must be able to reach this address on Wi‑Fi or Tailscale.",
           "regenerate": "Regenerate QR code",
           "generate": "Generate QR code",
-          "refresh": "Refresh network interfaces"
+          "refresh": "Refresh network interfaces",
+          "step2IrohDescription": "Used for a faster path on this network. Iroh covers cellular and other Wi‑Fi."
         },
         "MobileRelayBetaAvailability": {
           "about": "About the Orca Relay beta",

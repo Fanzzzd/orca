@@ -3581,6 +3581,8 @@ export type PreloadApi = {
     listRuntimeAccessGrants: () => Promise<{ grants: RuntimeAccessGrant[] }>
     revokeRuntimeAccess: (args: { deviceId: string }) => Promise<{ revoked: boolean }>
     isWebSocketReady: () => Promise<{ ready: boolean; endpoint: string | null }>
+    /** Iroh endpoint bind status for the pairing path picker. */
+    getIrohStatus: () => Promise<{ bound: boolean; endpointId: string | null }>
     getRelayStatus: () => Promise<{ status: MobileRelayStatus }>
     onRelayStatusChanged: (callback: (status: MobileRelayStatus) => void) => () => void
     /** Consumes an auth-failure notification that arrived before the renderer listener mounted. */

@@ -4585,6 +4585,9 @@ const api = {
     isWebSocketReady: (): Promise<{ ready: boolean; endpoint: string | null }> =>
       ipcRenderer.invoke('mobile:isWebSocketReady'),
 
+    getIrohStatus: (): Promise<{ bound: boolean; endpointId: string | null }> =>
+      ipcRenderer.invoke('mobile:getIrohStatus'),
+
     getRelayStatus: (): Promise<{ status: MobileRelayStatus }> =>
       ipcRenderer.invoke('mobile:getRelayStatus'),
 

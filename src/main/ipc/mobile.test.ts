@@ -344,6 +344,17 @@ describe('registerMobileHandlers', () => {
     expect(handlers.get('mobile:getRelayStatus')?.()).toEqual({ status: 'registered' })
   })
 
+  it('reports iroh endpoint bind status for the pairing path picker', () => {
+    registerMobileHandlers({
+      getIrohEndpointId: () => 'a'.repeat(64)
+    } as never)
+
+    expect(handlers.get('mobile:getIrohStatus')?.()).toEqual({
+      bound: true,
+      endpointId: 'a'.repeat(64)
+    })
+  })
+
   it('consumes a pending auth-failure notification only from a window renderer', () => {
     const consumePendingUnpairedDeviceAuthFailure = vi.fn(() => true)
     registerMobileHandlers({} as never, { consumePendingUnpairedDeviceAuthFailure })

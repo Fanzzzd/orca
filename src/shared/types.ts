@@ -2963,8 +2963,8 @@ export type GlobalSettings = {
    *  Clamped on read to [5_000ms, 60min]. See docs/mobile-fit-hold.md. */
   mobileAutoRestoreFitMs: number | null
   /** Preferred mobile pairing path for new QR codes. Missing/'automatic' = Anywhere (Relay + local);
-   *  explicit 'local-only' = same-network only. */
-  mobilePairingConnectionMode?: 'automatic' | 'local-only'
+   *  explicit 'local-only' = same-network only; 'iroh' = LAN + experimental iroh (no Relay). */
+  mobilePairingConnectionMode?: 'automatic' | 'local-only' | 'iroh'
   /** Experimental: floating animated pet in the bottom-right corner. Opt-in cosmetic;
    *  off never mounts the overlay, and toggling takes effect instantly (renderer-side). */
   experimentalPet: boolean

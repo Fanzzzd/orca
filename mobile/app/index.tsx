@@ -37,6 +37,11 @@ import {
   usePrimeHosts
 } from '../src/transport/client-context'
 import { classifyConnection } from '../src/transport/connection-health'
+import {
+  getIrohHostStatus,
+  irohStatusDisplayLabel,
+  subscribeIrohHostStatus
+} from '../src/transport/mobile-iroh-host-status'
 import { subscribeToDesktopNotifications } from '../src/notifications/mobile-notifications'
 import {
   loadMobileOnboardingSteps,
@@ -302,6 +307,9 @@ export default function HomeScreen() {
   const [hostStates, setHostStates] = useState<Record<string, ConnectionState>>({})
   const [hostAttempts, setHostAttempts] = useState<Record<string, number>>({})
   const [hostLastConnected, setHostLastConnected] = useState<Record<string, number | null>>({})
+  // Why: re-render host cards when iroh race/status updates (attempting/failed).
+  const [, setIrohStatusTick] = useState(0)
+  useEffect(() => subscribeIrohHostStatus(() => setIrohStatusTick((n) => n + 1)), [])
   const [stats, setStats] = useState<StatsSummary | null>(null)
   const [worktreeInfo, setWorktreeInfo] = useState<Record<string, HostWorktreeInfo>>({})
   const [accountsByHost, setAccountsByHost] = useState<Record<string, AccountsSnapshot>>({})
@@ -783,11 +791,13 @@ export default function HomeScreen() {
             const attempts = hostAttempts[item.id] ?? 0
             const lastConnectedAt = hostLastConnected[item.id] ?? null
             const info = worktreeInfo[item.id]
+            const irohHint = irohStatusDisplayLabel(getIrohHostStatus(item.id))
             const verdict = classifyConnection({
               state,
               reconnectAttempts: attempts,
               lastConnectedAt,
-              endpoint: item.endpoint
+              endpoint: item.endpoint,
+              irohHint
             })
             return (
               <MobileHostCard

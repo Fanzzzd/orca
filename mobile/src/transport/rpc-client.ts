@@ -125,6 +125,8 @@ export type ConnectOptions = {
   onStateChange?: (state: ConnectionState) => void
   // Fires for every lifecycle event so the UI can show where 'Connecting…' is stuck (e.g. broken Tailscale route).
   onLog?: ConnectionLogSink
+  // Why: iroh (and tests) inject a duck-typed socket; activity probe stays shared.
+  createSocket?: (endpoint: string) => WebSocket
 }
 
 export function connect(
@@ -140,6 +142,7 @@ export function connect(
       : (optionsOrLegacy ?? {})
   const onStateChange = options.onStateChange
   const onLog = options.onLog
+  const createSocket = options.createSocket
   let logCounter = 0
   function emitLog(level: ConnectionLogLevel, message: string, detail?: string) {
     if (!onLog) {
@@ -308,7 +311,8 @@ export function connect(
       endpoint
     )
 
-    ws = new WebSocket(endpoint)
+    // Why: default WS for LAN/relay; iroh injects MobileIrohFramedSocket (same probe path).
+    ws = createSocket ? createSocket(endpoint) : new WebSocket(endpoint)
     const openingWs = ws
     const ignoreStaleSocketEvent = (eventName: string): boolean => {
       if (ws === openingWs) {

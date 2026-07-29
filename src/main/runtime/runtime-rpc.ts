@@ -17,6 +17,8 @@ import { errorResponse } from './rpc/errors'
 import type { RpcMessageContext, RpcTransport } from './rpc/transport'
 import { UnixSocketTransport } from './rpc/unix-socket-transport'
 import { WebSocketTransport } from './rpc/ws-transport'
+import { IrohTransport } from './rpc/iroh-transport'
+import type { IrohTransportOptions } from './rpc/iroh-transport'
 import { readWsFallbackPort, writeWsFallbackPort } from './rpc/ws-fallback-port-store'
 import type { WebSocket } from 'ws'
 import { DeviceRegistry, type DeviceEntry, type DeviceScope } from './device-registry'
@@ -28,7 +30,11 @@ import {
   type MobileSocketTransportMetadata
 } from './rpc/mobile-socket-wiring'
 import type { PairingRelay } from '../../shared/mobile-relay-pairing-offer'
-import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
+import {
+  isMobilePairingRelayDisabled,
+  parseMobilePairingConnectionMode,
+  type MobilePairingConnectionMode
+} from '../../shared/mobile-pairing-connection-mode'
 import {
   RelayRevokeOutbox,
   type RelayDeviceBinding,
@@ -59,6 +65,8 @@ type OrcaRuntimeRpcServerOptions = {
   // Why: true when the caller pinned a port (`orca serve --port`) so bind order prefers it over a stale STA-1511 fallback (#8535).
   preferPinnedWsPort?: boolean
   webClientRoot?: string
+  // Why: tests inject a fake bind so CI never loads the native module or opens UDP.
+  irohBindEndpoint?: IrohTransportOptions['bindEndpoint']
   // Why: test-only overrides for the two constants below; production must not pass these (defaults set by §3.1).
   keepaliveIntervalMs?: number
   longPollCap?: number
@@ -454,6 +462,7 @@ export class OrcaRuntimeRpcServer {
   private readonly wsPort: number
   private readonly preferPinnedWsPort: boolean
   private readonly webClientRoot: string | undefined
+  private readonly irohBindEndpoint: IrohTransportOptions['bindEndpoint']
   private readonly authToken = randomBytes(24).toString('hex')
   private readonly keepaliveIntervalMs: number
   private readonly longPollCap: number
@@ -468,6 +477,7 @@ export class OrcaRuntimeRpcServer {
   private transports: RuntimeTransportMetadata[] = []
   private metadataOwnershipWatch: RuntimeMetadataOwnershipWatch | null = null
   private mobileSocketWiring: MobileSocketWiring | null = null
+  private irohTransport: IrohTransport | null = null
   private mobileRelayPairingProvider: MobileRelayPairingProvider | null = null
   private onUnpairedDeviceAuthFailure: (() => void) | null = null
   private unpairedDeviceAuthThrottle: UnpairedDeviceAuthThrottle | null = null
@@ -493,6 +503,7 @@ export class OrcaRuntimeRpcServer {
     wsPort = DEFAULT_WS_PORT,
     preferPinnedWsPort = false,
     webClientRoot,
+    irohBindEndpoint,
     keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
     longPollCap = LONG_POLL_CAP,
     metadataOwnershipPollMs = RUNTIME_METADATA_OWNERSHIP_POLL_MS
@@ -506,12 +517,17 @@ export class OrcaRuntimeRpcServer {
     this.wsPort = wsPort
     this.preferPinnedWsPort = preferPinnedWsPort
     this.webClientRoot = webClientRoot
+    this.irohBindEndpoint = irohBindEndpoint
     this.keepaliveIntervalMs = keepaliveIntervalMs
     this.longPollCap = longPollCap
     this.metadataOwnershipPollMs = metadataOwnershipPollMs
     // Why: derived, not configurable — the reservation must hold for whatever cap a caller picks.
     this.askLongPollCap = Math.max(1, Math.floor(longPollCap * ASK_LONG_POLL_SHARE))
     this.relayRevokeOutbox = new RelayRevokeOutbox(userDataPath)
+  }
+
+  getIrohEndpointId(): string | null {
+    return this.irohTransport?.endpointId ?? null
   }
 
   getDeviceRegistry(): DeviceRegistry | null {
@@ -540,9 +556,10 @@ export class OrcaRuntimeRpcServer {
 
   setMobileRelayBinding(deviceId: string, binding: RelayDeviceBinding): boolean {
     const current = this.deviceRegistry?.getDevice(deviceId)
+    const pairingMode = this.deviceRegistry?.getMobilePairingConnectionMode(deviceId)
     if (
       current?.scope !== 'mobile' ||
-      this.deviceRegistry?.getMobilePairingConnectionMode(deviceId) === 'local-only'
+      (pairingMode != null && isMobilePairingRelayDisabled(pairingMode))
     ) {
       return false
     }
@@ -607,6 +624,10 @@ export class OrcaRuntimeRpcServer {
     name?: string
     rotate?: boolean
     scope?: DeviceScope
+    // Why: only iroh-mode mobile offers may carry the iroh dial target — a
+    // local-only QR advertising it would grant off-LAN reachability via the
+    // public relay, breaking the "same network only" promise.
+    includeIroh?: boolean
   }):
     | PairingOfferUnavailable
     | {
@@ -655,7 +676,8 @@ export class OrcaRuntimeRpcServer {
       endpoint,
       deviceToken: device.token,
       publicKeyB64,
-      scope
+      scope,
+      ...(args.includeIroh ? this.getIrohPairingField() : {})
     })
     return {
       available: true,
@@ -665,6 +687,32 @@ export class OrcaRuntimeRpcServer {
       webClientUrl:
         this.webClientRoot && scope === 'runtime' ? createWebClientUrl(endpoint, pairingUrl) : null
     }
+  }
+
+  private getIrohPairingField(): {
+    iroh?: { endpointId: string; relayUrl?: string; directAddresses?: string[] }
+  } {
+    const endpointId = this.irohTransport?.endpointId
+    if (!endpointId) {
+      return {}
+    }
+    const hints = this.irohTransport?.endpointDialHints() ?? null
+    return {
+      iroh: {
+        endpointId,
+        ...(hints?.relayUrl ? { relayUrl: hints.relayUrl } : {}),
+        ...(hints && hints.directAddresses.length > 0
+          ? { directAddresses: hints.directAddresses }
+          : {})
+      }
+    }
+  }
+
+  private shouldStartIrohTransport(): boolean {
+    // Why: iroh is on by default; ORCA_DISABLE_IROH=1 is the emergency kill switch.
+    // An injected test bind always starts (vitest sets the kill switch globally
+    // so unfaked servers never open real UDP or touch the public relay).
+    return this.irohBindEndpoint !== undefined || process.env.ORCA_DISABLE_IROH !== '1'
   }
 
   async createMobilePairingOffer(args: {
@@ -684,8 +732,8 @@ export class OrcaRuntimeRpcServer {
         connectionMode: MobilePairingConnectionMode
       }
   > {
-    // Why: the renderer is outside the trust boundary, so only an explicit local-only value may suppress Relay provisioning.
-    const connectionMode = args.connectionMode === 'local-only' ? 'local-only' : 'automatic'
+    // Why: renderer is outside the trust boundary — only known modes pass through; anything else is Anywhere.
+    const connectionMode = parseMobilePairingConnectionMode(args.connectionMode)
     const pending = this.deviceRegistry?.getPendingDevice('mobile')
     // Why: connection policy is part of the credential, so rotate on any policy switch — an old-policy QR must not pair under the new one.
     const switchingPendingMode =
@@ -700,12 +748,17 @@ export class OrcaRuntimeRpcServer {
     const direct = this.createPairingOffer({
       ...args,
       rotate: args.rotate || switchingPendingMode,
-      scope: 'mobile'
+      scope: 'mobile',
+      includeIroh: connectionMode === 'iroh'
     })
     if (!direct.available) {
       return direct
     }
     this.deviceRegistry?.setMobilePairingConnectionMode(direct.deviceId, connectionMode)
+    // Why: iroh mode is LAN + iroh.endpointId with no Relay block (presence-based primary off-LAN for the phone).
+    if (connectionMode === 'iroh') {
+      return { ...direct, connectionMode: 'iroh' }
+    }
     if (connectionMode === 'local-only' || !this.mobileRelayPairingProvider) {
       return { ...direct, connectionMode: 'local-only' }
     }
@@ -994,9 +1047,27 @@ export class OrcaRuntimeRpcServer {
             endpoint: `ws://0.0.0.0:${wsTransport.resolvedPort}`
           })
         } catch (error) {
-          // Why: WebSocket transport is supplementary; on failure (e.g. port in use) continue with Unix socket only.
+          // Why: WebSocket transport is supplementary; on failure (e.g. port in use)
+          // continue with Unix socket (and, below, iroh — it needs no ws listener).
           console.error('[runtime] Failed to start WebSocket transport:', error)
-          this.mobileSocketWiring = null
+        }
+
+        // Why: iroh is independent of the WS listener; each transport fails alone.
+        if (this.mobileSocketWiring && this.shouldStartIrohTransport()) {
+          try {
+            const irohTransport = new IrohTransport({
+              userDataPath: this.userDataPath,
+              ...(this.irohBindEndpoint ? { bindEndpoint: this.irohBindEndpoint } : {})
+            })
+            await irohTransport.start()
+            this.mobileSocketWiring.attachTransport(irohTransport)
+            this.irohTransport = irohTransport
+            // Why: include in activeTransports so stop() closes the endpoint; not advertised as CLI bootstrap.
+            activeTransports.push(irohTransport)
+          } catch (irohError) {
+            console.error('[runtime] Failed to start iroh transport:', irohError)
+            this.irohTransport = null
+          }
         }
       }
     }

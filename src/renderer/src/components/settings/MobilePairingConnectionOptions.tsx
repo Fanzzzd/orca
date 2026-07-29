@@ -43,6 +43,7 @@ type PathOptionProps = {
   description: string
   trailing?: ReactNode
   tabIndex: number
+  disabled?: boolean
   optionRef?: (el: HTMLDivElement | null) => void
 }
 
@@ -58,6 +59,7 @@ function PathOption({
   description,
   trailing,
   tabIndex,
+  disabled = false,
   optionRef
 }: PathOptionProps): React.JSX.Element {
   return (
@@ -66,19 +68,31 @@ function PathOption({
       role="radio"
       tabIndex={tabIndex}
       aria-checked={selected}
-      onClick={onSelect}
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (!disabled) {
+          onSelect()
+        }
+      }}
       onKeyDown={(event) => {
+        if (disabled) {
+          return
+        }
         if (event.key === ' ' || event.key === 'Enter') {
           event.preventDefault()
           onSelect()
         }
       }}
       className={cn(
-        'flex cursor-pointer items-start gap-3 px-3 py-2.5 outline-none transition-colors',
+        'flex items-start gap-3 px-3 py-2.5 outline-none transition-colors',
         // Why: match SettingsFormControls focus ring so keyboard focus is visible
         // even when the selected row already uses bg-accent/40.
         'focus-visible:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        selected ? 'bg-accent/40' : 'hover:bg-accent/20'
+        disabled
+          ? 'cursor-not-allowed opacity-60'
+          : selected
+            ? 'cursor-pointer bg-accent/40'
+            : 'cursor-pointer hover:bg-accent/20'
       )}
     >
       <span
@@ -101,6 +115,8 @@ function PathOption({
   )
 }
 
+const MODE_ORDER: MobilePairingConnectionMode[] = ['automatic', 'local-only', 'iroh']
+
 export function MobilePairingConnectionOptions({
   value,
   onChange,
@@ -115,6 +131,7 @@ export function MobilePairingConnectionOptions({
   const connect = useAppStore((state) => state.connectCurrentOrcaProfile)
   const fetchAuthStatus = useAppStore((state) => state.fetchOrcaProfileAuthStatus)
   const [relayStatus, setRelayStatus] = useState<MobileRelayStatus>('offline')
+  const [irohBound, setIrohBound] = useState(false)
   const signedIn = authStatus?.state === 'connected'
   const reconnectRequired = authStatus?.state === 'reconnect-required'
   // Why: an unconfigured build has no Relay endpoint to sign into, so a Sign in
@@ -123,21 +140,29 @@ export function MobilePairingConnectionOptions({
   const configured = authStatus?.configured !== false
   const needsSignIn = value === 'automatic' && !signedIn && configured
   const relayUnavailable = value === 'automatic' && !signedIn && !configured
-  const optionRefs = useRef<Record<MobilePairingConnectionMode, HTMLDivElement | null>>({
-    automatic: null,
-    'local-only': null
-  })
+  // Why: iroh is a default transport; the option only greys out if the endpoint failed to bind.
+  const irohDisabled = !irohBound
+  const optionRefs = useRef<Partial<Record<MobilePairingConnectionMode, HTMLDivElement | null>>>({})
 
   // Why: ARIA radiogroups move selection with the arrow keys; wrap between the
-  // two options and move focus so keyboard users get standard behavior.
+  // options, skipping disabled ones, and move focus for standard behavior.
   const handleArrowKeys = (event: React.KeyboardEvent): void => {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
       return
     }
     event.preventDefault()
-    const next: MobilePairingConnectionMode = value === 'automatic' ? 'local-only' : 'automatic'
-    onChange(next)
-    optionRefs.current[next]?.focus()
+    const currentIndex = Math.max(0, MODE_ORDER.indexOf(value))
+    const delta = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1
+    for (let step = 1; step < MODE_ORDER.length; step++) {
+      const raw = (currentIndex + delta * step) % MODE_ORDER.length
+      const next = MODE_ORDER[(raw + MODE_ORDER.length) % MODE_ORDER.length]!
+      if (next === 'iroh' && irohDisabled) {
+        continue
+      }
+      onChange(next)
+      optionRefs.current[next]?.focus()
+      return
+    }
   }
 
   useEffect(() => {
@@ -166,6 +191,25 @@ export function MobilePairingConnectionOptions({
     return () => {
       active = false
       unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void window.api.mobile
+      .getIrohStatus()
+      .then((status) => {
+        if (active) {
+          setIrohBound(status.bound)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setIrohBound(false)
+        }
+      })
+    return () => {
+      active = false
     }
   }, [])
 
@@ -219,6 +263,41 @@ export function MobilePairingConnectionOptions({
             'auto.components.settings.MobilePairingConnectionOptions.localDescription',
             'Phone must be on this Wi‑Fi or your Tailscale. No sign-in.'
           )}
+        />
+        <div className="border-t border-border" />
+        <PathOption
+          selected={value === 'iroh'}
+          tabIndex={value === 'iroh' ? 0 : -1}
+          disabled={irohDisabled}
+          optionRef={(el) => {
+            optionRefs.current.iroh = el
+          }}
+          onSelect={() => onChange('iroh')}
+          title={translate(
+            'auto.components.settings.MobilePairingConnectionOptions.irohTitle',
+            'Iroh'
+          )}
+          description={
+            irohDisabled
+              ? translate(
+                  'auto.components.settings.MobilePairingConnectionOptions.irohUnavailable',
+                  'Transport failed to bind. Restart Orca, or check logs.'
+                )
+              : translate(
+                  'auto.components.settings.MobilePairingConnectionOptions.irohDescription',
+                  'Phone can be on cellular or any Wi‑Fi. No sign-in, no address setup. Direct P2P (hole-punched) with public relay fallback.'
+                )
+          }
+          trailing={
+            irohDisabled ? (
+              <Badge variant="outline" className="text-[11px]">
+                {translate(
+                  'auto.components.settings.MobilePairingConnectionOptions.unavailable',
+                  'Unavailable'
+                )}
+              </Badge>
+            ) : null
+          }
         />
       </div>
 

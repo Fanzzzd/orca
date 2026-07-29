@@ -688,6 +688,72 @@ describe('OrcaRuntimeRpcServer', () => {
     }
   })
 
+  it('omits iroh from pairing offers when the kill switch disables the transport', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const server = new OrcaRuntimeRpcServer({
+      runtime: new OrcaRuntimeService(),
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0
+    })
+    await server.start()
+    try {
+      const offer = await server.createMobilePairingOffer({
+        address: '100.64.1.20',
+        name: 'Mobile test',
+        connectionMode: 'local-only'
+      })
+      expect(offer.available).toBe(true)
+      if (!offer.available) {
+        throw new Error('pairing unavailable')
+      }
+      expect(server.getIrohEndpointId()).toBeNull()
+      const parsed = parsePairingCode(offer.pairingUrl)
+      expect(parsed).not.toHaveProperty('iroh')
+    } finally {
+      await server.stop()
+    }
+  })
+
+  // Why: a local-only QR advertising iroh would grant off-LAN reachability via
+  // the public relay — "same network only" must mean exactly that.
+  it('omits iroh from local-only offers even when the transport is bound', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const endpointId = 'b'.repeat(64)
+    const server = new OrcaRuntimeRpcServer({
+      runtime: new OrcaRuntimeService(),
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0,
+      irohBindEndpoint: async () => ({
+        endpoint: {
+          acceptNext: async () => null,
+          close: async () => {},
+          id: () => ({ toString: () => endpointId })
+        } as never,
+        endpointId
+      })
+    })
+    await server.start()
+    try {
+      expect(server.getIrohEndpointId()).toBe(endpointId)
+      const offer = await server.createMobilePairingOffer({
+        address: '100.64.1.20',
+        name: 'Mobile test',
+        connectionMode: 'local-only'
+      })
+      expect(offer.available).toBe(true)
+      if (!offer.available) {
+        throw new Error('pairing unavailable')
+      }
+      const parsed = parsePairingCode(offer.pairingUrl)
+      expect(parsed).toEqual(expect.objectContaining({ scope: 'mobile' }))
+      expect(parsed).not.toHaveProperty('iroh')
+    } finally {
+      await server.stop()
+    }
+  })
+
   it('adds only the exact optional relay object to GUI mobile pairing offers', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
     const server = new OrcaRuntimeRpcServer({
@@ -812,6 +878,66 @@ describe('OrcaRuntimeRpcServer', () => {
       expect(offer.connectionMode).toBe('local-only')
       expect(server.getDeviceRegistry()?.getMobilePairingConnectionMode(offer.deviceId)).toBe(
         'local-only'
+      )
+      expect(
+        server.setMobileRelayBinding(offer.deviceId, {
+          relayHostId: 'AbCdEf0123_-xyZ9',
+          relayDeviceId: offer.deviceId,
+          ownerIdentityKey: 'user\0profile\0org'
+        })
+      ).toBe(false)
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it('mints iroh mode offers with iroh.endpointId, LAN endpoint, and no relay', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const endpointId = 'c'.repeat(64)
+    const server = new OrcaRuntimeRpcServer({
+      runtime: new OrcaRuntimeService(),
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0,
+      irohBindEndpoint: async () => ({
+        endpoint: {
+          acceptNext: async () => null,
+          close: async () => {},
+          id: () => ({ toString: () => endpointId })
+        } as never,
+        endpointId
+      })
+    })
+    const createPairingRelay = vi.fn()
+    server.setMobileRelayPairingProvider({
+      createPairingRelay,
+      onDeviceRevokeQueued: vi.fn(),
+      getEndpoints: vi.fn(),
+      provisionRelay: vi.fn()
+    })
+
+    await server.start()
+    try {
+      const offer = await server.createMobilePairingOffer({
+        address: '100.64.1.20',
+        connectionMode: 'iroh'
+      })
+      expect(offer.available).toBe(true)
+      if (!offer.available) {
+        throw new Error('WebSocket pairing unavailable')
+      }
+      expect(offer.connectionMode).toBe('iroh')
+      expect(createPairingRelay).not.toHaveBeenCalled()
+      const parsed = parsePairingCode(offer.pairingUrl)
+      expect(parsed).toEqual(
+        expect.objectContaining({
+          scope: 'mobile',
+          iroh: { endpointId }
+        })
+      )
+      expect(parsed).not.toHaveProperty('relay')
+      expect(server.getDeviceRegistry()?.getMobilePairingConnectionMode(offer.deviceId)).toBe(
+        'iroh'
       )
       expect(
         server.setMobileRelayBinding(offer.deviceId, {
