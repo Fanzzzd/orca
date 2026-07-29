@@ -1054,8 +1054,9 @@ export class OrcaRuntimeRpcServer {
 
         // Why: iroh is independent of the WS listener; each transport fails alone.
         if (this.mobileSocketWiring && this.shouldStartIrohTransport()) {
+          let irohTransport: IrohTransport | null = null
           try {
-            const irohTransport = new IrohTransport({
+            irohTransport = new IrohTransport({
               userDataPath: this.userDataPath,
               ...(this.irohBindEndpoint ? { bindEndpoint: this.irohBindEndpoint } : {})
             })
@@ -1067,6 +1068,8 @@ export class OrcaRuntimeRpcServer {
           } catch (irohError) {
             console.error('[runtime] Failed to start iroh transport:', irohError)
             this.irohTransport = null
+            // Why: a throw after start() leaves a bound endpoint + accept loop behind.
+            await irohTransport?.stop().catch(() => {})
           }
         }
       }

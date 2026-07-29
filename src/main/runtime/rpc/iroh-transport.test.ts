@@ -133,6 +133,30 @@ describe('IrohTransport', () => {
     })
   })
 
+  it('closes accepted connections whose bi-stream open fails', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'iroh-transport-'))
+    dirs.push(userDataPath)
+    const recv = new FakeRecv()
+    const send = new FakeSend()
+    const fake = createFakeBind(recv, send)
+    // Why: without a socket the pre-auth reaper can't see this connection —
+    // the accept path itself must close it.
+    fake.connection.acceptBi = async () => {
+      throw new Error('open failed')
+    }
+    const transport = new IrohTransport({
+      userDataPath,
+      bindEndpoint: fake.bindEndpoint
+    })
+    transports.push(transport)
+    await transport.start()
+    fake.pushIncoming()
+
+    await vi.waitFor(() => {
+      expect(fake.connection.close).toHaveBeenCalledWith(0n, [])
+    })
+  })
+
   it('terminates on oversize frames', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'iroh-transport-'))
     dirs.push(userDataPath)

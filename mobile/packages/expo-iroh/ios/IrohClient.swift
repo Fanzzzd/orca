@@ -17,6 +17,9 @@ final class IrohClient {
   private var startTask: Task<Endpoint, Error>?
   private var endpoint: Endpoint?
   private var connections: [String: LiveConnection] = [:]
+  // Why: stop() during an in-flight bind must not let the late bind result
+  // resurrect state — stale generations close their endpoint instead.
+  private var generation = 0
 
   private init() {}
 
@@ -102,6 +105,7 @@ final class IrohClient {
 
   func stop() async {
     let (lives, ep) = locked { () -> ([LiveConnection], Endpoint?) in
+      generation += 1
       let all = Array(connections.values)
       connections.removeAll()
       let current = endpoint
@@ -126,8 +130,8 @@ final class IrohClient {
   private func ensureEndpoint() async throws -> Endpoint {
     // Why: concurrent dials share one bind task — a check-then-bind race would
     // leak the losing endpoint's UDP socket and hand JS a dead endpoint id.
-    let task = locked { () -> Task<Endpoint, Error> in
-      if let existing = startTask { return existing }
+    let (task, gen) = locked { () -> (Task<Endpoint, Error>, Int) in
+      if let existing = startTask { return (existing, generation) }
       let created = Task {
         let ep = try await Endpoint.bind(options: EndpointOptions(
           preset: presetN0(),
@@ -137,14 +141,19 @@ final class IrohClient {
         return ep
       }
       startTask = created
-      return created
+      return (created, generation)
     }
     do {
       let ep = try await task.value
+      let stale = locked { generation != gen }
+      if stale {
+        try? await ep.close()
+        throw IrohClientError.notStarted
+      }
       locked { endpoint = ep }
       return ep
     } catch {
-      locked { startTask = nil }
+      locked { if generation == gen { startTask = nil } }
       throw error
     }
   }

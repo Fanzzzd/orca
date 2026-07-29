@@ -79,7 +79,7 @@ export type HostProfile = {
   endpoints?: MobileAccessEndpoint[]
   relayHostId?: MobileRelayHostOverlay['relayHostId']
   relay?: MobileRelayHostOverlay['relay']
-  // Why: optional experimental dial target from pairing offers; reconnects reuse it.
+  // Why: optional iroh dial target from pairing offers; reconnects reuse it.
   iroh?: HostIrohEndpoint
 }
 
@@ -99,7 +99,9 @@ export const HostProfileSchema = z.object({
   iroh: z
     .object({
       endpointId: IrohEndpointIdSchema,
-      relayUrl: z.string().min(1).max(256).optional(),
+      // Why: 2048 matches the desktop offer's PAIRING_RELAY_URL_MAX_CHARACTERS —
+      // a stricter stored cap would drop valid dial hints on restore.
+      relayUrl: z.string().min(1).max(2048).optional(),
       directAddresses: z.array(z.string().min(1).max(64)).max(8).optional()
     })
     .optional()
@@ -117,7 +119,7 @@ export const StoredHostProfileSchema = z.object({
   iroh: z
     .object({
       endpointId: IrohEndpointIdSchema,
-      relayUrl: z.string().min(1).max(256).optional(),
+      relayUrl: z.string().min(1).max(2048).optional(),
       directAddresses: z.array(z.string().min(1).max(64)).max(8).optional()
     })
     .optional()

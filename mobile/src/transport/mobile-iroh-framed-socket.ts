@@ -82,8 +82,8 @@ export class MobileIrohFramedSocket {
     }
   }
 
-  close(_code?: number, _reason?: string): void {
-    this.shutdown(1000, 'client_close')
+  close(code?: number, reason?: string): void {
+    this.shutdown(code ?? 1000, reason ?? 'client_close')
   }
 
   private async dial(): Promise<void> {
@@ -145,6 +145,9 @@ export class MobileIrohFramedSocket {
       console.log('[iroh]', 'session_closed', { reason: event.reason })
       // Why: the desktop closes QUIC with the WS auth code; surfacing 4001 lets
       // rpc-client latch auth-failed (re-pair banner) instead of reconnecting forever.
+      // event.reason is quinn's ConnectionError Display via iroh-ffi Connection.closed(),
+      // e.g. "closed by peer: 4001: unauthorized" — the numeric application close code
+      // always appears in that string (IrohLib 1.1); revalidate on iroh-ffi upgrades.
       const code = /\b4001\b/.test(event.reason) ? 4001 : 1000
       this.fail(code, event.reason || 'iroh_closed')
     })

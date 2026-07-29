@@ -196,20 +196,30 @@ export function MobilePairingConnectionOptions({
 
   useEffect(() => {
     let active = true
-    void window.api.mobile
-      .getIrohStatus()
-      .then((status) => {
-        if (active) {
-          setIrohBound(status.bound)
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setIrohBound(false)
-        }
-      })
+    // Why: iroh may still be binding when Settings opens — poll until bound so
+    // the option doesn't stay "Unavailable" for the lifetime of the pane.
+    const check = (): void => {
+      void window.api.mobile
+        .getIrohStatus()
+        .then((status) => {
+          if (active) {
+            setIrohBound(status.bound)
+            if (status.bound) {
+              window.clearInterval(interval)
+            }
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setIrohBound(false)
+          }
+        })
+    }
+    const interval = window.setInterval(check, 3000)
+    check()
     return () => {
       active = false
+      window.clearInterval(interval)
     }
   }, [])
 

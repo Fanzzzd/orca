@@ -71,7 +71,9 @@ export function createFrameDecoder(callbacks: FrameDecoderCallbacks): {
   }
 }
 
-// Why: WS text frames (JSON/base64) are ASCII; sealed binary frames are high-entropy.
+// Why: WS text frames (JSON/base64) are ASCII; sealed binary frames are
+// high-entropy, so sniffing recovers the WS text/binary flag without spending
+// a wire tag — the orca-mobile-rpc/1 frame is length + payload on purpose.
 export function decodeIrohFramePayload(payload: Uint8Array): string | Uint8Array {
   for (let i = 0; i < payload.byteLength; i++) {
     const byte = payload[i]!
