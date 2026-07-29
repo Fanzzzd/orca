@@ -36,7 +36,9 @@ export function MobilePairingSetupSection({
   onGenerateQr
 }: MobilePairingSetupSectionProps): React.JSX.Element {
   const usingRelay = connectionMode === 'automatic'
-  const generateDisabled = loading || !selectedAddress || !canGenerate
+  const usingIroh = connectionMode === 'iroh'
+  // Why: iroh dials by key — an unpicked LAN address must not block QR generation.
+  const generateDisabled = loading || !canGenerate || (!usingIroh && !selectedAddress)
 
   return (
     <section className="space-y-5">
@@ -59,7 +61,8 @@ export function MobilePairingSetupSection({
         {connectionPathControl}
       </div>
 
-      <div className="space-y-2">
+      {/* Why: iroh dials by public key — no address selection to show. */}
+      <div className={usingIroh ? 'hidden' : 'space-y-2'}>
         <p className="text-xs font-medium text-foreground">
           {translate(
             'auto.components.settings.MobilePairingSetupSection.step2Title',
@@ -104,10 +107,15 @@ export function MobilePairingSetupSection({
                 'auto.components.settings.MobilePairingSetupSection.step2RelayDescription',
                 'Used for a faster direct path when nearby. Relay covers remote access.'
               )
-            : translate(
-                'auto.components.settings.MobilePairingSetupSection.step2LocalDescription',
-                'The phone must be able to reach this address on Wi‑Fi or Tailscale.'
-              )}
+            : usingIroh
+              ? translate(
+                  'auto.components.settings.MobilePairingSetupSection.step2IrohDescription',
+                  'Used for a faster path on this network. Iroh covers cellular and other Wi‑Fi.'
+                )
+              : translate(
+                  'auto.components.settings.MobilePairingSetupSection.step2LocalDescription',
+                  'The phone must be able to reach this address on Wi‑Fi or Tailscale.'
+                )}
         </p>
       </div>
 

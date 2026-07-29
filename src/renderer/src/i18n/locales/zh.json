@@ -9445,7 +9445,10 @@
           "signInRequired": "请登录以使用 Orca Mobile Relay。",
           "relayUnavailable": "此版本不支持 Orca Relay。请使用局域网。",
           "signInAgain": "重新登录",
-          "localTitle": "局域网"
+          "localTitle": "局域网",
+          "irohTitle": "Iroh",
+          "irohDescription": "手机可使用蜂窝数据或任意 Wi‑Fi。无需登录、无需选择地址。直接 P2P（打洞直连），公共中继兜底。",
+          "irohUnavailable": "传输层绑定失败。请重启 Orca 或查看日志。"
         },
         "MobilePairingSetupSection": {
           "title": "配对手机",
@@ -9456,7 +9459,8 @@
           "step1Title": "连接方式",
           "step2Title": "此电脑的地址",
           "step2RelayDescription": "距离较近时用于快速直接连接。Relay 覆盖远程访问。",
-          "step2LocalDescription": "手机必须能通过 Wi‑Fi 或 Tailscale 访问此地址。"
+          "step2LocalDescription": "手机必须能通过 Wi‑Fi 或 Tailscale 访问此地址。",
+          "step2IrohDescription": "用于本网络上的更快路径。Iroh 覆盖蜂窝网络与其他 Wi‑Fi。"
         },
         "MobileRelayBetaAvailability": {
           "about": "关于 Orca Relay 测试版",

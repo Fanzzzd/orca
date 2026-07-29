@@ -9445,7 +9445,10 @@
           "signInRequired": "Inicia sesión para usar Orca Mobile Relay.",
           "relayUnavailable": "Orca Relay no está disponible en esta compilación. Usa LAN.",
           "signInAgain": "Iniciar sesión de nuevo",
-          "localTitle": "LAN"
+          "localTitle": "LAN",
+          "irohTitle": "Iroh",
+          "irohDescription": "El teléfono puede estar en datos móviles o cualquier Wi‑Fi. Sin inicio de sesión ni configuración de dirección. P2P directo (hole punching) con relay público de respaldo.",
+          "irohUnavailable": "El transporte no pudo iniciarse. Reinicia Orca o revisa los registros."
         },
         "MobilePairingSetupSection": {
           "title": "Vincular un teléfono",
@@ -9456,7 +9459,8 @@
           "step1Title": "Método de conexión",
           "step2Title": "Dirección de este ordenador",
           "step2RelayDescription": "Se usa para una ruta directa más rápida cuando está cerca. Relay cubre el acceso remoto.",
-          "step2LocalDescription": "El teléfono debe poder alcanzar esta dirección por Wi‑Fi o Tailscale."
+          "step2LocalDescription": "El teléfono debe poder alcanzar esta dirección por Wi‑Fi o Tailscale.",
+          "step2IrohDescription": "Se usa para una ruta más rápida en esta red. Iroh cubre datos móviles y otras Wi‑Fi."
         },
         "MobileRelayBetaAvailability": {
           "about": "Acerca de la beta de Orca Relay",

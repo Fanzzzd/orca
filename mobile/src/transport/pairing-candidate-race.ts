@@ -1,7 +1,7 @@
 import type { PairingCandidateClient } from './mobile-relay-physical-client'
 
 export type PairingCandidate = {
-  path: 'direct' | 'relay'
+  path: 'direct' | 'relay' | 'iroh'
   client: PairingCandidateClient
 }
 
@@ -52,7 +52,7 @@ export function racePairingCandidates(
     function rejectIfFinished(): void {
       if (!settled && failures === candidates.length && successes.length === 0) {
         settled = true
-        reject(new Error('direct and relay pairing paths both failed'))
+        reject(new Error('all pairing paths failed'))
       }
     }
   })

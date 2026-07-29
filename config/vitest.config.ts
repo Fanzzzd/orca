@@ -15,6 +15,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Why: iroh is on by default in production; tests must stay hermetic — real
+    // UDP binds + public relay traffic are opt-in via injected irohBindEndpoint.
+    env: {
+      ORCA_DISABLE_IROH: '1'
+    },
     include: [
       'src/**/*.test.ts',
       'src/**/*.test.tsx',

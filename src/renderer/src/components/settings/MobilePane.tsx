@@ -360,7 +360,9 @@ export function MobilePane(): React.JSX.Element {
       <MobilePairingQrSection
         qrDataUrl={qrDataUrl}
         pairingUrl={pairingUrl}
-        endpoint={endpoint}
+        // Why: iroh pairings dial by key — showing the legacy ws:// LAN URL reads
+        // as "this QR is bound to that address", which it is not.
+        endpoint={qrEncodedMode === 'iroh' ? null : endpoint}
         qrEnlarged={qrEnlarged}
         codeCopied={codeCopied}
         onQrEnlargedChange={setQrEnlarged}

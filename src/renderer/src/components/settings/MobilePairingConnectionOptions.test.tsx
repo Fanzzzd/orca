@@ -2,7 +2,7 @@
 
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileRelayStatus } from '../../../../shared/mobile-relay-status'
@@ -32,16 +32,20 @@ describe('MobilePairingConnectionOptions', () => {
   let statusListener: ((status: MobileRelayStatus) => void) | null
   const connect = vi.fn().mockResolvedValue(null)
   const fetchAuthStatus = vi.fn().mockResolvedValue(null)
+  const getIrohStatus = vi.fn().mockResolvedValue({ bound: false, endpointId: null })
 
   beforeEach(() => {
     statusListener = null
     connect.mockClear()
     fetchAuthStatus.mockClear()
+    getIrohStatus.mockReset()
+    getIrohStatus.mockResolvedValue({ bound: false, endpointId: null })
     Object.defineProperty(window, 'api', {
       configurable: true,
       value: {
         mobile: {
           getRelayStatus: vi.fn().mockResolvedValue({ status: 'registered' }),
+          getIrohStatus,
           onRelayStatusChanged: vi.fn((listener: (status: MobileRelayStatus) => void) => {
             statusListener = listener
             return vi.fn()
@@ -100,8 +104,9 @@ describe('MobilePairingConnectionOptions', () => {
     // No Relay endpoint to sign into — the Sign in CTA must not appear.
     expect(screen.queryByTestId('anywhere-sign-in-panel')).toBeNull()
     expect(screen.queryByRole('button', { name: /Sign in/i })).toBeNull()
-    expect(screen.getByTestId('anywhere-unavailable-panel')).toBeVisible()
-    expect(screen.getByText('Unavailable')).toBeVisible()
+    const unavailablePanel = screen.getByTestId('anywhere-unavailable-panel')
+    expect(unavailablePanel).toBeVisible()
+    expect(within(unavailablePanel).getByText('Unavailable')).toBeVisible()
   })
 
   it('moves selection with the arrow keys as a radiogroup', async () => {
@@ -162,5 +167,36 @@ describe('MobilePairingConnectionOptions', () => {
     await user.click(screen.getByRole('radio', { name: /^LAN\b/i }))
     expect(onChange).toHaveBeenCalledWith('local-only')
     statusListener?.('standby')
+  })
+
+  it('shows a selectable Iroh option when the transport is bound', async () => {
+    getIrohStatus.mockResolvedValue({ bound: true, endpointId: 'a'.repeat(64) })
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<MobilePairingConnectionOptions value="local-only" onChange={onChange} />)
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Iroh/i })).toBeVisible())
+    expect(
+      screen.getByText(
+        'Phone can be on cellular or any Wi‑Fi. No sign-in, no address setup. Direct P2P (hole-punched) with public relay fallback.'
+      )
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('radio', { name: /Iroh/i }))
+    expect(onChange).toHaveBeenCalledWith('iroh')
+  })
+
+  it('disables Iroh when the transport failed to bind', async () => {
+    getIrohStatus.mockResolvedValue({ bound: false, endpointId: null })
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<MobilePairingConnectionOptions value="local-only" onChange={onChange} />)
+
+    const iroh = await screen.findByRole('radio', { name: /Iroh/i })
+    expect(iroh).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText('Transport failed to bind. Restart Orca, or check logs.')).toBeVisible()
+
+    await user.click(iroh)
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
