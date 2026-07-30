@@ -133,6 +133,30 @@ describe('IrohTransport', () => {
     })
   })
 
+  it('closes the freshly bound endpoint when coming online fails', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'iroh-transport-'))
+    dirs.push(userDataPath)
+    const close = vi.fn(async () => {})
+    vi.doMock('@number0/iroh', () => ({
+      Endpoint: {
+        bind: async () => ({
+          close,
+          online: async () => {
+            throw new Error('relay unreachable')
+          },
+          id: () => ({ toString: () => 'a'.repeat(64) })
+        })
+      }
+    }))
+    // Why: no injected bind here — this exercises the real native code path.
+    const transport = new IrohTransport({ userDataPath })
+    transports.push(transport)
+
+    await expect(transport.start()).rejects.toThrow('relay unreachable')
+    expect(close).toHaveBeenCalled()
+    vi.doUnmock('@number0/iroh')
+  })
+
   it('closes accepted connections whose bi-stream open fails', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'iroh-transport-'))
     dirs.push(userDataPath)

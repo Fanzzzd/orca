@@ -133,8 +133,15 @@ export class IrohTransport implements RpcTransport, MobileSocketTransport {
       // Why: lazy import keeps the native module out of processes that never bind.
       const { Endpoint } = await import('@number0/iroh')
       endpoint = await Endpoint.bind({ secretKey, alpns: [alpn] })
-      await endpoint.online()
-      endpointId = endpoint.id().toString()
+      try {
+        await endpoint.online()
+        endpointId = endpoint.id().toString()
+      } catch (error) {
+        // Why: bind() already opened the UDP socket, and this.endpoint is still
+        // null — stop() would find nothing to close and leak the port.
+        await endpoint.close().catch(() => {})
+        throw error
+      }
     }
     // Why: a concurrent stop() saw endpoint === null and had nothing to close.
     if (this.stopped) {
