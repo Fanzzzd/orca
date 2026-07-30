@@ -1,15 +1,8 @@
 // Duck-typed WebSocket for rpc-client over @orca/expo-iroh.
 // Native module already applies 4B BE length framing; this layer only moves opaque E2EE bytes.
-// Why: lazy-load the native module so Expo Go / web never throw at import time.
+import { loadExpoIroh, type ExpoIrohApi } from './expo-iroh-native-module'
 
 export type PathType = 'direct' | 'relayed' | 'mixed' | 'unknown'
-
-type ExpoIrohApi = typeof import('@orca/expo-iroh')
-
-function loadExpoIroh(): ExpoIrohApi {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('@orca/expo-iroh') as ExpoIrohApi
-}
 
 type MessageEventLike = { data: string | Uint8Array }
 type CloseEventLike = { code: number; reason: string }
@@ -83,7 +76,8 @@ export class MobileIrohFramedSocket {
   }
 
   close(code?: number, reason?: string): void {
-    this.shutdown(code ?? 1000, reason ?? 'client_close')
+    // Why: a caller-initiated close is never an error, whatever code it carries.
+    this.shutdown(code ?? 1000, reason ?? 'client_close', { signalError: false })
   }
 
   private async dial(): Promise<void> {
@@ -154,10 +148,12 @@ export class MobileIrohFramedSocket {
   }
 
   private fail(code: number, reason: string): void {
-    this.shutdown(code, reason)
+    // Why: real WebSockets fire onerror only on failure — a peer that closed
+    // cleanly (1000) is a drop to reconnect from, not an error to report.
+    this.shutdown(code, reason, { signalError: code !== 1000 })
   }
 
-  private shutdown(code: number, reason: string): void {
+  private shutdown(code: number, reason: string, opts: { signalError: boolean }): void {
     if (this.closed) {
       return
     }
@@ -180,8 +176,7 @@ export class MobileIrohFramedSocket {
         // Module unavailable during teardown.
       }
     }
-    // Why: real WebSockets fire onerror only on failure, not on a clean close.
-    if (code !== 1000) {
+    if (opts.signalError) {
       this.onerror?.()
     }
     this.onclose?.({ code, reason })

@@ -1,4 +1,5 @@
 import { Platform } from 'react-native'
+import { expoIrohModuleLoads } from './expo-iroh-native-module'
 
 /** Presence-based path role for iroh (desktop "Iroh" pairing option). */
 export type IrohPathMode = 'off' | 'fallback' | 'primary-off-lan'
@@ -32,14 +33,5 @@ export function isIrohNativePlatform(): boolean {
  * without the pod).
  */
 export function isIrohNativeModuleAvailable(): boolean {
-  if (!isIrohNativePlatform()) {
-    return false
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require('@orca/expo-iroh')
-    return true
-  } catch {
-    return false
-  }
+  return isIrohNativePlatform() && expoIrohModuleLoads()
 }
