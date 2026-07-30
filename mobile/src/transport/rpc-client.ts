@@ -244,8 +244,7 @@ export function connect(
   // Why: keep device tokens / full URLs out of log scrolls — truncate to host:port.
   function redactedEndpoint(ep: string): string {
     try {
-      const m = ep.match(/^wss?:\/\/([^/]+)/i)
-      return m ? m[1] : 'unknown'
+      return new URL(ep).host || 'unknown'
     } catch {
       return 'unknown'
     }
@@ -308,7 +307,7 @@ export function connect(
     emitLog(
       'info',
       reconnectAttempt > 0 ? `Reconnecting (attempt ${reconnectAttempt + 1})` : 'Opening WebSocket',
-      endpoint
+      redactedEndpoint(endpoint)
     )
 
     // Why: default WS for LAN/relay; iroh injects MobileIrohFramedSocket (same probe path).

@@ -68,12 +68,8 @@ function PathOption({
       role="radio"
       tabIndex={tabIndex}
       aria-checked={selected}
-      aria-disabled={disabled || undefined}
-      onClick={() => {
-        if (!disabled) {
-          onSelect()
-        }
-      }}
+      aria-disabled={disabled}
+      onClick={disabled ? undefined : onSelect}
       onKeyDown={(event) => {
         if (disabled) {
           return
@@ -84,15 +80,12 @@ function PathOption({
         }
       }}
       className={cn(
-        'flex items-start gap-3 px-3 py-2.5 outline-none transition-colors',
+        'flex cursor-pointer items-start gap-3 px-3 py-2.5 outline-none transition-colors',
         // Why: match SettingsFormControls focus ring so keyboard focus is visible
         // even when the selected row already uses bg-accent/40.
         'focus-visible:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        disabled
-          ? 'cursor-not-allowed opacity-60'
-          : selected
-            ? 'cursor-pointer bg-accent/40'
-            : 'cursor-pointer hover:bg-accent/20'
+        disabled && 'cursor-not-allowed opacity-60',
+        selected ? 'bg-accent/40' : 'hover:bg-accent/20'
       )}
     >
       <span
@@ -120,11 +113,16 @@ const MODE_ORDER: MobilePairingConnectionMode[] = ['automatic', 'local-only', 'i
 export function MobilePairingConnectionOptions({
   value,
   onChange,
-  compact = false
+  compact = false,
+  relayMintFailed = false,
+  relayMintRetrying = false
 }: {
   value: MobilePairingConnectionMode
   onChange: (value: MobilePairingConnectionMode) => void
   compact?: boolean
+  /** When true, show Unavailable on the Relay row (mint failed; no QR). */
+  relayMintFailed?: boolean
+  relayMintRetrying?: boolean
 }): React.JSX.Element {
   const authStatus = useAppStore((state) => state.orcaProfileAuthStatus)
   const connecting = useAppStore((state) => state.orcaProfileConnecting)
@@ -148,6 +146,9 @@ export function MobilePairingConnectionOptions({
   // options, skipping disabled ones, and move focus for standard behavior.
   const handleArrowKeys = (event: React.KeyboardEvent): void => {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      return
+    }
+    if (relayMintRetrying && value !== 'automatic') {
       return
     }
     event.preventDefault()
@@ -236,7 +237,8 @@ export function MobilePairingConnectionOptions({
       >
         <PathOption
           selected={value === 'automatic'}
-          tabIndex={value === 'automatic' ? 0 : -1}
+          tabIndex={value === 'automatic' && !relayMintRetrying ? 0 : -1}
+          disabled={relayMintRetrying}
           optionRef={(el) => {
             optionRefs.current.automatic = el
           }}
@@ -252,7 +254,17 @@ export function MobilePairingConnectionOptions({
           trailing={
             signedIn && value === 'automatic' ? (
               <Badge variant="outline" className="text-[11px]">
-                {relayStatusLabel(relayStatus)}
+                {relayMintRetrying
+                  ? translate(
+                      'auto.components.settings.MobilePairingConnectionOptions.retrying',
+                      'Retrying'
+                    )
+                  : relayMintFailed
+                    ? translate(
+                        'auto.components.settings.MobilePairingConnectionOptions.unavailable',
+                        'Unavailable'
+                      )
+                    : relayStatusLabel(relayStatus)}
               </Badge>
             ) : null
           }
@@ -260,7 +272,7 @@ export function MobilePairingConnectionOptions({
         <div className="border-t border-border" />
         <PathOption
           selected={value === 'local-only'}
-          tabIndex={value === 'local-only' ? 0 : -1}
+          tabIndex={value === 'local-only' || relayMintRetrying ? 0 : -1}
           optionRef={(el) => {
             optionRefs.current['local-only'] = el
           }}
@@ -271,7 +283,7 @@ export function MobilePairingConnectionOptions({
           )}
           description={translate(
             'auto.components.settings.MobilePairingConnectionOptions.localDescription',
-            'Phone must be on this Wi‑Fi or your Tailscale. No sign-in.'
+            'Phone must be on this Wi‑Fi or connected through Tailscale. No sign-in required.'
           )}
         />
         <div className="border-t border-border" />
