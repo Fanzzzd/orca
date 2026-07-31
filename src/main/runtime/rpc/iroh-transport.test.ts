@@ -152,9 +152,14 @@ describe('IrohTransport', () => {
     const transport = new IrohTransport({ userDataPath })
     transports.push(transport)
 
-    await expect(transport.start()).rejects.toThrow('relay unreachable')
-    expect(close).toHaveBeenCalled()
-    vi.doUnmock('@number0/iroh')
+    try {
+      await expect(transport.start()).rejects.toThrow('relay unreachable')
+      expect(close).toHaveBeenCalled()
+    } finally {
+      // Why: a failed assertion would otherwise leave the mock installed for
+      // every later test in this file.
+      vi.doUnmock('@number0/iroh')
+    }
   })
 
   it('closes accepted connections whose bi-stream open fails', async () => {

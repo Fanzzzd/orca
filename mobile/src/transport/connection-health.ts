@@ -64,16 +64,8 @@ export function classifyConnection(args: {
     return { kind: 'auth-failed', label: 'Pairing invalid — re-pair with your desktop' }
   }
 
-  // Connected / connecting / handshaking are normal.
   if (state === 'connected') {
     return { kind: 'normal', label: 'Connected' }
-  }
-  if (state === 'connecting' || state === 'handshaking') {
-    return {
-      kind: 'normal',
-      label: 'Connecting…',
-      ...(args.irohHint ? { hint: args.irohHint } : {})
-    }
   }
 
   if (state === 'disconnected') {
@@ -84,7 +76,10 @@ export function classifyConnection(args: {
     }
   }
 
-  // state === 'reconnecting' from here.
+  // connecting / handshaking / reconnecting from here. The gates apply to all
+  // three: every redial re-enters 'connecting', and letting that revert an
+  // escalated verdict to "Connecting…" hid the failure loop behind a reassuring
+  // label for most of each cycle (issue #10119).
   if (reconnectAttempts >= UNREACHABLE_ATTEMPTS) {
     if (lastConnectedAt == null) {
       return {
@@ -110,7 +105,7 @@ export function classifyConnection(args: {
 
   return {
     kind: 'normal',
-    label: 'Reconnecting…',
+    label: state === 'reconnecting' ? 'Reconnecting…' : 'Connecting…',
     ...(args.irohHint ? { hint: args.irohHint } : {})
   }
 }
