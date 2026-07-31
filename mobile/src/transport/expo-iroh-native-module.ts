@@ -5,7 +5,6 @@
 export type ExpoIrohApi = typeof import('@orca/expo-iroh')
 
 export function loadExpoIroh(): ExpoIrohApi {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('@orca/expo-iroh') as ExpoIrohApi
 }
 

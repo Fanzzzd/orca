@@ -33,14 +33,14 @@ export type RelayRecoveryContext = {
 export async function recoverRelayWithCredentials(
   ctx: RelayRecoveryContext,
   forceReplacement: boolean
-): Promise<void> {
+): Promise<boolean> {
   let lastError: Error | null = null
   const bundle = ctx.getBundle()
   const credentials = ctx.relayReconnect.eligibleCredentials(bundle.current, bundle.grace)
   for (const credential of credentials) {
     const result = await tryRelayCredential(ctx, credential)
     if (result.ok) {
-      return
+      return true
     }
     lastError = result.error
     if (ctx.relayReconnect.shouldTryGraceAfterRelayFailure(result.error)) {
@@ -53,6 +53,7 @@ export async function recoverRelayWithCredentials(
     const scheduleRetry = !forceReplacement && ctx.foreground() && !ctx.stopped()
     ctx.relayReconnect.registerFailure(lastError, scheduleRetry)
   }
+  return false
 }
 
 async function tryRelayCredential(

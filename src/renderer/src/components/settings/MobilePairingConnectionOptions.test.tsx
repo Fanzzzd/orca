@@ -231,4 +231,19 @@ describe('MobilePairingConnectionOptions', () => {
     await user.click(lan)
     expect(onChange).toHaveBeenCalledWith('local-only')
   })
+
+  it('skips Relay in keyboard navigation while Relay is retrying', async () => {
+    getIrohStatus.mockResolvedValue({ bound: true, endpointId: 'a'.repeat(64) })
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <MobilePairingConnectionOptions value="local-only" onChange={onChange} relayMintRetrying />
+    )
+
+    const iroh = screen.getByRole('radio', { name: /Iroh/i })
+    await waitFor(() => expect(iroh).toHaveAttribute('aria-disabled', 'false'))
+    screen.getByRole('radio', { name: /^LAN\b/i }).focus()
+    await user.keyboard('{ArrowUp}')
+    expect(onChange).toHaveBeenCalledWith('iroh')
+  })
 })

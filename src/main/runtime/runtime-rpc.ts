@@ -29,7 +29,7 @@ import {
   type AuthenticatedMobileSocket,
   type MobileSocketTransportMetadata
 } from './rpc/mobile-socket-wiring'
-import type { PairingRelay } from '../../shared/mobile-relay-pairing-offer'
+import type { PairingIroh, PairingRelay } from '../../shared/mobile-relay-pairing-offer'
 import {
   isMobilePairingRelayDisabled,
   parseMobilePairingConnectionMode,
@@ -80,6 +80,7 @@ type OrcaRuntimeRpcServerOptions = {
 
 export type PairingOfferUnavailableReason =
   | 'websocket_unavailable'
+  | 'iroh_unavailable'
   | 'device_registry_unavailable'
   | 'e2ee_key_unavailable'
   | 'invalid_advertised_endpoint'
@@ -671,12 +672,31 @@ export class OrcaRuntimeRpcServer {
     if (this.pairingInitializationFailure) {
       return this.pairingInitializationFailure
     }
-    const rawEndpoint = this.getWebSocketEndpoint()
-    if (!rawEndpoint) {
+    const iroh = args.includeIroh ? this.getIrohPairingTarget() : null
+    if (args.includeIroh && !iroh) {
       return pairingUnavailable(
-        'websocket_unavailable',
-        'WebSocket pairing is unavailable. Inspect preceding runtime errors and choose an unused --port if the listener failed.'
+        'iroh_unavailable',
+        'Iroh pairing is unavailable. Restart Orca or inspect the Iroh transport logs.'
       )
+    }
+    const rawEndpoint = this.getWebSocketEndpoint()
+    let endpoint: string
+    if (!rawEndpoint) {
+      if (!iroh) {
+        return pairingUnavailable(
+          'websocket_unavailable',
+          'WebSocket pairing is unavailable. Inspect preceding runtime errors and choose an unused --port if the listener failed.'
+        )
+      }
+      endpoint = `iroh://${iroh.endpointId}`
+    } else if (iroh && !args.address) {
+      endpoint = `iroh://${iroh.endpointId}`
+    } else {
+      const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, args.address)
+      if (!advertised.ok) {
+        return pairingUnavailable(advertised.reason, advertised.guidance)
+      }
+      endpoint = advertised.endpoint
     }
     if (!this.deviceRegistry) {
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
@@ -686,11 +706,6 @@ export class OrcaRuntimeRpcServer {
       return pairingUnavailable('e2ee_key_unavailable', E2EE_KEY_UNAVAILABLE_GUIDANCE)
     }
 
-    const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, args.address)
-    if (!advertised.ok) {
-      return pairingUnavailable(advertised.reason, advertised.guidance)
-    }
-    const endpoint = advertised.endpoint
     const deviceName = args.name ?? `CLI ${new Date().toLocaleDateString()}`
     const scope = args.scope ?? 'runtime'
     let device: DeviceEntry
@@ -708,7 +723,7 @@ export class OrcaRuntimeRpcServer {
       deviceToken: device.token,
       publicKeyB64,
       scope,
-      ...(args.includeIroh ? this.getIrohPairingField() : {})
+      ...(iroh ? { iroh } : {})
     })
     return {
       available: true,
@@ -720,22 +735,18 @@ export class OrcaRuntimeRpcServer {
     }
   }
 
-  private getIrohPairingField(): {
-    iroh?: { endpointId: string; relayUrl?: string; directAddresses?: string[] }
-  } {
+  private getIrohPairingTarget(): PairingIroh | null {
     const endpointId = this.irohTransport?.endpointId
     if (!endpointId) {
-      return {}
+      return null
     }
     const hints = this.irohTransport?.endpointDialHints() ?? null
     return {
-      iroh: {
-        endpointId,
-        ...(hints?.relayUrl ? { relayUrl: hints.relayUrl } : {}),
-        ...(hints && hints.directAddresses.length > 0
-          ? { directAddresses: hints.directAddresses }
-          : {})
-      }
+      endpointId,
+      ...(hints?.relayUrl ? { relayUrl: hints.relayUrl } : {}),
+      ...(hints && hints.directAddresses.length > 0
+        ? { directAddresses: hints.directAddresses }
+        : {})
     }
   }
 

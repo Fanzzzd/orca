@@ -1472,7 +1472,7 @@ describe('OrcaRuntimeRpcServer', () => {
     }
   })
 
-  it('persists local-only pairing and never mints or later binds Relay', async () => {
+  it('persists local-only pairing and rejects unavailable Iroh without Relay', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
     const server = new OrcaRuntimeRpcServer({
       runtime: new OrcaRuntimeService(),
@@ -1511,6 +1511,12 @@ describe('OrcaRuntimeRpcServer', () => {
           ownerIdentityKey: 'user\0profile\0org'
         })
       ).toBe(false)
+      await expect(
+        server.createMobilePairingOffer({
+          address: '100.64.1.20',
+          connectionMode: 'iroh'
+        })
+      ).resolves.toMatchObject({ available: false, reason: 'iroh_unavailable' })
     } finally {
       await server.stop()
     }
@@ -1571,6 +1577,14 @@ describe('OrcaRuntimeRpcServer', () => {
           ownerIdentityKey: 'user\0profile\0org'
         })
       ).toBe(false)
+
+      vi.spyOn(server, 'getWebSocketEndpoint').mockReturnValue(null)
+      await expect(
+        server.createMobilePairingOffer({ connectionMode: 'iroh' })
+      ).resolves.toMatchObject({
+        available: true,
+        endpoint: `iroh://${endpointId}`
+      })
     } finally {
       await server.stop()
     }

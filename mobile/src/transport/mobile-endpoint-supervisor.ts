@@ -121,8 +121,11 @@ export class MobileEndpointSupervisor {
     let retryAfterOperation = false
     try {
       if (this.hasRelay() && this.bundle) {
-        await recoverRelayWithCredentials(this.relayCtx(this.bundle), forceReplacement)
-        retryAfterOperation = this.logical.getState() !== 'connected'
+        const recovered = await recoverRelayWithCredentials(
+          this.relayCtx(this.bundle),
+          forceReplacement
+        )
+        retryAfterOperation = recovered && this.logical.getState() !== 'connected'
       }
     } finally {
       this.operationInFlight = false

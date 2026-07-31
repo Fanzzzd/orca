@@ -208,6 +208,23 @@ describe('registerMobileHandlers', () => {
     )
   })
 
+  it('allows Iroh pairing without a network interface', async () => {
+    const createMobilePairingOffer = vi.fn().mockResolvedValue({
+      available: true,
+      pairingUrl: 'orca://pair#iroh',
+      endpoint: `iroh://${'a'.repeat(64)}`,
+      deviceId: 'mobile-iroh',
+      connectionMode: 'iroh'
+    })
+
+    registerMobileHandlers({ createMobilePairingOffer } as never)
+    await handlers.get('mobile:getPairingQR')?.(null, { connectionMode: 'iroh' })
+
+    expect(createMobilePairingOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ address: null, connectionMode: 'iroh' })
+    )
+  })
+
   it('preserves a copyable pairing URL when QR encoding fails', async () => {
     const createMobilePairingOffer = vi.fn().mockResolvedValue({
       available: true,

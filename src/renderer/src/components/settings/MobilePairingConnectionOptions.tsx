@@ -148,16 +148,13 @@ export function MobilePairingConnectionOptions({
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
       return
     }
-    if (relayMintRetrying && value !== 'automatic') {
-      return
-    }
     event.preventDefault()
     const currentIndex = Math.max(0, MODE_ORDER.indexOf(value))
     const delta = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1
     for (let step = 1; step < MODE_ORDER.length; step++) {
       const raw = (currentIndex + delta * step) % MODE_ORDER.length
       const next = MODE_ORDER[(raw + MODE_ORDER.length) % MODE_ORDER.length]!
-      if (next === 'iroh' && irohDisabled) {
+      if ((next === 'automatic' && relayMintRetrying) || (next === 'iroh' && irohDisabled)) {
         continue
       }
       onChange(next)

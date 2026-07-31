@@ -124,8 +124,9 @@ export function registerMobileHandlers(
       // Why: allow the caller to specify which network interface address to
       // embed in the QR code. This supports overlay networks (Tailscale,
       // ZeroTier) where the default LAN IP isn't reachable from the phone.
+      const connectionMode = args?.connectionMode
       const ip = args?.address ?? getDefaultPairingAddress()
-      if (!ip) {
+      if (!ip && connectionMode !== 'iroh') {
         return {
           available: false as const,
           reason: 'invalid_advertised_endpoint',
@@ -143,7 +144,7 @@ export function registerMobileHandlers(
       // one so the new QR carries a different credential.
       const offer = await rpcServer.createMobilePairingOffer({
         address: ip,
-        connectionMode: args?.connectionMode,
+        connectionMode,
         rotate: args?.rotate,
         name: `Mobile ${new Date().toLocaleDateString()}`
       })
