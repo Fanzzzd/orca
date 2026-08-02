@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatHourlyVersion,
+  getReleaseNotesUrlForVersion,
   getReleaseRepoForChannel,
   getVersionChannel,
+  isChannelSupportedOnPlatform,
   isHourlyVersion,
   isReleaseChannel,
   parseHourlyVersionStamp,
@@ -27,6 +29,21 @@ describe('release channel', () => {
     expect(getReleaseRepoForChannel('hourly')).toBe('stablyai/orca-hourly')
     expect(getReleaseRepoForChannel('stable')).toBe('stablyai/orca')
     expect(getReleaseRepoForChannel('rc')).toBe('stablyai/orca')
+  })
+
+  // Why: an hourly tag linked against the main repo 404s — the tag only exists
+  // in the hourly repo.
+  it('builds release-notes links against the repo that published the version', () => {
+    expect(getReleaseNotesUrlForVersion('1.4.160-hourly.202607281400')).toBe(
+      'https://github.com/stablyai/orca-hourly/releases/tag/v1.4.160-hourly.202607281400'
+    )
+    expect(getReleaseNotesUrlForVersion('1.4.160')).toBe(
+      'https://github.com/stablyai/orca/releases/tag/v1.4.160'
+    )
+    expect(getReleaseNotesUrlForVersion('v1.4.160-rc.3')).toBe(
+      'https://github.com/stablyai/orca/releases/tag/v1.4.160-rc.3'
+    )
+    expect(getReleaseNotesUrlForVersion(null)).toBe('https://github.com/stablyai/orca/releases')
   })
 
   it('round-trips an hourly version stamp as UTC', () => {
@@ -57,6 +74,22 @@ describe('release channel', () => {
     )
   })
 
+  // Why: the hourly workflow is macOS-only, so the channel has no artifact to
+  // offer elsewhere. Both the picker and the main-process check read this, so a
+  // regression here would silently re-expose an uninstallable channel.
+  it('offers hourly only on macOS', () => {
+    expect(isChannelSupportedOnPlatform('hourly', 'darwin')).toBe(true)
+    expect(isChannelSupportedOnPlatform('hourly', 'linux')).toBe(false)
+    expect(isChannelSupportedOnPlatform('hourly', 'win32')).toBe(false)
+  })
+
+  it('offers stable and rc on every platform', () => {
+    for (const platform of ['darwin', 'linux', 'win32'] as const) {
+      expect(isChannelSupportedOnPlatform('stable', platform)).toBe(true)
+      expect(isChannelSupportedOnPlatform('rc', platform)).toBe(true)
+    }
+  })
+
   it('accepts only known channels', () => {
     expect(isReleaseChannel('hourly')).toBe(true)
     expect(isReleaseChannel('stable')).toBe(true)
@@ -72,6 +105,7 @@ describe('release channel', () => {
       tag: `v${version}`,
       version,
       channel: 'hourly',
+      name: null,
       publishedAt: null,
       releaseUrl: `https://github.com/stablyai/orca-hourly/releases/tag/v${version}`
     })

@@ -55,10 +55,10 @@ async function drainFakeTimerWork(limit = 20): Promise<void> {
 
 // Why: a reveal remount reads the still-live park watcher entry at connect time to
 // tell itself apart from an in-place reattach; the host disposes it a beat later.
-async function parkTabForReveal(tabId: string, ptyId: string): Promise<void> {
+async function parkTabForReveal(tabId: string, ptyId: string, worktreeId = 'wt-1'): Promise<void> {
   const { parkedWatchersByTabId } = await import('./terminal-parked-watcher-registry')
   parkedWatchersByTabId.set(tabId, {
-    worktreeId: 'wt-1',
+    worktreeId,
     tabPtyId: ptyId,
     paneIdByPtyId: new Map([[ptyId, 1]]),
     disposersByPtyId: new Map([[ptyId, () => {}]])
@@ -6415,7 +6415,7 @@ describe('connectPanePty', () => {
     }
   })
 
-  it('orders a startup draft behind xterm focus input when Codex renders its composer', async () => {
+  it('orders a startup draft behind existing user input when Codex renders its composer', async () => {
     const { connectPanePty } = await import('./pty-connection')
 
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
@@ -6454,6 +6454,11 @@ describe('connectPanePty', () => {
         mock: { calls: [(data: string) => void][] }
       }
     ).mock.calls[0]?.[0]('\x1b[I')
+    ;(
+      pane.terminal.onData as unknown as {
+        mock: { calls: [(data: string) => void][] }
+      }
+    ).mock.calls[0]?.[0]('USER_DRAFT')
     ;(mockStoreState.recordTerminalInput as ReturnType<typeof vi.fn>).mockClear()
     capturedDataCallback.current?.('\x1b[?2004h\x1b[2K› ')
     await flushAsyncTicks()
@@ -6463,6 +6468,7 @@ describe('connectPanePty', () => {
     )
     expect(transport.sendInput.mock.calls.map(([data]) => data)).toEqual([
       '\x1b[I',
+      'USER_DRAFT',
       '\x1b[200~https://github.com/stablyai/orca/issues/42\x1b[201~'
     ])
     expect(window.api.pty.writeAccepted).not.toHaveBeenCalled()
@@ -9603,6 +9609,8 @@ describe('connectPanePty', () => {
     })
     transportFactoryQueue.push(transport)
     const paneKey = makePaneKey('tab-1', LEAF_1)
+    const transcriptPath =
+      '\\\\?\\C:\\Users\\Example\\.codex\\sessions\\2026\\07\\20\\rollout-codex-session-1.jsonl'
     // Why: after restart agentStatusByPaneKey is empty — the persisted sleeping record is the only provider session id source (#5232).
     mockStoreState = {
       ...mockStoreState,
@@ -9620,7 +9628,11 @@ describe('connectPanePty', () => {
           tabId: 'tab-1',
           worktreeId: 'wt-1',
           agent: 'codex',
-          providerSession: { key: 'session_id', id: 'codex-session-1' },
+          providerSession: {
+            key: 'session_id',
+            id: 'codex-session-1',
+            transcriptPath
+          },
           prompt: 'finish the task',
           state: 'working',
           capturedAt: 1,
@@ -9654,6 +9666,11 @@ describe('connectPanePty', () => {
       expect.objectContaining({
         sessionId: 'lost-pty',
         command: "codex '--dangerously-bypass-approvals-and-sandbox' 'resume' 'codex-session-1'",
+        resumeProviderSession: {
+          key: 'session_id',
+          id: 'codex-session-1',
+          transcriptPath
+        },
         env: expect.objectContaining({
           ORCA_PANE_KEY: paneKey,
           ORCA_TAB_ID: 'tab-1',
@@ -20235,6 +20252,62 @@ describe('connectPanePty', () => {
     expect(writes.join('')).toContain('DEEP_PAIRED_SCROLLBACK')
     expect(writes.join('')).toContain('current screen from initial subscribe')
     expect(transport.getPtyId).toHaveReturnedWith(remotePtyId)
+  })
+
+  it('restores a local main-model snapshot after a contentless park reattach', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const localPtyId = 'global-floating-terminal@@terminal-1'
+    const transport = createMockTransport(localPtyId)
+    transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
+      transport.getPtyId.mockReturnValue(localPtyId)
+      return sessionId ? { id: localPtyId, isReattach: true } : null
+    })
+    transportFactoryQueue.push(transport)
+    const getMainBufferSnapshot = vi.mocked(window.api.pty.getMainBufferSnapshot)
+    getMainBufferSnapshot.mockResolvedValue({
+      data: 'FLOATING-PARK-RESTORE-OK\r\n',
+      cols: 113,
+      rows: 32,
+      seq: 558,
+      source: 'headless'
+    })
+    await parkTabForReveal('tab-1', localPtyId, 'global-floating-terminal')
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: {
+        'global-floating-terminal': [{ id: 'tab-1', ptyId: localPtyId }]
+      },
+      ptyIdsByTabId: { 'tab-1': [localPtyId] },
+      terminalLayoutsByTabId: {
+        'tab-1': {
+          root: { type: 'leaf', leafId: LEAF_1 },
+          activeLeafId: LEAF_1,
+          expandedLeafId: null,
+          ptyIdsByLeafId: { [LEAF_1]: localPtyId }
+        }
+      }
+    }
+
+    const pane = createPane(1)
+    const { parseCallbacks, writes } = captureCallbackTerminalWrites(pane)
+    const deps = createDeps({
+      worktreeId: 'global-floating-terminal',
+      restoredLeafId: LEAF_1,
+      restoredPtyIdByLeafId: { [LEAF_1]: localPtyId }
+    })
+    connectPanePty(pane as never, createManager(1) as never, deps as never)
+    for (let step = 0; step < 30; step += 1) {
+      parseCallbacks.shift()?.()
+      await flushAsyncTicks(2)
+    }
+
+    expect(getMainBufferSnapshot).toHaveBeenCalledOnce()
+    expect(getMainBufferSnapshot).toHaveBeenCalledWith(localPtyId, { scrollbackRows: 5000 })
+    expect(transport.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: localPtyId })
+    )
+    expect(deps.syncPanePtyLayoutBinding).toHaveBeenCalledWith(1, localPtyId)
+    expect(writes.join('')).toContain('FLOATING-PARK-RESTORE-OK')
   })
 
   it('falls back to relay replay when the SSH model snapshot stalls', async () => {

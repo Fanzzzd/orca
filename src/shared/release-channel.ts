@@ -16,6 +16,18 @@ export function isReleaseChannel(value: unknown): value is ReleaseChannel {
   return typeof value === 'string' && RELEASE_CHANNELS.includes(value as ReleaseChannel)
 }
 
+/**
+ * Hourly builds are produced only by the macOS workflow, so the channel has
+ * nothing to offer elsewhere. Shared so the picker, the main-process check, and
+ * any future surface cannot drift on where it is available.
+ */
+export function isChannelSupportedOnPlatform(
+  channel: ReleaseChannel,
+  platform: NodeJS.Platform
+): boolean {
+  return channel !== 'hourly' || platform === 'darwin'
+}
+
 export function getReleaseRepoForChannel(channel: ReleaseChannel): string {
   return channel === 'hourly' ? HOURLY_RELEASE_REPO : MAIN_RELEASE_REPO
 }
@@ -70,10 +82,27 @@ export function getVersionChannel(version: string): ReleaseChannel | null {
   return normalized.includes('-') ? 'rc' : 'stable'
 }
 
+/**
+ * Release-notes page for a version, in whichever repo published it. Hourly tags
+ * exist only in the hourly repo, so a main-repo tag URL for one 404s.
+ * A null version falls back to the plain releases listing (not /releases/latest
+ * — /latest also breaks when GitHub's API is degraded).
+ */
+export function getReleaseNotesUrlForVersion(version: string | null): string {
+  const repo =
+    version && getVersionChannel(version) === 'hourly' ? HOURLY_RELEASE_REPO : MAIN_RELEASE_REPO
+  return version
+    ? `https://github.com/${repo}/releases/tag/v${normalizeTagToVersion(version)}`
+    : `https://github.com/${repo}/releases`
+}
+
 export type ReleaseBuild = {
   tag: string
   version: string
   channel: ReleaseChannel
+  /** The release's GitHub title. Null when it is absent or just repeats the tag,
+   *  so the picker can tell "the workflow named this" from "nobody did". */
+  name: string | null
   publishedAt: string | null
   releaseUrl: string
 }

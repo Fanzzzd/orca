@@ -322,6 +322,14 @@
             "f518e89aa5": "Project already exists in that profile",
             "f03ae7f27b": "Failed to transfer project"
           }
+        },
+        "runtime": {
+          "status": {
+            "runtimeHostDisconnectedDescription": "Check that Orca is running on this server and that your network connection is working, then try again.",
+            "runtimeHostUnreachableNamed": "Can't reach {{hostName}}",
+            "runtimeHostUnreachable": "Can't reach Orca server",
+            "tryAgain": "Try again"
+          }
         }
       }
     },
@@ -826,8 +834,8 @@
         "pasteTooLarge": "Paste is too large."
       },
       "useMacosTccPromptNotice": {
-        "title": "Reduce repeated macOS file-access prompts",
-        "description": "macOS attributes file access by your agents and terminal tools to Orca. Granting Full Disk Access reduces these prompts.",
+        "title": "Seeing “Orca would like to access…” prompts?",
+        "description": "Permission messages from macOS may appear when an agent or terminal tool running in Orca attempts to access protected files. Grant Full Disk Access in Settings to reduce these prompts.",
         "openSettings": "Open Settings",
         "dismiss": "Don't show again"
       }
@@ -839,7 +847,11 @@
         "9263e75f49": "Codex is using the previous account",
         "d3e8a1f4b2": "Account switched",
         "9375620cc3": "Restart this session to use {{value0}}. It stays on the previous account until you do.",
-        "6133594b12": "Keep old account"
+        "6133594b12": "Keep old account",
+        "8f0d5c92a1": "Codex setup changed",
+        "3ea91b5c07": "This Codex session is using an outdated configuration",
+        "e6b7139d2a": "Restart this session to load your current Codex configuration.",
+        "7b1d20f4c8": "Keep current session"
       },
       "FirstLaunchBanner": {
         "b9e1b966c7": "Dismiss notice",
@@ -893,11 +905,6 @@
         "83ac703dda": "Assignees",
         "00ccdf9b5a": "Status",
         "2aa9acdf34": "Edit labels on GitHub",
-        "d23bbb6416": "{{value0}} skipped",
-        "18f80e1329": "{{value0}} pending",
-        "b1ac991806": "{{value0}} failing",
-        "checksNeedActionChip": "{{value0}} action required",
-        "311d0cee55": "{{value0}} passing",
         "e52bed9264": "No checks reported yet",
         "90020cc1f3": "This pull request has no reported checks yet.",
         "ecffebc251": "No checks found",
@@ -1391,11 +1398,6 @@
         "bc215fea4d": "+ Label",
         "b936cc51a4": "Closed",
         "7b8f6bf6d8": "Open",
-        "e6ad0a8d06": "{{value0}} skipped",
-        "88267924d5": "{{value0}} pending",
-        "ae2a34c7b8": "{{value0}} failing",
-        "checksNeedActionChip": "{{value0}} action required",
-        "7c5035931a": "{{value0}} passing",
         "a18d01cda3": "No checks reported yet",
         "3912daf310": "This pull request has no reported checks yet.",
         "45877f5089": "No checks found",
@@ -3929,7 +3931,9 @@
           "upToDate": "Up to date",
           "installed": "Installed",
           "details": "Details",
-          "needsAttention": "Review skill"
+          "needsAttention": "Review skill",
+          "checking": "Checking...",
+          "checkFailed": "Check failed"
         }
       },
       "sidebar": {
@@ -4588,7 +4592,10 @@
           "setParentWorkspace": "Set Parent Worktree...",
           "workspaceSection": "Workspace",
           "primaryDeleteDisabled": "Primary worktree — can't be deleted. Remove the project instead.",
-          "deleteWorktree": "Delete Worktree"
+          "deleteWorktree": "Delete Worktree",
+          "sleepWithDescendants": "Sleep with Descendants ({{value0}})",
+          "sleepWithDescendantsDescription": "Close active panels in this workspace and every nested descendant to free up memory and CPU.",
+          "deleteWithDescendants": "Delete with Descendants…"
         },
         "WorktreeList": {
           "7a8b9c0d1e": "Update required",
@@ -5727,7 +5734,7 @@
           "e7bb06007c": "LAN",
           "4a73f5217a": "Apple Events for scripts that control other local apps.",
           "e119f0d66b": "Automation",
-          "7ca17b62c8": "macOS names Orca when the agents it runs read other apps' data, because Orca is the responsible process for terminal commands. Grant this to Orca and Orca Helper to reduce those prompts. Then quit Orca, end any surviving Orca Helper process, and reopen Orca.",
+          "7ca17b62c8": "macOS names Orca when the agents it runs read other apps' data, because Orca is the responsible process for terminal commands. Grant this to Orca to reduce those prompts. Then quit and reopen Orca.",
           "c566bca278": "Full Disk Access",
           "9f35980756": "Keystroke injection, window control, and UI automation tools.",
           "5b2f22ca2d": "Accessibility",
@@ -10086,14 +10093,16 @@
           "description": "Switch update channels or jump to any published build, including older ones. Downgrades are allowed and unvetted builds can be broken.",
           "devOnly": "Dev only",
           "channelAriaLabel": "Update channel",
-          "hourlyWarning": "Hourly builds are macOS-only, ship straight from main with no test gate, and are signed but not notarized. Keep a stable build handy.",
+          "hourlyWarning": "Hourly builds are macOS-only and ship straight from main with no test gate. Keep a stable build handy.",
           "loadingBuilds": "Loading builds…",
           "noBuilds": "No builds found",
           "refresh": "Refresh build list",
           "switchTo": "Switch to build",
           "alreadyRunning": "This is the build you are running.",
           "willSwitch": "{{value0}} → {{value1}}",
-          "webUnavailable": "Switching builds is only available in the desktop app."
+          "webUnavailable": "Switching builds is only available in the desktop app.",
+          "hourlyMacOnlyAria": "Hourly (macOS only)",
+          "hourlyMacOnly": "Hourly builds are produced only for macOS. Linux and Windows stay on Stable or RC."
         }
       },
       "right": {
@@ -10682,6 +10691,8 @@
                 "9ad98f2a17": "pending",
                 "5e52f4ef7f": "failing",
                 "02ca4f9074": "passing",
+                "checksUnresolvedChip": "unresolved",
+                "checksUnresolvedStripHint": "These checks finished without a pass or fail verdict.",
                 "e15a8b77ef": "No inline details are available for this check.",
                 "679bf2093c": "Copy log excerpt",
                 "d713f500b2": "Log excerpt",
@@ -11257,7 +11268,14 @@
             "sessionRole": "Session",
             "jumpToOriginalPane": "Jump to Original Pane",
             "worktree": "Worktree",
-            "jumpToWorktree": "Jump to Worktree"
+            "jumpToWorktree": "Jump to Worktree",
+            "firstPrompt": "First prompt",
+            "firstPromptCopied": "First prompt copied",
+            "copyFirstPrompt": "Copy first prompt",
+            "copied": "Copied",
+            "copy": "Copy",
+            "noFirstPromptAvailable": "No first prompt available",
+            "loadingFirstPrompt": "Loading first prompt…"
           },
           "AiVaultSessionRow": {
             "noPreviewAvailable": "No conversation preview available",
@@ -11916,7 +11934,9 @@
         "NetworkInterfacePicker": {
           "trigger-label": "Network address to advertise",
           "custom-option": "{{address}} (custom)",
-          "add-custom": "Add custom address…"
+          "add-custom": "Add custom address…",
+          "custom-section": "Custom",
+          "remove-custom": "Remove {{address}}"
         },
         "WindowsFirewallNotice": {
           "repair-success": "Windows Firewall now allows Orca Mobile on private networks",
@@ -14376,6 +14396,13 @@
         "title": "Workspace created from a local base",
         "description": "The remote-tracking ref \"{{value0}}\" was unavailable, so Orca used local \"{{value1}}\" instead. This workspace may not include the latest remote changes.",
         "dismiss": "Got it"
+      },
+      "pr-check-counts": {
+        "passingChip": "{{value0}} passing",
+        "failingChip": "{{value0}} failing",
+        "pendingChip": "{{value0}} pending",
+        "needsActionChip": "{{value0}} action required",
+        "unresolvedChip": "{{value0}} unresolved"
       }
     },
     "i18n": {
@@ -14673,6 +14700,20 @@
         "addressInUse": "Another process may be holding the port. Restart Orca to try again.",
         "unknown": "Restart Orca to try again."
       }
+    }
+  },
+  "featureTips": {
+    "voice": {
+      "demoPrompt": "Review this diff for edge cases and add tests for anything you find.",
+      "startDictation": "Start dictation",
+      "agentPromptTitle": "Agent prompt",
+      "listening": "Listening...",
+      "focusPaneInstruction": "Focus a terminal, editor, or agent prompt, then press",
+      "startInstruction": "to start voice dictation. Press",
+      "stopInstruction": "again to stop.",
+      "unassignedInstruction": "Assign a dictation shortcut before starting voice dictation in a focused pane.",
+      "settingsInstruction": "Change the model, dictation mode, or shortcut anytime in",
+      "settingsLink": "Settings → Voice"
     }
   }
 }

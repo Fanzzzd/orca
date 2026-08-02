@@ -149,6 +149,9 @@ function createFakeRelay(): FakeRelay {
 function createSession(targetId: string): InstanceType<typeof SshRelaySession> {
   const store = {
     getRepos: vi.fn().mockReturnValue([]),
+    getSshPtyConsumerRecovery: vi.fn().mockReturnValue(null),
+    upsertSshPtyConsumerRecovery: vi.fn(),
+    removeSshPtyConsumerRecovery: vi.fn(),
     getSshRemotePtyLeases: vi.fn().mockReturnValue([]),
     markSshRemotePtyLease: vi.fn(),
     markSshRemotePtyLeases: vi.fn()
@@ -478,6 +481,7 @@ describe('SshRelaySession agent hooks over a fake relay transport', () => {
         toolUseId: 'toolu-1',
         toolAgentId: 'agent-subagent-a',
         toolAgentType: 'Review',
+        claudeRunningNonAgentTask: true,
         providerSessionOnly: true,
         providerSession: {
           key: 'session_id',
@@ -500,6 +504,7 @@ describe('SshRelaySession agent hooks over a fake relay transport', () => {
           toolUseId: 'toolu-1',
           toolAgentId: 'agent-subagent-a',
           toolAgentType: 'Review',
+          claudeRunningNonAgentTask: true,
           providerSessionOnly: true,
           providerSession: {
             key: 'session_id',

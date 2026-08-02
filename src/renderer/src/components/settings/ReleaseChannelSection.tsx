@@ -1,6 +1,6 @@
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Apple, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAppStore } from '../../store'
 import { Button } from '../ui/button'
@@ -8,9 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { SettingsSegmentedControl, SettingsSubsectionHeader } from './SettingsFormControls'
 import { Badge } from '../ui/badge'
 import { translate } from '@/i18n/i18n'
+import { getShortcutPlatform } from '@/lib/shortcut-platform'
 import {
   RELEASE_CHANNELS,
   getVersionChannel,
+  isChannelSupportedOnPlatform,
   parseHourlyVersionStamp,
   type ReleaseBuild,
   type ReleaseChannel
@@ -25,16 +27,23 @@ const CHANNEL_LABELS: Record<ReleaseChannel, string> = {
 const CHANNEL_DESCRIPTIONS: Record<ReleaseChannel, string> = {
   stable: 'Shipped releases. What everyone else is running.',
   rc: 'Release candidates cut ahead of each stable.',
-  hourly: 'Unvetted macOS builds from main, built every hour. No tests, no notarization.'
+  hourly: 'macOS only. Unvetted builds from main, built every hour. No tests.'
 }
 
 function formatBuildLabel(build: ReleaseBuild): string {
+  // Why the release's own title wins: the hourly workflow composes it
+  // (`1.4.163 • 01 • 07-31 13:54 • e698241`), so this row is the same string the
+  // GitHub releases list shows — one thing to search for in either place, rather
+  // than two renderings of the same build that have to be matched up by eye.
+  if (build.name) {
+    return build.name
+  }
   const stamp = parseHourlyVersionStamp(build.version)
   if (!stamp) {
     return build.version
   }
-  // Why: an hourly's semver tail is an opaque timestamp; show it as local time so
-  // "which build was that" is answerable at a glance.
+  // Fallback for hourlies cut before that naming; retention ages them out in ~3
+  // days. An hourly's semver tail is an opaque timestamp, so show it as a date.
   return `${build.version.split('-')[0]} · ${stamp.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -54,8 +63,15 @@ export function ReleaseChannelSection(): React.JSX.Element {
   const [loading, setLoading] = useState(false)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
 
+  const platform = getShortcutPlatform()
   const runningChannel = appVersion ? getVersionChannel(appVersion) : null
-  const activeChannel = releaseChannelOverride ?? runningChannel ?? 'stable'
+  const requestedChannel = releaseChannelOverride ?? runningChannel ?? 'stable'
+  // Why: a persisted 'hourly' can arrive on Linux/Windows — settings sync, or a
+  // profile carried over from a Mac. Fall back rather than rendering a selected
+  // segment the user cannot act on and a build list that can never install.
+  const activeChannel = isChannelSupportedOnPlatform(requestedChannel, platform)
+    ? requestedChannel
+    : 'stable'
   const busy = updateStatus.state === 'checking' || updateStatus.state === 'downloading'
 
   useEffect(() => {
@@ -170,10 +186,36 @@ export function ReleaseChannelSection(): React.JSX.Element {
             'auto.components.settings.ReleaseChannelSection.channelAriaLabel',
             'Update channel'
           )}
-          options={RELEASE_CHANNELS.map((channel) => ({
-            value: channel,
-            label: CHANNEL_LABELS[channel]
-          }))}
+          // Why disabled rather than hidden: a Linux/Windows dev who has heard
+          // about the hourly channel should see that it exists and why it is
+          // unavailable, instead of silently not finding it.
+          options={RELEASE_CHANNELS.map((channel) => {
+            const supported = isChannelSupportedOnPlatform(channel, platform)
+            return {
+              value: channel,
+              label: supported ? (
+                CHANNEL_LABELS[channel]
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  {CHANNEL_LABELS[channel]}
+                  <Apple className="size-3" aria-hidden="true" />
+                </span>
+              ),
+              disabled: !supported,
+              ariaLabel: supported
+                ? undefined
+                : translate(
+                    'auto.components.settings.ReleaseChannelSection.hourlyMacOnlyAria',
+                    'Hourly (macOS only)'
+                  ),
+              tooltip: supported
+                ? undefined
+                : translate(
+                    'auto.components.settings.ReleaseChannelSection.hourlyMacOnly',
+                    'Hourly builds are produced only for macOS. Linux and Windows stay on Stable or RC.'
+                  )
+            }
+          })}
         />
         <p className="text-xs text-muted-foreground">{CHANNEL_DESCRIPTIONS[activeChannel]}</p>
       </div>
@@ -184,7 +226,7 @@ export function ReleaseChannelSection(): React.JSX.Element {
           <p className="text-xs text-muted-foreground">
             {translate(
               'auto.components.settings.ReleaseChannelSection.hourlyWarning',
-              'Hourly builds are macOS-only, ship straight from main with no test gate, and are signed but not notarized. Keep a stable build handy.'
+              'Hourly builds are macOS-only and ship straight from main with no test gate. Keep a stable build handy.'
             )}
           </p>
         </div>
