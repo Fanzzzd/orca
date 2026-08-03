@@ -1856,7 +1856,10 @@
         "75a38d7df8": "GitHub data is temporarily unavailable. Its API may be down, rate-limited, or unreachable. Please try again shortly.",
         "noGithubSourceDetected": "No GitHub source detected for",
         "noGithubSourceDetectedHint": "it may have no GitHub remote, or the source could not be resolved.",
-        "jiraLinkSourceUnavailable": "Couldn’t link this Jira issue. Reconnect Jira or pick the matching site, then try again."
+        "jiraLinkSourceUnavailable": "Couldn’t link this Jira issue. Reconnect Jira or pick the matching site, then try again.",
+        "loadPageUnreachable": "La página {{value0}} está más allá de lo que la búsqueda de GitHub puede devolver.",
+        "loadPageFailed": "No se pudo cargar la página {{value0}} desde GitHub.",
+        "loadPageNoMoreResults": "No hay más resultados en la página {{value0}}."
       },
       "Terminal": {
         "73768427cf": "Cerrar",
@@ -7059,7 +7062,12 @@
           "4a342f44c1": "Conexión avanzada",
           "e9609ddca6": "Proxy, host de salto y reutilización de conexión",
           "8c922dffba": "Reutilizar la conexión SSH para una configuración más rápida",
-          "53e9aabfc0": "Usa multiplexación de OpenSSH cuando está disponible. Desactívalo para hosts con restricciones SSH personalizadas."
+          "53e9aabfc0": "Usa la multiplexación de OpenSSH cuando esté disponible. Desactiva esta opción para hosts con restricciones SSH personalizadas.",
+          "editTitle": "Editar host SSH",
+          "addTitle": "Agregar host SSH",
+          "editDescription": "Actualiza los detalles de conexión de esta máquina. Los cambios se aplican en la próxima conexión.",
+          "addDescription": "Agrega una máquina persistente en la que puedas iniciar sesión por SSH.",
+          "editingPrefix": "Editando"
         },
         "TasksPane": {
           "f71d8a9dd3": "Proveedores de tareas",
@@ -9201,7 +9209,8 @@
           }
         },
         "computerUseSummary": {
-          "permissionsRequired": "Requiere {{value0}} permiso{{value1}} antes de que los agentes puedan operar ventanas de apps.",
+          "permissionsRequired_one": "Se requiere 1 permiso antes de que los agentes puedan operar ventanas de apps.",
+          "permissionsRequired_other": "Se requieren {{value0}} permisos antes de que los agentes puedan operar ventanas de apps.",
           "checkingTitle": "Comprobando el acceso a Computer Use.",
           "checkingDescription": "Orca está comprobando los permisos de privacidad de macOS para el helper de Computer Use.",
           "unavailableTitle": "Computer Use no está disponible.",
@@ -11094,6 +11103,7 @@
             "transcriptsSkipped": "{{count}} transcripciones omitidas",
             "noAgentSessionsFound": "No se encontraron sesiones de agentes",
             "noSessionsMatchFilters": "Ninguna sesión coincide con los filtros actuales",
+            "noAgentsSelected": "Ningún agente seleccionado",
             "sessionId": "ID de sesión",
             "logPath": "Ruta del log",
             "agents": "Agentes",
@@ -11119,6 +11129,8 @@
             "viewOptionsAriaLabel": "Opciones de vista del historial de sesiones",
             "viewOptions": "Opciones de vista",
             "agents": "Agentes",
+            "selectAllAgents": "Seleccionar todo",
+            "clearAgents": "Limpiar",
             "sort": "Ordenar",
             "lastUpdated": "Última actualización",
             "created": "Creado",
@@ -11193,9 +11205,14 @@
             "emptyConversationDetail": "Esta sesión no tiene conversación guardada y no se puede reanudar.",
             "queuedMessages": "{{value0}} mensaje(s) en cola",
             "subagentTranscripts": "{{value0}} transcripción(es) de subagente",
+            "prompt": "Prompt",
             "firstPrompt": "Primer prompt",
+            "recentPrompt": "Prompt reciente",
             "firstPromptCopied": "Primer prompt copiado",
+            "recentPromptCopied": "Prompt reciente copiado",
             "copyFirstPrompt": "Copiar primer prompt",
+            "copyRecentPrompt": "Copiar prompt reciente",
+            "copyPrompt": "Copiar prompt",
             "copied": "Copiado",
             "copy": "Copiar",
             "noFirstPromptAvailable": "No hay primer prompt disponible",

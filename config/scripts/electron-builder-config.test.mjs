@@ -11,7 +11,6 @@ const electronBuilderNativeRebuild = require('./electron-builder-native-rebuild.
 const {
   createPackagedRuntimeNodeModuleResources,
   findAsarEntry,
-  prunePackagedIrohNapi,
   prunePackagedNodePty,
   prunePackagedParcelWatcher,
   prunePackagedSherpaOnnx,
@@ -22,8 +21,10 @@ const {
 
 const MUTABLE_BUILD_ENV = [
   'ORCA_MAC_HOURLY',
+  'ORCA_MAC_ADHOC',
   'ORCA_MAC_RELEASE',
   'ORCA_HOURLY_BUILD_VERSION',
+  'ORCA_ADHOC_BUILD_VERSION',
   'ORCA_LOCAL_BUILD_VERSION'
 ]
 
@@ -52,6 +53,7 @@ function withEnv(env, assert) {
 }
 
 const withHourlyEnv = (assert) => withEnv({ ORCA_MAC_HOURLY: '1' }, assert)
+const withAdhocEnv = (assert) => withEnv({ ORCA_MAC_ADHOC: '1' }, assert)
 
 describe('electron-builder config', () => {
   it('keeps the packaged app identity aligned with local-build validation', () => {
@@ -350,6 +352,40 @@ describe('electron-builder config', () => {
     )
   })
 
+  // Why adhoc carries the identical mac identity to hourly: it installs over a
+  // real Orca through the same updater path, so the same signing and the same TCC
+  // argument apply. Only the destination repo differs.
+  it('builds adhoc artifacts with the release identity and its own repo', () => {
+    withAdhocEnv((config) => {
+      expect(config.appId).toBe('com.stablyai.orca')
+      expect(config.mac.hardenedRuntime).toBe(true)
+      expect(config.mac.notarize).toBe(true)
+      expect(config.forceCodeSigning).toBe(true)
+      expect(config.publish).toMatchObject({ repo: 'orca-adhoc', releaseType: 'prerelease' })
+    })
+  })
+
+  it('stamps adhoc packages with the adhoc version', () => {
+    withEnv(
+      { ORCA_MAC_ADHOC: '1', ORCA_ADHOC_BUILD_VERSION: '1.4.160-adhoc.20260728140533' },
+      (config) => {
+        expect(config.extraMetadata).toEqual({ version: '1.4.160-adhoc.20260728140533' })
+      }
+    )
+  })
+
+  // Why: the two dev channels share every packaging decision except where they
+  // publish, so a future edit that collapses them must not also collapse the
+  // repos — a branch build landing in orca-hourly would be offered to everyone
+  // riding main.
+  it('keeps the two dev channels on separate repos', () => {
+    withHourlyEnv((hourly) => {
+      withAdhocEnv((adhoc) => {
+        expect(hourly.publish.repo).not.toBe(adhoc.publish.repo)
+      })
+    })
+  })
+
   it('uses Orca native rebuild hook instead of electron-builder default rebuild', () => {
     expect(electronBuilderConfig.beforeBuild).toBe(electronBuilderNativeRebuild)
     expect(electronBuilderConfig.npmRebuild).toBe(true)
@@ -462,39 +498,6 @@ describe('electron-builder config', () => {
         target.startsWith(join('node_modules', '@parcel', 'watcher-'))
       )
     ).toBe(true)
-  })
-
-  it('includes @number0/iroh and its platform subpackage in the packaged runtime closure', () => {
-    // Why: the main process lazy-imports '@number0/iroh' for the iroh mobile
-    // transport; without the closure entry the packaged import throws and the
-    // desktop silently loses iroh pairing.
-    const packaged = createPackagedRuntimeNodeModuleResources()
-    const packagedTargets = packaged.map((resource) => resource.to)
-    expect(packagedTargets).toContain(join('node_modules', '@number0', 'iroh'))
-    expect(
-      packagedTargets.some((target) => target.startsWith(join('node_modules', '@number0', 'iroh-')))
-    ).toBe(true)
-  })
-
-  it('prunes non-target @number0/iroh platform subpackages from packaged runtime resources', async () => {
-    const resourcesDir = await mkdtemp(join(tmpdir(), 'orca-iroh-napi-prune-'))
-    try {
-      const scopeDir = join(resourcesDir, 'node_modules', '@number0')
-      await mkdir(join(scopeDir, 'iroh'), { recursive: true })
-      await mkdir(join(scopeDir, 'iroh-darwin-arm64'), { recursive: true })
-      await mkdir(join(scopeDir, 'iroh-linux-x64-gnu'), { recursive: true })
-      await mkdir(join(scopeDir, 'iroh-linux-arm64-musl'), { recursive: true })
-      await mkdir(join(scopeDir, 'iroh-win32-x64-msvc'), { recursive: true })
-
-      prunePackagedIrohNapi(resourcesDir, 'darwin')
-
-      await expect(readdir(scopeDir).then((entries) => entries.sort())).resolves.toEqual([
-        'iroh',
-        'iroh-darwin-arm64'
-      ])
-    } finally {
-      await rm(resourcesDir, { recursive: true, force: true })
-    }
   })
 
   it('prunes non-target @parcel/watcher platform subpackages from packaged runtime resources', async () => {
@@ -659,4 +662,39 @@ describe('electron-builder config', () => {
       }
     }
   )
+
+  // Why: the .deb/.rpm update-recovery path keys entirely off the resources/package-type marker that
+  // app-builder-lib's FpmTarget writes. If packaging silently stops shipping an fpm target, or adds
+  // one the recovery path does not cover, getLinuxRootPackageType() returns null, autoInstallOnAppQuit
+  // quietly goes back to true, and no unit test notices.
+  describe('linux root-package update recovery contract', () => {
+    // FpmTarget writes resources/package-type only for targets it supports auto-update for.
+    const MARKER_TARGETS = new Set(['deb', 'rpm', 'pacman'])
+    const RECOVERABLE_TARGETS = new Set(['deb', 'rpm'])
+    const linuxTargets = electronBuilderConfig.linux.target.map((entry) =>
+      typeof entry === 'string' ? entry : entry.target
+    )
+
+    it('still ships an AppImage plus at least one root-package target', () => {
+      expect(linuxTargets).toContain('AppImage')
+      expect(linuxTargets.some((target) => MARKER_TARGETS.has(target))).toBe(true)
+    })
+
+    it('ships no root-package target the recovery path cannot recover', () => {
+      const unrecoverable = linuxTargets.filter(
+        (target) => MARKER_TARGETS.has(target) && !RECOVERABLE_TARGETS.has(target)
+      )
+      expect(unrecoverable).toEqual([])
+    })
+
+    it('accepts exactly the markers electron-updater maps to a root-package updater', async () => {
+      const source = await readFile(
+        new URL('../../src/main/linux-update-package-type.ts', import.meta.url),
+        'utf8'
+      )
+      for (const target of linuxTargets.filter((entry) => RECOVERABLE_TARGETS.has(entry))) {
+        expect(source).toContain(`value === '${target}'`)
+      }
+    })
+  })
 })
