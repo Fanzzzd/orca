@@ -45,24 +45,23 @@ describe('mobile endpoint supervisor', () => {
 
   it('does not spin when no relay credential is eligible', async () => {
     const logical = new FakeLogicalClient('disconnected', 'lan')
-    const now = vi.fn(() => Date.now())
     const openRelay = vi.fn(() => new FakeRelaySession('connected'))
+    const setTimer = vi.fn(setTimeout)
     const deps = dependencies({
-      now,
       openRelay,
+      setTimer,
       readBundle: vi.fn(async () => ({
         ...bundle,
         current: { ...bundle.current, expiresAt: Date.now() - 1 }
       }))
     })
     const supervisor = new MobileEndpointSupervisor(logical, host, deps)
-    const callsBeforeStart = now.mock.calls.length
 
     await supervisor.start()
     supervisor.stop()
 
     expect(openRelay).not.toHaveBeenCalled()
-    expect(now).toHaveBeenCalledTimes(callsBeforeStart + 2)
+    expect(setTimer).toHaveBeenCalledTimes(1)
   })
 
   it('fails over when the direct retry loop publishes reconnecting', async () => {
@@ -583,6 +582,7 @@ describe('mobile endpoint supervisor', () => {
       .mockReturnValueOnce(new FakeRelaySession('disconnected', new RelayOuterError(4408)))
     const deps = dependencies({
       openRelay,
+      openDirect: vi.fn(() => new FakeSession('disconnected')),
       resolveRelay: vi.fn(() => resolvePending)
     })
     const supervisor = new MobileEndpointSupervisor(logical, host, deps)
@@ -611,12 +611,13 @@ describe('mobile endpoint supervisor', () => {
       .mockReturnValueOnce(new FakeRelaySession('disconnected', new RelayOuterError(4408)))
     const deps = dependencies({
       openRelay,
+      openDirect: vi.fn(() => new FakeSession('disconnected')),
       resolveRelay: vi.fn(() => resolvePending)
     })
     const supervisor = new MobileEndpointSupervisor(logical, host, deps)
 
     await supervisor.start()
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(deps.resolveRelay).toHaveBeenCalledOnce())
     supervisor.setForeground(false)
     finishResolve?.(relay)
@@ -652,11 +653,14 @@ describe('mobile endpoint supervisor', () => {
       .fn()
       .mockReturnValueOnce(new FakeRelaySession('connected', null, Date.now() + 31_000))
       .mockImplementation(() => new FakeRelaySession('disconnected', new RelayOuterError(4404)))
-    const deps = dependencies({ openRelay })
+    const deps = dependencies({
+      openRelay,
+      openDirect: vi.fn(() => new FakeSession('disconnected'))
+    })
     const supervisor = new MobileEndpointSupervisor(logical, host, deps)
 
     await supervisor.start()
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(60_000)
     expect(openRelay).toHaveBeenCalledTimes(2)
 
     await vi.advanceTimersByTimeAsync(5000)
@@ -675,12 +679,13 @@ describe('mobile endpoint supervisor', () => {
       .mockImplementation(() => new FakeRelaySession('connected'))
     const deps = dependencies({
       openRelay,
+      openDirect: vi.fn(() => new FakeSession('disconnected')),
       randomBytes: () => new Uint8Array([128, 0])
     })
     const supervisor = new MobileEndpointSupervisor(logical, host, deps)
 
     await supervisor.start()
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(60_000)
     expect(openRelay).toHaveBeenCalledTimes(2)
 
     // The old relay can outlive its rejected lease replacement, then close separately.
@@ -700,12 +705,13 @@ describe('mobile endpoint supervisor', () => {
       .mockImplementation(() => new FakeRelaySession('connected'))
     const deps = dependencies({
       openRelay,
+      openDirect: vi.fn(() => new FakeSession('disconnected')),
       randomBytes: () => new Uint8Array([128, 0])
     })
     const supervisor = new MobileEndpointSupervisor(logical, host, deps)
 
     await supervisor.start()
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(60_000)
     expect(openRelay).toHaveBeenCalledTimes(2)
 
     supervisor.setForeground(true)

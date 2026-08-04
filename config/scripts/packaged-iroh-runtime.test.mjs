@@ -28,7 +28,7 @@ it('prunes non-target @number0/iroh platform subpackages from packaged runtime r
     await mkdir(join(scopeDir, 'iroh-linux-arm64-musl'), { recursive: true })
     await mkdir(join(scopeDir, 'iroh-win32-x64-msvc'), { recursive: true })
 
-    prunePackagedIrohNapi(resourcesDir, 'darwin')
+    prunePackagedIrohNapi(resourcesDir, 'darwin', 'arm64')
 
     await expect(readdir(scopeDir).then((entries) => entries.sort())).resolves.toEqual([
       'iroh',

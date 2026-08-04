@@ -43,18 +43,19 @@ export class FakeRelaySession extends FakeSession implements MobileRelayRpcSessi
   constructor(
     state: ConnectionState,
     private readonly failure: Error | null = null,
-    private readonly lease = Date.now() + 120_000
+    private readonly resumeExpiry = Date.now() + 30 * 24 * 3_600_000
   ) {
     super(state)
   }
-  getLeaseExpiresAt = () => this.lease
+  getAttachDeadlineAt = () => Date.now() + 10_000
+  getResumeExpiresAt = () => this.resumeExpiry
   getResumeConfirmation = () => ({
     v: 1 as const,
     reqId: 'confirm-1',
     currentVersion: 2,
     acceptedAs: 'current' as const,
     renewed: true,
-    resumeExpiresAt: Date.now() + 300_000
+    resumeExpiresAt: this.resumeExpiry
   })
   getFailure = () => this.failure
 }

@@ -13,6 +13,10 @@ const BASE64URL_43_PATTERN = /^[A-Za-z0-9_-]{43}$/
 // Why: iroh 1.1.0 EndpointId.toString() is 64-char lowercase hex (32-byte ed25519 public key).
 const IROH_ENDPOINT_ID_PATTERN = /^[0-9a-f]{64}$/
 const MAX_INVITE_TTL_MS = 10 * 60 * 1000
+// The cell stamps expiry from its own clock; without leeway, a cell clock
+// even slightly ahead of this machine makes every invite fail validation
+// (same class as the host-proof freshness incident).
+const INVITE_EXPIRY_CLOCK_SKEW_MS = 30 * 1000
 
 function isCanonicalHttpsOrigin(value: string): boolean {
   if (
@@ -57,7 +61,10 @@ export function createPairingOfferSchema(now: () => number = () => Date.now()) {
       .int()
       .refine((value) => {
         const currentTime = now()
-        return value > currentTime && value <= currentTime + MAX_INVITE_TTL_MS
+        return (
+          value > currentTime &&
+          value <= currentTime + MAX_INVITE_TTL_MS + INVITE_EXPIRY_CLOCK_SKEW_MS
+        )
       }, 'Expected a future invite expiry no more than 10 minutes away'),
     e2eeFraming: z.literal(2)
   })
