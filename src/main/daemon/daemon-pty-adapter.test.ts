@@ -5,10 +5,11 @@ import { join } from 'node:path'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { DaemonClient } from './client'
 import { DaemonProtocolError } from './daemon-errors'
-import { DaemonPtyAdapter } from './daemon-pty-adapter'
+import { DaemonPtyAdapter, LIVENESS_PROBE_TIMEOUT_MS } from './daemon-pty-adapter'
 import {
   COMPLETION_PROCESS_INSPECTION_PROTOCOL_VERSION,
   GET_FOREGROUND_PROCESS_PROTOCOL_VERSION,
+  GET_SIZE_PROTOCOL_VERSION,
   PROTOCOL_VERSION
 } from './daemon-protocol-version'
 import { DaemonServer } from './daemon-server'
@@ -1203,6 +1204,103 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       vi.spyOn(client, 'request').mockRejectedValueOnce(new Error('unavailable'))
 
       await expect(adapter.probePtyLiveness('session')).resolves.toBeNull()
+    })
+
+    function createProbeAdapter(
+      protocolVersion: number,
+      request: ReturnType<typeof vi.fn>
+    ): DaemonPtyAdapter {
+      const probeAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, protocolVersion })
+      ;(
+        probeAdapter as unknown as {
+          client: { request: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }
+        }
+      ).client = { request, disconnect: vi.fn() }
+      return probeAdapter
+    }
+
+    // Why: a pre-v18 daemon rejects `getSize` as an unknown request type, so it would answer
+    // `null` forever — and one `null` makes the owner fan-out permanently unprovable, which
+    // would leave a genuinely dead pane unable to ever retire and respawn.
+    it('answers a pre-getSize daemon from its session inventory', async () => {
+      // Faithful pre-v18 daemon: routeRequest falls through its switch and error-replies.
+      const request = vi.fn(async (type: string) => {
+        if (type !== 'listSessions') {
+          throw new Error(`Unknown request type: ${type}`)
+        }
+        return {
+          sessions: [
+            { sessionId: 'legacy-live', isAlive: true },
+            { sessionId: 'legacy-exited', isAlive: false }
+          ]
+        }
+      })
+      const legacy = createProbeAdapter(GET_SIZE_PROTOCOL_VERSION - 1, request)
+
+      await expect(legacy.probePtyLiveness('legacy-live')).resolves.toBe(true)
+      await expect(legacy.probePtyLiveness('legacy-exited')).resolves.toBe(false)
+      await expect(legacy.probePtyLiveness('never-existed')).resolves.toBe(false)
+      expect(request).toHaveBeenCalledWith('listSessions', undefined, LIVENESS_PROBE_TIMEOUT_MS)
+      expect(request).not.toHaveBeenCalledWith('getSize', expect.anything())
+
+      legacy.dispose()
+    })
+
+    // The P0 boundary: an owner that cannot be reached must never read as one that answered "absent".
+    it('still answers unknown when a pre-getSize daemon cannot be reached', async () => {
+      const request = vi.fn(async () => {
+        throw new Error('Not connected')
+      })
+      const legacy = createProbeAdapter(GET_SIZE_PROTOCOL_VERSION - 1, request)
+
+      await expect(legacy.probePtyLiveness('legacy-live')).resolves.toBeNull()
+
+      legacy.dispose()
+    })
+
+    // Why: `getSize` shipped into an already-released protocol without a version bump, so a
+    // daemon can report a version that implies support and still reject the request. Gating on
+    // the number alone left those daemons permanently unprovable — the same wedge, narrowed.
+    it('falls back when a daemon rejects getSize despite reporting a version that has it', async () => {
+      const request = vi.fn(async (type: string) => {
+        if (type === 'getSize') {
+          throw new Error(`Unknown request type: ${type}`)
+        }
+        return { sessions: [{ sessionId: 'ambiguous-live', isAlive: true }] }
+      })
+      const ambiguous = createProbeAdapter(GET_SIZE_PROTOCOL_VERSION, request)
+
+      await expect(ambiguous.probePtyLiveness('ambiguous-live')).resolves.toBe(true)
+      await expect(ambiguous.probePtyLiveness('never-existed')).resolves.toBe(false)
+
+      // The rejection is remembered, so later probes skip the round trip that cannot work.
+      expect(request.mock.calls.filter(([type]) => type === 'getSize')).toHaveLength(1)
+      // Why pinned here: a wedged daemon holds its socket open, so an unbounded getSize would
+      // stall a pane mount for the client's 30s default instead of answering "unknown" in 2s.
+      expect(request).toHaveBeenCalledWith(
+        'getSize',
+        { sessionId: 'ambiguous-live' },
+        LIVENESS_PROBE_TIMEOUT_MS
+      )
+
+      ambiguous.dispose()
+    })
+
+    // The safety direction: only the daemon's own "I do not implement that" may switch strategy.
+    // A transient failure must stay unproven rather than be retried as a capability question.
+    it('keeps a transient getSize failure unproven instead of treating it as unsupported', async () => {
+      const request = vi.fn(async (type: string) => {
+        if (type === 'getSize') {
+          throw new Error('Connection lost')
+        }
+        return { sessions: [] }
+      })
+      const flaky = createProbeAdapter(GET_SIZE_PROTOCOL_VERSION, request)
+
+      await expect(flaky.probePtyLiveness('live-elsewhere')).resolves.toBeNull()
+      expect(request).not.toHaveBeenCalledWith('listSessions', undefined, LIVENESS_PROBE_TIMEOUT_MS)
+
+      flaky.dispose()
     })
   })
 

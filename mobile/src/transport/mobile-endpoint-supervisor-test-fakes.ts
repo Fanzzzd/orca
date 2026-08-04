@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 import type { MobileRelayCredentialBundle } from './mobile-relay-credential-bundle'
-import type { MobileEndpointSupervisorDependencies } from './mobile-endpoint-supervisor'
 import type { MobileRelayRpcSession } from './mobile-relay-rpc-session'
+import type { MobileEndpointSupervisorDependencies } from './mobile-endpoint-supervisor'
 import type { RpcClient } from './rpc-client'
 import type { MobileConnectionPath, StableLogicalRpcClient } from './stable-logical-rpc-client'
 import type { ConnectionState, HostProfile, RpcResponse } from './types'
@@ -43,18 +43,21 @@ export class FakeRelaySession extends FakeSession implements MobileRelayRpcSessi
   constructor(
     state: ConnectionState,
     private readonly failure: Error | null = null,
-    private readonly resumeExpiry = Date.now() + 30 * 24 * 3_600_000
+    private readonly resumeExpiry = Date.now() + 30 * 24 * 3_600_000,
+    private readonly renewed = true
   ) {
     super(state)
   }
+  // Why: production-realistic defaults — fictional fake values hid three
+  // live defects in this subsystem (latch, churn, int32 timer overflow).
   getAttachDeadlineAt = () => Date.now() + 10_000
   getResumeExpiresAt = () => this.resumeExpiry
   getResumeConfirmation = () => ({
     v: 1 as const,
     reqId: 'confirm-1',
     currentVersion: 2,
-    acceptedAs: 'current' as const,
-    renewed: true,
+    acceptedAs: this.renewed ? ('current' as const) : ('grace' as const),
+    renewed: this.renewed,
     resumeExpiresAt: this.resumeExpiry
   })
   getFailure = () => this.failure
@@ -91,7 +94,6 @@ export const relay = {
   relayHostId: 'AbCdEf0123_-xyZ9',
   e2eeFraming: 2 as const
 }
-
 export const host: HostProfile = {
   id: 'host-1',
   name: 'Blue Whale',
@@ -106,7 +108,6 @@ export const host: HostProfile = {
   relayHostId: relay.relayHostId,
   relay
 }
-
 export const bundle: MobileRelayCredentialBundle = {
   v: 1,
   hostId: host.id,

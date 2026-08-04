@@ -734,6 +734,15 @@ async function attachStablePaneOwner(
     if (!isPtyAlreadyGoneError(error)) {
       throw error
     }
+    // Why: "Session not found" only proves the provider we asked has no such PTY — and a
+    // degraded router answers unmapped ids from the local fallback, which never owned a
+    // daemon session. Retiring on that would signal exit and delete a live agent's pane
+    // binding. Absence must be proven across every possible owner first; `null` (nobody
+    // could answer) is not absence. Providers without a probe are their own sole owner,
+    // so their refusal stays authoritative.
+    if (provider.probePtyLiveness && (await provider.probePtyLiveness(owner.ptyId)) !== false) {
+      throw new Error('terminal_pane_owner_unverified')
+    }
     const ownerBeforeRetire = args.resolveOwner?.()
     if (
       ownerBeforeRetire &&

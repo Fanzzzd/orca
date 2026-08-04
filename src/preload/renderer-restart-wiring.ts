@@ -15,10 +15,14 @@ import {
 export function registerRendererRestartIpcRelays(
   ipcRenderer: Pick<IpcRenderer, 'on'>,
   eventTarget: EventTarget,
-  relay: Pick<UpdaterQuitAbortRelay, 'handleStatus'>
+  relay: Pick<UpdaterQuitAbortRelay, 'handleStatus' | 'abort'>
 ): void {
   ipcRenderer.on('updater:status', (_event, status: UpdateStatus) => {
     relay.handleStatus(status)
+  })
+  // Why: main abandons some installs without an error status, and only this tells the renderer.
+  ipcRenderer.on('updater:quitAndInstallAborted', () => {
+    relay.abort()
   })
   ipcRenderer.on('window:unload-prevented', () => {
     eventTarget.dispatchEvent(new Event(ORCA_RENDERER_UNLOAD_PREVENTED_EVENT))

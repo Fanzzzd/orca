@@ -2,6 +2,7 @@
 import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import {
+  createRecentlyClosedTabPositionIndex,
   getRecentlyClosedTabPosition,
   restoreRecentlyClosedTabPosition,
   pushRecentlyClosedTabKind
@@ -1743,8 +1744,10 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
           matchesEditorMode(f, reusableOpenFileModes) &&
           isSameEditorOwner(f, worktreeId, runtimeEnvironmentId)
       )
-      const id =
-        options?.reopenId && !s.openFiles.some((candidate) => candidate.id === options.reopenId)
+      // Why: a snapshot's reopenId can be a stale shape — the same path is bare in whichever worktree opened it first and namespaced elsewhere — so honoring it while this owner's tab is already open would strand activeFileId and the unified tab on an id no OpenFile has.
+      const id = existing
+        ? existing.id
+        : options?.reopenId && !s.openFiles.some((candidate) => candidate.id === options.reopenId)
           ? options.reopenId
           : resolveEditorFileIdForOwner(
               s,
@@ -2460,6 +2463,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       const closingFiles = s.openFiles.filter((f) => f.worktreeId === activeWorktreeId)
       let nextRecentClosed = s.recentlyClosedEditorTabsByWorktree[activeWorktreeId] ?? []
       let capturedCloseCount = 0
+      // Why: one shared index — a per-file position lookup rescans tab order and group membership, making close-all cubic.
+      const positionIndex = createRecentlyClosedTabPositionIndex(s, activeWorktreeId)
       for (const f of [...closingFiles].toReversed()) {
         // Why: skip untitled non-dirty files (deleted from disk after close) and ephemeral preview tabs so the reopen stack has no vanished/junk paths.
         if (
@@ -2469,7 +2474,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
           continue
         }
         const { id: _id, isDirty: _dirty, mirroredFromRuntimeSession: _mirrored, ...snap } = f
-        const position = getRecentlyClosedTabPosition(s, activeWorktreeId, f.id)
+        const position = positionIndex.positionFor(f.id)
         nextRecentClosed = [
           {
             ...(snap as ClosedEditorTabSnapshot),

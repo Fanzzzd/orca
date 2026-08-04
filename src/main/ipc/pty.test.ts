@@ -9108,6 +9108,259 @@ describe('registerPtyHandlers', () => {
     }
   )
 
+  it.each([
+    { label: 'another owner reports it alive', liveness: true },
+    { label: 'no owner could answer', liveness: null }
+  ])('keeps a persisted owner whose absence is unproven ($label)', async ({ liveness }) => {
+    const worktreeId = 'repo-1::/tmp/unproven-owner'
+    const cwd = '/tmp/unproven-owner'
+    const tabId = 'tab-unproven-owner'
+    const leafId = '56565656-5656-4656-8656-565656565656'
+    const paneKey = makePaneKey(tabId, leafId)
+    // Why: a degraded router answers unmapped ids from the local fallback, which never
+    // owned this daemon session — the same "Session not found" a truly dead PTY yields.
+    const providerSpawn = vi.fn(
+      async (options: { attachOnly?: boolean; command?: string; sessionId?: string }) => {
+        if (options.attachOnly) {
+          throw new Error('Session not found: pty-unproven-owner')
+        }
+        return { id: 'pty-fresh-unproven', incarnationId: 'inc-fresh-unproven' }
+      }
+    )
+    const probePtyLiveness = vi.fn(async () => liveness)
+    setLocalPtyProvider({
+      spawn: providerSpawn,
+      probePtyLiveness,
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown: vi.fn(),
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      onData: vi.fn(() => () => {}),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      attach: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    } as never)
+    let session = {
+      tabsByWorktree: {
+        [worktreeId]: [{ id: tabId, worktreeId, ptyId: 'pty-unproven-owner' }]
+      },
+      terminalLayoutsByTabId: {
+        [tabId]: {
+          root: { type: 'leaf' as const, leafId },
+          activeLeafId: leafId,
+          expandedLeafId: null,
+          ptyIdsByLeafId: { [leafId]: 'pty-unproven-owner' }
+        }
+      },
+      terminalPtyIncarnationsByPaneKey: { [paneKey]: 'inc-unproven-owner' }
+    }
+    const store = {
+      getWorkspaceSession: vi.fn(() => session),
+      setWorkspaceSession: vi.fn((next) => {
+        session = next
+      }),
+      flushOrThrow: vi.fn(),
+      persistPtyBinding: vi.fn(),
+      getFolderWorkspace: vi.fn(() => undefined),
+      getFolderWorkspaces: vi.fn(() => []),
+      getProjectGroups: vi.fn(() => []),
+      getRepos: vi.fn(() => [])
+    }
+    const runtime = {
+      setPtyController: vi.fn(),
+      resolveTerminalPane: vi.fn(() => {
+        throw new Error('terminal_not_found')
+      }),
+      createPreAllocatedTerminalHandle: vi.fn(() => 'term-unproven'),
+      preAllocateHandleForPty: vi.fn(() => 'term-unproven'),
+      registerPreAllocatedHandleForPty: vi.fn(),
+      beginPtyRegistration: vi.fn(),
+      cancelPendingPtyRegistration: vi.fn(),
+      assertPtyRegistrationAllowed: vi.fn(),
+      registerPty: vi.fn(),
+      noteTerminalSpawnCommand: vi.fn(),
+      seedHeadlessTerminal: vi.fn(),
+      onPtySpawned: vi.fn(),
+      onPtyExit: vi.fn(),
+      onPtyData: vi.fn()
+    }
+
+    registerPtyHandlers(
+      mainWindow as never,
+      runtime as never,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+
+    await expect(
+      handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd,
+        command: 'codex resume unproven-owner-session',
+        worktreeId,
+        tabId,
+        leafId,
+        env: {
+          ORCA_PANE_KEY: paneKey,
+          ORCA_TAB_ID: tabId,
+          ORCA_WORKTREE_ID: worktreeId
+        }
+      })
+    ).rejects.toThrow('terminal_pane_owner_unverified')
+
+    expect(probePtyLiveness).toHaveBeenCalledWith('pty-unproven-owner')
+    // The live PTY keeps its pane binding, gets no synthetic exit, and is not duplicated.
+    expect(providerSpawn).toHaveBeenCalledOnce()
+    expect(providerSpawn.mock.calls[0]?.[0]).toMatchObject({ attachOnly: true })
+    expect(runtime.onPtyExit).not.toHaveBeenCalled()
+    expect(store.setWorkspaceSession).not.toHaveBeenCalled()
+    expect(store.flushOrThrow).not.toHaveBeenCalled()
+    expect(session.tabsByWorktree[worktreeId]).toHaveLength(1)
+  })
+
+  // Why the positive direction needs its own case: the sibling retire tests use providers with
+  // no `probePtyLiveness`, so they skip this guard entirely. Without this, the guard could be
+  // strengthened into a permanent veto — no daemon-backed pane could ever recover from a dead
+  // owner — and every suite would stay green.
+  it('still retires and respawns when a provider proves the owner is absent', async () => {
+    const worktreeId = 'repo-1::/tmp/proven-absent-owner'
+    const cwd = '/tmp/proven-absent-owner'
+    const tabId = 'tab-proven-absent-owner'
+    const leafId = '78787878-7878-4878-8878-787878787878'
+    const paneKey = makePaneKey(tabId, leafId)
+    const providerSpawn = vi.fn(
+      async (options: { attachOnly?: boolean; command?: string; sessionId?: string }) => {
+        if (options.attachOnly) {
+          throw new Error('Session not found: pty-proven-absent-owner')
+        }
+        return { id: 'pty-fresh-proven', incarnationId: 'inc-fresh-proven' }
+      }
+    )
+    const probePtyLiveness = vi.fn(async () => false)
+    setLocalPtyProvider({
+      spawn: providerSpawn,
+      probePtyLiveness,
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown: vi.fn(),
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      onData: vi.fn(() => () => {}),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      attach: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    } as never)
+    let session = {
+      tabsByWorktree: {
+        [worktreeId]: [{ id: tabId, worktreeId, ptyId: 'pty-proven-absent-owner' }]
+      },
+      terminalLayoutsByTabId: {
+        [tabId]: {
+          root: { type: 'leaf' as const, leafId },
+          activeLeafId: leafId,
+          expandedLeafId: null,
+          ptyIdsByLeafId: { [leafId]: 'pty-proven-absent-owner' }
+        }
+      },
+      terminalPtyIncarnationsByPaneKey: { [paneKey]: 'inc-proven-absent-owner' }
+    }
+    const store = {
+      getWorkspaceSession: vi.fn(() => session),
+      setWorkspaceSession: vi.fn((next) => {
+        session = next
+      }),
+      flushOrThrow: vi.fn(),
+      persistPtyBinding: vi.fn(),
+      getFolderWorkspace: vi.fn(() => undefined),
+      getFolderWorkspaces: vi.fn(() => []),
+      getProjectGroups: vi.fn(() => []),
+      getRepos: vi.fn(() => [])
+    }
+    const runtime = {
+      setPtyController: vi.fn(),
+      resolveTerminalPane: vi.fn(() => {
+        throw new Error('terminal_not_found')
+      }),
+      createPreAllocatedTerminalHandle: vi.fn(() => 'term-proven-absent'),
+      preAllocateHandleForPty: vi.fn(() => 'term-proven-absent'),
+      registerPreAllocatedHandleForPty: vi.fn(),
+      beginPtyRegistration: vi.fn(),
+      cancelPendingPtyRegistration: vi.fn(),
+      assertPtyRegistrationAllowed: vi.fn(),
+      registerPty: vi.fn(),
+      noteTerminalSpawnCommand: vi.fn(),
+      seedHeadlessTerminal: vi.fn(),
+      onPtySpawned: vi.fn(),
+      onPtyExit: vi.fn(),
+      onPtyData: vi.fn()
+    }
+
+    registerPtyHandlers(
+      mainWindow as never,
+      runtime as never,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+
+    const mounted = await handlers.get('pty:spawn')!(null, {
+      cols: 80,
+      rows: 24,
+      cwd,
+      command: 'codex resume proven-absent-session',
+      worktreeId,
+      tabId,
+      leafId,
+      env: {
+        ORCA_PANE_KEY: paneKey,
+        ORCA_TAB_ID: tabId,
+        ORCA_WORKTREE_ID: worktreeId
+      }
+    })
+
+    expect(probePtyLiveness).toHaveBeenCalledWith('pty-proven-absent-owner')
+    // Proven absence is the one answer that authorizes retirement, so recovery must proceed.
+    expect(mounted).toMatchObject({ id: 'pty-fresh-proven' })
+    expect(providerSpawn).toHaveBeenCalledTimes(2)
+    expect(providerSpawn.mock.calls[1]?.[0]).toMatchObject({
+      command: 'codex resume proven-absent-session'
+    })
+    expect(runtime.onPtyExit).toHaveBeenCalledWith(
+      'pty-proven-absent-owner',
+      0,
+      'inc-proven-absent-owner'
+    )
+    expect(store.setWorkspaceSession).toHaveBeenCalledOnce()
+    expect(store.flushOrThrow).toHaveBeenCalledOnce()
+  })
+
   it('retires a dead owner from the exact SSH host session before fresh recovery', async () => {
     const connectionId = 'ssh-dead-stable-pane'
     const hostId = `ssh:${connectionId}`

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileRelayCredentialBundle } from './mobile-relay-credential-bundle'
 import { hashMobileRelayCredential } from './mobile-relay-credential-hash'
 import { RelayOuterError } from './mobile-relay-e2ee-link'
-import { MobileEndpointSupervisor } from './mobile-endpoint-supervisor'
 import {
   bundle,
   dependencies,
@@ -12,7 +11,8 @@ import {
   host,
   mockCredentialRotation,
   relay
-} from './mobile-endpoint-supervisor-test-doubles'
+} from './mobile-endpoint-supervisor-test-fakes'
+import { MobileEndpointSupervisor } from './mobile-endpoint-supervisor'
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
 vi.mock('expo-secure-store', () => ({ WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when-unlocked' }))
@@ -665,6 +665,27 @@ describe('mobile endpoint supervisor', () => {
 
     await vi.advanceTimersByTimeAsync(5000)
     expect(openRelay).toHaveBeenCalledTimes(2)
+    supervisor.stop()
+  })
+
+  it('skips forced rotation for a session resumed without renewal', async () => {
+    // Why: renewed=false means a re-resume provably returns the same unchanged
+    // deadline; rotating anyway churned one session replacement per clamp floor.
+    const logical = new FakeLogicalClient('disconnected', 'lan')
+    const openRelay = vi.fn(
+      () => new FakeRelaySession('connected', null, Date.now() + 31_000, false)
+    )
+    const deps = dependencies({
+      openRelay,
+      openDirect: vi.fn(() => new FakeSession('disconnected'))
+    })
+    const supervisor = new MobileEndpointSupervisor(logical, host, deps)
+
+    await supervisor.start()
+    expect(openRelay).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(openRelay).toHaveBeenCalledTimes(1)
     supervisor.stop()
   })
 

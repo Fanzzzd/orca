@@ -101,6 +101,22 @@ function ownedEditorFileId(
   return `editor:${encodeURIComponent(worktreeId)}:${encodeURIComponent(runtimeKey)}:${encodeURIComponent(filePath)}`
 }
 
+/** Counts how often store code reads `entityId` off a worktree's unified tabs —
+ *  a scan-count proxy that pins complexity without timing the wall clock. */
+function withCountedEntityIdReads(tabs: readonly Tab[], onRead: () => void): Tab[] {
+  return tabs.map((tab) => {
+    const { entityId, ...rest } = tab
+    return Object.defineProperty(rest, 'entityId', {
+      get: () => {
+        onRead()
+        return entityId
+      },
+      enumerable: true,
+      configurable: true
+    }) as Tab
+  })
+}
+
 function mirroredEditorUnifiedTab(id: string, entityId: string, worktreeId: string): Tab {
   return {
     id,
@@ -1715,6 +1731,93 @@ describe('createEditorSlice recently closed editor tabs', () => {
 
     expect(store.getState().openFiles[0]?.id).toBe(firstId)
     expect(store.getState().tabBarOrderByWorktree['wt-1']).toEqual([firstId])
+  })
+
+  it('captures close-all snapshot positions without rescanning tab state per closed tab', () => {
+    const countEntityIdReads = (fileCount: number): number => {
+      const store = createEditorTabsStore()
+      for (let index = 0; index < fileCount; index += 1) {
+        store.getState().openFile(
+          {
+            filePath: `/repo/file-${index}.ts`,
+            relativePath: `file-${index}.ts`,
+            worktreeId: 'wt-1',
+            language: 'typescript',
+            mode: 'edit'
+          },
+          { preview: false }
+        )
+      }
+      let reads = 0
+      store.setState({
+        unifiedTabsByWorktree: {
+          'wt-1': withCountedEntityIdReads(
+            store.getState().unifiedTabsByWorktree['wt-1'] ?? [],
+            () => {
+              reads += 1
+            }
+          )
+        }
+      } as Partial<AppState>)
+      reads = 0
+
+      store.getState().closeAllFiles()
+
+      expect(store.getState().openFiles).toHaveLength(0)
+      expect(store.getState().recentlyClosedEditorTabsByWorktree['wt-1']?.[0]?.position).toEqual({
+        tabBarIndex: 0,
+        groupId: expect.any(String),
+        groupIndex: 0
+      })
+      return reads
+    }
+
+    // Why: resolving each closed tab's position by rescanning tab order and group membership
+    // made close-all cubic — 4x the tabs cost ~64x the scans and froze the renderer for seconds.
+    expect(countEntityIdReads(80)).toBeLessThanOrEqual(countEntityIdReads(20) * 8)
+  })
+
+  it('reactivates the live tab when a stale reopen id targets an already-open file', () => {
+    const store = createEditorTabsStore()
+    store.setState({
+      worktreesByRepo: {
+        'repo-1': [
+          { id: 'wt-1', repoId: 'repo-1', path: '/repo' },
+          { id: 'wt-2', repoId: 'repo-1', path: '/repo-2' }
+        ]
+      }
+    } as unknown as Partial<AppState>)
+    const sharedPath = '/home/me/.zshrc'
+    const openShared = (worktreeId: string): string =>
+      store.getState().openFile({
+        filePath: sharedPath,
+        relativePath: '.zshrc',
+        worktreeId,
+        language: 'shell',
+        mode: 'edit'
+      })
+
+    // Bare path id: nothing else owns this path yet.
+    const staleWt1Id = openShared('wt-1')
+    expect(staleWt1Id).toBe(sharedPath)
+    store.getState().closeFile(staleWt1Id)
+
+    // wt-2 claims the bare id, so wt-1's reopen gets a namespaced id instead.
+    const wt2Id = openShared('wt-2')
+    expect(wt2Id).toBe(sharedPath)
+    const liveWt1Id = openShared('wt-1')
+    expect(liveWt1Id).toBe(ownedEditorFileId(sharedPath, 'wt-1', null))
+    store.getState().closeFile(wt2Id)
+
+    expect(store.getState().reopenClosedEditorTab('wt-1')).toBe(true)
+
+    expect(store.getState().openFiles.map((file) => file.id)).toEqual([liveWt1Id])
+    expect(store.getState().activeFileId).toBe(liveWt1Id)
+    expect(store.getState().activeFileIdByWorktree['wt-1']).toBe(liveWt1Id)
+    expect(
+      (store.getState().unifiedTabsByWorktree['wt-1'] ?? []).map((tab) => tab.entityId)
+    ).toEqual([liveWt1Id])
+    expect(store.getState().tabBarOrderByWorktree['wt-1']).toEqual([liveWt1Id])
   })
 })
 
