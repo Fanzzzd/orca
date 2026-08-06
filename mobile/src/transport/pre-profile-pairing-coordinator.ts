@@ -29,6 +29,8 @@ import {
 import { racePairingCandidates, type PairingCandidate } from './pairing-candidate-race'
 import { resolvePairingInviteThroughDirector } from './mobile-relay-invite-director'
 import { createRecoveringPairingRelayCandidate } from './pairing-relay-candidate'
+import { createPairingRelayLogger } from './pairing-relay-log'
+import { redactSocketEndpoint } from './socket-event-debug'
 
 export type PreProfilePairingAttempt = {
   readonly result: Promise<{ hostId: string }>
@@ -189,14 +191,21 @@ async function runPairing(
     clients.add(directClient)
     candidates.push({ path: 'direct', client: directClient })
   }
+  const log = createPairingRelayLogger(connectOptions?.onLog)
   if (journal) {
+    log(
+      'info',
+      'Relay: pairing candidate started',
+      redactSocketEndpoint(journal.metadata.relay.cellUrl)
+    )
     const relayClient = createRecoveringPairingRelayCandidate({
       journal,
-      connect: (relay) =>
+      connect: (relay, onLog) =>
         dependencies.connectRelay({
           relay,
           deviceToken: offer.deviceToken,
-          desktopPublicKeyB64: offer.publicKeyB64
+          desktopPublicKeyB64: offer.publicKeyB64,
+          onLog
         }),
       resolveDirector: (relay) => dependencies.resolveInviteDirector({ relay }),
       persistMove: async (relay) => {
@@ -213,12 +222,14 @@ async function runPairing(
         }
         await dependencies.updateJournal(journal.metadata.journalId, () => journal!.metadata)
       },
-      now: dependencies.now
+      now: dependencies.now,
+      onLog: connectOptions?.onLog
     })
     clients.add(relayClient)
     candidates.push({ path: 'relay', client: relayClient })
   }
   const winner = await racePairingCandidates(candidates)
+  log('success', 'Pairing path selected', `winner: ${winner.path}`)
   assertActive(isDisposed)
 
   if (!journal) {

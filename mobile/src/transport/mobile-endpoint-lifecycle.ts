@@ -1,5 +1,5 @@
 import * as ExpoCrypto from 'expo-crypto'
-import type { ConnectionLogSink, HostProfile } from './types'
+import type { ConnectionLogSink, ForegroundNudgeReason, HostProfile } from './types'
 import { connect } from './rpc-client'
 import { MobileEndpointSupervisor } from './mobile-endpoint-supervisor'
 import { connectMobileRelayRpcSession } from './mobile-relay-rpc-session'
@@ -16,6 +16,7 @@ import { hostHasIrohEndpoint } from './mobile-iroh-availability'
 
 type EndpointLifecycle = {
   setForeground(foreground: boolean): void
+  nudge(reason: ForegroundNudgeReason): void
   stop(): void
 }
 
@@ -49,7 +50,7 @@ export function startMobileEndpointLifecycle(
   } else if (hostHasIrohEndpoint(initialHost)) {
     // Why: iroh-primary hosts have exactly one physical path — rpc-client
     // reconnects it itself. No ws probe, no relay upgrade, nothing to supervise.
-    owner = { start: async () => {}, setForeground: () => {}, stop: () => {} }
+    owner = { start: async () => {}, setForeground: () => {}, nudge: () => {}, stop: () => {} }
   } else {
     owner = new MobileRelayDirectUpgradeController(logical, initialHost, {
       upgrade: (client, host) =>
@@ -67,6 +68,14 @@ export function startMobileEndpointLifecycle(
     setForeground(next) {
       foreground = next
       owner.setForeground(next)
+    },
+    nudge(reason) {
+      // Why: a focus nudge can precede the AppState listener; keep the closure in
+      // sync or a later supervisor swap would start with a stale background flag.
+      if (reason !== 'network-change') {
+        foreground = true
+      }
+      owner.nudge(reason)
     },
     stop() {
       stopped = true

@@ -1980,6 +1980,7 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
       includeIgnored,
       bypassEffectiveUpstreamNegativeCache,
       reuseLineStats,
+      branchLineTotalMergeBase,
       requestToken
     }) => {
       const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
@@ -1987,7 +1988,8 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
         worktree: toRuntimeWorktreeSelector(worktree.id),
         includeIgnored,
         bypassEffectiveUpstreamNegativeCache,
-        reuseLineStats
+        reuseLineStats,
+        ...(branchLineTotalMergeBase ? { branchLineTotalMergeBase } : {})
       }
       // Why: no token = nothing to cancel (pooled); a token routes via the subscription bridge so cancelStatus can abort.
       if (!requestToken) {
@@ -1998,6 +2000,7 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
     cancelStatus: async ({ requestToken }) => {
       webGitStatusAbortControllers.get(requestToken)?.abort()
     },
+    setStatusUpstreamRefWatch: async () => {},
     submoduleStatus: async ({ worktreePath, submodulePath, area }) => {
       const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
       return callRuntimeResult('git.submoduleStatus', {
@@ -2751,6 +2754,7 @@ function createWebUiApi(): NonNullable<Partial<PreloadApi>['ui']> {
     onFileDrop: () => noopUnsubscribe,
     syncTrafficLights: () => {},
     setMarkdownEditorFocused: () => {},
+    setRichMarkdownContextMenuTarget: () => {},
     setTerminalInputFocused: () => {},
     setFloatingFocus: () => {},
     setShortcutRecorderFocused: () => {},

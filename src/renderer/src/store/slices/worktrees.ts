@@ -51,7 +51,10 @@ import {
   isRuntimeScopeForbiddenError,
   RuntimeRpcCallError
 } from '../../runtime/runtime-rpc-client'
-import { WORKTREE_LINKED_WORK_ITEM_CONTEXT_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
+import {
+  TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+  WORKTREE_LINKED_WORK_ITEM_CONTEXT_RUNTIME_CAPABILITY
+} from '../../../../shared/protocol-version'
 import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
 import { getHostedReviewCacheKey, refreshHostedReviewCard } from './hosted-review'
 import { routeListingBranchSwitchesThroughGitIdentity } from './worktree-listing-branch-switch'
@@ -118,6 +121,7 @@ import {
 import { getTerminalActivationSpawnSuppression } from './terminal-activation-spawn-suppression'
 import type {
   HostQualifiedDetectedWorktreeResult,
+  HostQualifiedKnownWorktreeResult,
   ListDetectedWorktreesArgs,
   ProviderRequestId,
   SshExecutionHostId
@@ -1711,16 +1715,26 @@ async function persistWorktreeMeta(
     await window.api.worktrees.updateMeta({ worktreeId, updates })
     return
   }
-  // Why: same gate as worktree.create — an older paired runtime would drop the Jira link silently.
+  // Why: `worktree.set` parses in strip mode, so an older runtime drops the key
+  // and applies the rest. Both gates key off presence, not value — a dropped
+  // *clear* strands a stale link that the Issue row then hides.
   if (
     target.kind === 'environment' &&
-    (updates.linkedWorkItem?.provider === 'jira' ||
-      updates.linkedTaskSourceContext?.provider === 'jira')
+    ('linkedWorkItem' in updates || 'linkedTaskSourceContext' in updates)
   ) {
     await assertRuntimeEnvironmentCapability(
       target.environmentId,
       WORKTREE_LINKED_WORK_ITEM_CONTEXT_RUNTIME_CAPABILITY,
-      'Update the remote runtime to link Jira'
+      'Update the remote runtime to change this workspace’s linked issue'
+    )
+  }
+  // task-source-context.v1 is a sound proxy for the Linear keys: #5322 added them
+  // to the schema and is an ancestor of the commit introducing that capability.
+  if (target.kind === 'environment' && 'linkedLinearIssue' in updates) {
+    await assertRuntimeEnvironmentCapability(
+      target.environmentId,
+      TASK_SOURCE_CONTEXT_RUNTIME_CAPABILITY,
+      'Update the remote runtime to link Linear issues'
     )
   }
   await callRuntimeRpc(
@@ -2215,6 +2229,7 @@ const WORKTREE_ID_KEYED_MAP_KEYS = [
   'activeGroupIdByWorktree',
   'gitStatusByWorktree',
   'gitStatusHeadByWorktree',
+  'gitBranchLineTotalByWorktree',
   'gitIgnoredPathsByWorktree',
   'gitConflictOperationByWorktree',
   'trackedConflictPathsByWorktree',
@@ -2682,6 +2697,7 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
     // Why: keyed by worktreeId; re-keyed on rename but missed by both removal paths (upstream-status entry).
     remoteStatusesByWorktree: omitByWorktree(s.remoteStatusesByWorktree),
     gitStatusHeadByWorktree: omitByWorktree(s.gitStatusHeadByWorktree),
+    gitBranchLineTotalByWorktree: omitByWorktree(s.gitBranchLineTotalByWorktree),
     gitIgnoredPathsByWorktree: omitByWorktree(s.gitIgnoredPathsByWorktree),
     gitConflictOperationByWorktree: omitByWorktree(s.gitConflictOperationByWorktree),
     trackedConflictPathsByWorktree: omitByWorktree(s.trackedConflictPathsByWorktree),
@@ -2862,6 +2878,8 @@ function mergeFetchedWorktrees(
   args: FencedWorktreeMergeArgs
 ): boolean {
   let admitted = false
+  let authoritativelyRemovedIds: readonly string[] = []
+  let authoritativelySeenIds: readonly string[] = []
   set((s) => {
     if (
       !isCurrentDetectedWorktreeRefresh(s, args.refresh) ||
@@ -2935,6 +2953,10 @@ function mergeFetchedWorktrees(
             args.refresh.result,
             args.hostId
           )
+    authoritativelyRemovedIds = removedIds
+    if (args.refresh.result.authoritative) {
+      authoritativelySeenIds = args.refresh.result.worktrees.map((worktree) => worktree.id)
+    }
     const worktreesChanged = !areWorktreesEqual(s.worktreesByRepo[args.repoId], mergedWorktrees)
     const detectedChanged = !areDetectedWorktreeResultsEqual(
       s.detectedWorktreesByRepo[args.repoId],
@@ -2964,7 +2986,208 @@ function mergeFetchedWorktrees(
       ...(removedIds.length > 0 ? buildWorktreePurgeState(s, removedIds) : {})
     }
   })
+  if (admitted) {
+    // Why: applied outside the updater so a repeated updater call cannot double-apply the removal memory.
+    forgetAuthoritativelyRemovedWorktrees(args.hostId, authoritativelySeenIds)
+    rememberAuthoritativelyRemovedWorktrees(args.hostId, authoritativelyRemovedIds)
+  }
   return admitted
+}
+
+// Why: an authoritative scan is the only proof a remote worktree is gone, but SSH WorktreeMeta is exempt from
+// gcStaleWorktreeMeta (persistence.ts:407,415), so without this memory the metadata fallback re-appends every
+// deleted row on the next disconnect — forever.
+const AUTHORITATIVE_REMOVAL_MEMORY_LIMIT = 512
+const authoritativelyRemovedWorktreeIdsByHost = new Map<ExecutionHostId, Set<string>>()
+
+function rememberAuthoritativelyRemovedWorktrees(
+  hostId: ExecutionHostId,
+  worktreeIds: readonly string[]
+): void {
+  if (worktreeIds.length === 0) {
+    return
+  }
+  const removed = authoritativelyRemovedWorktreeIdsByHost.get(hostId) ?? new Set<string>()
+  for (const worktreeId of worktreeIds) {
+    // Why: re-insert so a re-removed id moves to the back of the insertion order the cap evicts from.
+    removed.delete(worktreeId)
+    removed.add(worktreeId)
+  }
+  for (const oldest of removed) {
+    if (removed.size <= AUTHORITATIVE_REMOVAL_MEMORY_LIMIT) {
+      break
+    }
+    removed.delete(oldest)
+  }
+  authoritativelyRemovedWorktreeIdsByHost.set(hostId, removed)
+}
+
+// Why: a remote path can be recreated, so a scan that reports it again retracts the deletion verdict.
+function forgetAuthoritativelyRemovedWorktrees(
+  hostId: ExecutionHostId,
+  worktreeIds: Iterable<string>
+): void {
+  const removed = authoritativelyRemovedWorktreeIdsByHost.get(hostId)
+  if (!removed) {
+    return
+  }
+  for (const worktreeId of worktreeIds) {
+    removed.delete(worktreeId)
+  }
+  if (removed.size === 0) {
+    authoritativelyRemovedWorktreeIdsByHost.delete(hostId)
+  }
+}
+
+/** Test-only: module-level removal memory would otherwise leak across cases in one file. */
+export function resetAuthoritativelyRemovedWorktreeMemoryForTests(): void {
+  authoritativelyRemovedWorktreeIdsByHost.clear()
+}
+
+function appendMissingWorktreesForHost<
+  T extends { id: string; hostId?: ExecutionHostId; runtimeOwnerEnvironmentId?: string }
+>(
+  current: readonly T[] | undefined,
+  incoming: readonly T[],
+  hostId: ExecutionHostId,
+  options: WorktreeHostMatchOptions
+): T[] {
+  const existing = current ?? []
+  const existingHostIds = new Set(
+    existing
+      .filter((worktree) => worktreeMatchesHost(worktree, hostId, options))
+      .map(({ id }) => id)
+  )
+  const missing = incoming.filter((worktree) => !existingHostIds.has(worktree.id))
+  if (missing.length === 0) {
+    return [...existing]
+  }
+  // Why: land inside the host's block like mergeWorktreesForHost does, else these rows sit past sibling hosts and visibly jump once the authoritative scan splices them back.
+  const lastHostIndex = existing.findLastIndex((worktree) =>
+    worktreeMatchesHost(worktree, hostId, options)
+  )
+  if (lastHostIndex === -1) {
+    return [...existing, ...missing]
+  }
+  return [...existing.slice(0, lastHostIndex + 1), ...missing, ...existing.slice(lastHostIndex + 1)]
+}
+
+function isAdmittedKnownSshWorktreeResult(
+  result: HostQualifiedKnownWorktreeResult,
+  repoId: string,
+  executionHostId: SshExecutionHostId
+): result is Extract<HostQualifiedKnownWorktreeResult, { status: 'complete' }> {
+  return (
+    result.status === 'complete' &&
+    result.repoId === repoId &&
+    result.executionHostId === executionHostId &&
+    isDetectedWorktreeListResult(result.result) &&
+    result.result.repoId === repoId &&
+    result.result.authoritative === false
+  )
+}
+
+const inflightKnownSshWorktreeFetches = new Map<
+  string,
+  Promise<DetectedWorktreeListResult | null>
+>()
+
+// Why: the authoritative path dedupes through listDetectedWorktreesForRepoCoalesced; without a matching guard
+// the four refresh triggers can each issue this IPC and its merge for the same repo/host.
+async function fetchKnownSshWorktreesForRepo(
+  set: Parameters<StateCreator<AppState, [], [], WorktreeSlice>>[0],
+  repoId: string,
+  executionHostId: SshExecutionHostId
+): Promise<DetectedWorktreeListResult | null> {
+  const coalesceKey = `${repoId} ${executionHostId}`
+  const inflight = inflightKnownSshWorktreeFetches.get(coalesceKey)
+  if (inflight) {
+    return await inflight
+  }
+  const request = runKnownSshWorktreeFetch(set, repoId, executionHostId).finally(() => {
+    inflightKnownSshWorktreeFetches.delete(coalesceKey)
+  })
+  inflightKnownSshWorktreeFetches.set(coalesceKey, request)
+  return await request
+}
+
+async function runKnownSshWorktreeFetch(
+  set: Parameters<StateCreator<AppState, [], [], WorktreeSlice>>[0],
+  repoId: string,
+  executionHostId: SshExecutionHostId
+): Promise<DetectedWorktreeListResult | null> {
+  // Why: reads the local store only, so a runtime-hub session (whose repo ids live on the hub) always gets 'rejected' and keeps the pre-existing no-op.
+  const listKnown = window.api.worktrees.listKnownForExecutionHost
+  if (typeof listKnown !== 'function') {
+    return null
+  }
+  const result = await listKnown({ repoId, executionHostId })
+  if (!isAdmittedKnownSshWorktreeResult(result, repoId, executionHostId)) {
+    return null
+  }
+  // Why: persisted SSH metadata outlives the remote worktree, so drop rows a completed scan already proved gone.
+  const suppressedIds = authoritativelyRemovedWorktreeIdsByHost.get(executionHostId)
+  const known =
+    suppressedIds && suppressedIds.size > 0
+      ? {
+          ...result.result,
+          worktrees: result.result.worktrees.filter((worktree) => !suppressedIds.has(worktree.id))
+        }
+      : result.result
+  let admitted = false
+  set((state) => {
+    // Why: the provider can connect during the await; authoritative rows already replaced this host, so appending stale metadata would resurrect purged worktrees.
+    if (
+      getCurrentDirectSshAuthority(state, executionHostId) ||
+      !repoHasExactlyOneExecutionHostOwner(state, repoId, executionHostId, false)
+    ) {
+      return state
+    }
+    admitted = true
+    const setup = getProjectHostSetupForRepoHost(state, repoId, executionHostId)
+    const matchOptions = worktreeHostMatchOptions(state, repoId, executionHostId)
+    const incomingDetected = known.worktrees.map((worktree) =>
+      withRepoHostOwnership(worktree, executionHostId, setup)
+    )
+    const priorDetected = state.detectedWorktreesByRepo[repoId]
+    // Why: only the rows are ours to merge. This entry is keyed by repo alone, so adopting the fallback's
+    // authoritative/source would demote a sibling host's completed scan and blank every authoritative-gated surface.
+    const detected = {
+      ...(priorDetected ?? known),
+      worktrees: appendMissingWorktreesForHost(
+        priorDetected?.worktrees,
+        incomingDetected,
+        executionHostId,
+        matchOptions
+      )
+    }
+    const worktrees = appendMissingWorktreesForHost(
+      state.worktreesByRepo[repoId],
+      toVisibleWorktrees(known, executionHostId, setup),
+      executionHostId,
+      matchOptions
+    )
+    const worktreesChanged = !areWorktreesEqual(state.worktreesByRepo[repoId], worktrees)
+    const detectedChanged = !areDetectedWorktreeResultsEqual(
+      state.detectedWorktreesByRepo[repoId],
+      detected
+    )
+    if (!worktreesChanged && !detectedChanged) {
+      return state
+    }
+    return {
+      ...(worktreesChanged
+        ? {
+            worktreesByRepo: { ...state.worktreesByRepo, [repoId]: worktrees },
+            sortEpoch: state.sortEpoch + 1
+          }
+        : {}),
+      ...(detectedChanged
+        ? { detectedWorktreesByRepo: { ...state.detectedWorktreesByRepo, [repoId]: detected } }
+        : {})
+    }
+  })
+  return admitted ? known : null
 }
 
 export type DirectSshDetectedWorktreeRefresh = {
@@ -3097,6 +3320,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           ? (getCurrentDirectSshAuthority(ownerState, hostId) ?? undefined)
           : undefined
       if (parsedHost?.kind === 'ssh' && !directSshAuthority) {
+        // Why: this function's contract is detected-only. The fallback runs for its store side effect, but
+        // callers keep seeing null as they did before the metadata path existed.
+        await fetchKnownSshWorktreesForRepo(set, repoId, parsedHost.id)
         return null
       }
       const refresh = await listDetectedWorktreesForRepoCoalesced(
@@ -3195,6 +3421,11 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           ? (directCallerAuthority ?? getCurrentDirectSshAuthority(ownerState, hostId) ?? undefined)
           : undefined
       if (parsedHost?.kind === 'ssh' && !directSshAuthority) {
+        // Why: requireAuthoritative callers asked for authoritative-or-nothing, so writing non-authoritative
+        // rows as a side effect before returning false would silently weaken that contract.
+        if (!options?.requireAuthoritative) {
+          await fetchKnownSshWorktreesForRepo(set, repoId, parsedHost.id)
+        }
         return false
       }
       const refresh = await listDetectedWorktreesForRepoCoalesced(settings, repoId, {
@@ -3259,6 +3490,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
               ? (getCurrentDirectSshAuthority(requestStartedState, hostId) ?? undefined)
               : undefined
           if (parsedHost?.kind === 'ssh' && !directSshAuthority) {
+            await fetchKnownSshWorktreesForRepo(set, r.id, parsedHost.id)
             return
           }
           const refresh = await listDetectedWorktreesForRepoCoalesced(settings, r.id, {
@@ -3310,6 +3542,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
               ? (getCurrentDirectSshAuthority(requestStartedState, hostId) ?? undefined)
               : undefined
           if (parsedHost?.kind === 'ssh' && !directSshAuthority) {
+            await fetchKnownSshWorktreesForRepo(set, r.id, parsedHost.id)
             return { repoId: r.id, ok: false as const }
           }
           const refresh = await listDetectedWorktreesForRepoCoalesced(
@@ -4067,6 +4300,11 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
 
       // Why: invalidate stale probes once deletion is authoritative, so an old toast can't mutate a same-path replacement.
       forgetHugeRepoWarningDismissalsForWorktrees([worktreeId])
+      // Why: forget-local is legal while the host is unreachable, so record the removal here too — otherwise an
+      // in-flight metadata read that snapshotted this row re-appends it, and disconnected polls never drop it.
+      if (hostId && parseExecutionHostId(hostId)?.kind === 'ssh') {
+        rememberAuthoritativelyRemovedWorktrees(hostId, [worktreeId])
+      }
 
       const worktreeDisplayName = worktreeBeforeRemoval?.displayName?.trim()
       if (worktreeDisplayName) {
@@ -4178,6 +4416,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         delete nextGitStatusByWorktree[worktreeId]
         const nextGitStatusHeadByWorktree = { ...s.gitStatusHeadByWorktree }
         delete nextGitStatusHeadByWorktree[worktreeId]
+        const nextGitBranchLineTotalByWorktree = { ...s.gitBranchLineTotalByWorktree }
+        delete nextGitBranchLineTotalByWorktree[worktreeId]
         const nextGitIgnoredPathsByWorktree = { ...s.gitIgnoredPathsByWorktree }
         delete nextGitIgnoredPathsByWorktree[worktreeId]
         const nextGitConflictOperationByWorktree = { ...s.gitConflictOperationByWorktree }
@@ -4341,6 +4581,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           gitStatusHugeByWorktree: nextGitStatusHugeByWorktree,
           gitStatusByWorktree: nextGitStatusByWorktree,
           gitStatusHeadByWorktree: nextGitStatusHeadByWorktree,
+          gitBranchLineTotalByWorktree: nextGitBranchLineTotalByWorktree,
           gitIgnoredPathsByWorktree: nextGitIgnoredPathsByWorktree,
           gitConflictOperationByWorktree: nextGitConflictOperationByWorktree,
           trackedConflictPathsByWorktree: nextTrackedConflictPathsByWorktree,
@@ -4498,15 +4739,34 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     const shouldApplyUpdate = options?.shouldApply
     const existingWorktree = get().getKnownWorktreeById(worktreeId)
     if (shouldApplyUpdate && !shouldApplyUpdate(existingWorktree)) {
-      return
+      return { ok: true }
     }
     const workspaceScope = parseWorkspaceKey(worktreeId)
     if (workspaceScope?.type === 'folder') {
       const folderUpdates = getFolderWorkspaceMetaUpdates(updates)
-      if (Object.keys(folderUpdates).length > 0) {
-        await get().updateFolderWorkspace(workspaceScope.folderWorkspaceId, folderUpdates)
+      if (Object.keys(folderUpdates).length === 0) {
+        return { ok: true }
       }
-      return
+      try {
+        // Why: a rejected folder update reconciles the optimistic write away, so
+        // reporting ok would show the dialog a save that silently undid itself.
+        const updated = await get().updateFolderWorkspace(
+          workspaceScope.folderWorkspaceId,
+          folderUpdates
+        )
+        return updated
+          ? { ok: true }
+          : {
+              ok: false,
+              error: translate(
+                'auto.store.slices.worktrees.a17f4d2e93',
+                'Could not update this workspace.'
+              )
+            }
+      } catch (err) {
+        console.error('Failed to update folder workspace meta:', err)
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
     const normalizedUpdates = existingWorktree
       ? clearOlderHostedReviewLinksForReplacement(updates, existingWorktree)
@@ -4541,7 +4801,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       existingHostedReviewPushTargetLookup.key !== nextHostedReviewPushTargetLookup?.key
     const worktreeForUpdate = get().getKnownWorktreeById(worktreeId)
     if (shouldApplyUpdate && !shouldApplyUpdate(worktreeForUpdate)) {
-      return
+      return { ok: true }
     }
     const shouldRefreshHostedReview =
       (normalizedUpdates.linkedPR === null && worktreeForUpdate?.linkedPR !== null) ||
@@ -4662,7 +4922,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       }
     })
     if (shouldApplyUpdate && !didApply) {
-      return
+      return { ok: true }
     }
     if (hasHostedReviewLinkUpdates(enriched)) {
       bumpHostedReviewLinkMutationGeneration(worktreeId)
@@ -4710,11 +4970,21 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     } catch (err) {
       if (isRuntimeSelectorNotFoundError(err)) {
         void get().fetchWorktrees(getRepoIdFromWorktreeId(worktreeId))
-        return
+        return {
+          ok: false,
+          error: translate(
+            'auto.store.slices.worktrees.c6cf133786',
+            'This workspace is no longer available.'
+          )
+        }
       }
       console.error('Failed to update worktree meta:', err)
       void get().fetchWorktrees(getRepoIdFromWorktreeId(worktreeId))
+      // Why: the refetch above reverts the optimistic write, so a caller that
+      // closes its surface on this path shows the user a save that undid itself.
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
+    return { ok: true }
   },
 
   ensureHostedReviewPushTarget: async (worktreeId) => {
