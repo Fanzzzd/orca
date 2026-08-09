@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
@@ -7,6 +7,7 @@ import { useAppStore } from '../../store'
 import { cn } from '@/lib/utils'
 import type { MobileRelayStatus } from '../../../../shared/mobile-relay-status'
 import type { MobilePairingConnectionMode } from '../../../../shared/mobile-pairing-connection-mode'
+import { MobilePairingPathOption } from './MobilePairingPathOption'
 
 function relayStatusLabel(status: MobileRelayStatus): string {
   if (status === 'registered') {
@@ -33,78 +34,6 @@ function relayStatusLabel(status: MobileRelayStatus): string {
   return translate(
     'auto.components.settings.MobilePairingConnectionOptions.unavailable',
     'Unavailable'
-  )
-}
-
-type PathOptionProps = {
-  selected: boolean
-  onSelect: () => void
-  title: string
-  description: string
-  trailing?: ReactNode
-  tabIndex: number
-  disabled?: boolean
-  optionRef?: (el: HTMLDivElement | null) => void
-}
-
-// Why: this is a bespoke radio row rather than the canonical SettingsSegmentedControl
-// because each option needs a two-line title + description plus a trailing status
-// badge, which the single-line segmented pill cannot carry (STYLEGUIDE.md's
-// "real difference in role" carve-out). Arrow-key nav and roving tabindex below
-// keep it a conformant ARIA radiogroup.
-function PathOption({
-  selected,
-  onSelect,
-  title,
-  description,
-  trailing,
-  tabIndex,
-  disabled = false,
-  optionRef
-}: PathOptionProps): React.JSX.Element {
-  return (
-    <div
-      ref={optionRef}
-      role="radio"
-      tabIndex={tabIndex}
-      aria-checked={selected}
-      aria-disabled={disabled}
-      onClick={disabled ? undefined : onSelect}
-      onKeyDown={(event) => {
-        if (disabled) {
-          return
-        }
-        if (event.key === ' ' || event.key === 'Enter') {
-          event.preventDefault()
-          onSelect()
-        }
-      }}
-      className={cn(
-        'flex cursor-pointer items-start gap-3 px-3 py-2.5 outline-none transition-colors',
-        // Why: match SettingsFormControls focus ring so keyboard focus is visible
-        // even when the selected row already uses bg-accent/40.
-        'focus-visible:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        disabled && 'cursor-not-allowed opacity-60',
-        selected ? 'bg-accent/40' : 'hover:bg-accent/20'
-      )}
-    >
-      <span
-        className={cn(
-          'mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border',
-          selected ? 'border-foreground bg-foreground' : 'border-muted-foreground/40'
-        )}
-        aria-hidden
-      >
-        {selected ? <span className="size-1.5 rounded-full bg-background" /> : null}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium leading-none">{title}</span>
-          {trailing}
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </div>
-    </div>
   )
 }
 
@@ -137,15 +66,34 @@ export function MobilePairingConnectionOptions({
   // and only offer Sign in when the build can actually reach Relay.
   const configured = authStatus?.configured !== false
   const needsSignIn = value === 'automatic' && !signedIn && configured
-  const relayUnavailable = value === 'automatic' && !signedIn && !configured
+  // Availability is a property of the build, not of the current selection.
+  const relayUnavailable = !signedIn && !configured
+  const relayDisabled = relayMintRetrying || relayUnavailable
   // Why: iroh is a default transport; the option only greys out if the endpoint failed to bind.
   const irohDisabled = !irohBound
-  const optionRefs = useRef<Partial<Record<MobilePairingConnectionMode, HTMLDivElement | null>>>({})
+  const optionRefs = useRef<Record<MobilePairingConnectionMode, HTMLDivElement | null>>({
+    automatic: null,
+    'local-only': null,
+    iroh: null
+  })
+  const modeDisabled = (mode: MobilePairingConnectionMode): boolean =>
+    (mode === 'automatic' && relayDisabled) || (mode === 'iroh' && irohDisabled)
+  // Why: roving tabindex needs exactly one stop — hand it to the first reachable
+  // row when the selected path is unavailable in this build.
+  const focusableMode = modeDisabled(value)
+    ? (MODE_ORDER.find((mode) => !modeDisabled(mode)) ?? 'local-only')
+    : value
 
   // Why: ARIA radiogroups move selection with the arrow keys; wrap between the
   // options, skipping disabled ones, and move focus for standard behavior.
+  // Ignore arrows that originate on nested controls (Sign in) so they do not
+  // steal keys from the button or flip the path while focus is outside a radio.
   const handleArrowKeys = (event: React.KeyboardEvent): void => {
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      return
+    }
+    const target = event.target
+    if (!(target instanceof HTMLElement) || target.getAttribute('role') !== 'radio') {
       return
     }
     event.preventDefault()
@@ -154,7 +102,7 @@ export function MobilePairingConnectionOptions({
     for (let step = 1; step < MODE_ORDER.length; step++) {
       const raw = (currentIndex + delta * step) % MODE_ORDER.length
       const next = MODE_ORDER[(raw + MODE_ORDER.length) % MODE_ORDER.length]!
-      if ((next === 'automatic' && relayMintRetrying) || (next === 'iroh' && irohDisabled)) {
+      if (modeDisabled(next)) {
         continue
       }
       onChange(next)
@@ -232,10 +180,12 @@ export function MobilePairingConnectionOptions({
         onKeyDown={handleArrowKeys}
         className="overflow-hidden rounded-md border border-border"
       >
-        <PathOption
+        <MobilePairingPathOption
           selected={value === 'automatic'}
-          tabIndex={value === 'automatic' && !relayMintRetrying ? 0 : -1}
-          disabled={relayMintRetrying}
+          tabIndex={focusableMode === 'automatic' ? 0 : -1}
+          disabled={relayDisabled}
+          positionInSet={1}
+          setSize={3}
           optionRef={(el) => {
             optionRefs.current.automatic = el
           }}
@@ -244,12 +194,26 @@ export function MobilePairingConnectionOptions({
             'auto.components.settings.MobilePairingConnectionOptions.anywhereTitle',
             'Orca Relay'
           )}
-          description={translate(
-            'auto.components.settings.MobilePairingConnectionOptions.anywhereDescription',
-            'Phone can be on cellular or any Wi‑Fi. Sign-in required.'
-          )}
+          description={
+            relayUnavailable
+              ? translate(
+                  'auto.components.settings.MobilePairingConnectionOptions.relayUnavailable',
+                  'Orca Relay isn’t available in this build. Use LAN.'
+                )
+              : translate(
+                  'auto.components.settings.MobilePairingConnectionOptions.anywhereDescription',
+                  'Phone can be on cellular or any Wi‑Fi. Sign-in required for Relay only.'
+                )
+          }
           trailing={
-            signedIn && value === 'automatic' ? (
+            relayUnavailable ? (
+              <Badge variant="outline" className="text-[11px]">
+                {translate(
+                  'auto.components.settings.MobilePairingConnectionOptions.unavailable',
+                  'Unavailable'
+                )}
+              </Badge>
+            ) : signedIn && value === 'automatic' ? (
               <Badge variant="outline" className="text-[11px]">
                 {relayMintRetrying
                   ? translate(
@@ -266,10 +230,59 @@ export function MobilePairingConnectionOptions({
             ) : null
           }
         />
+        {needsSignIn ? (
+          <div
+            // Why: indent under the Relay radio so Sign in reads as a Relay
+            // sub-step, not a requirement for the whole connection section/LAN.
+            // Deliberately role-less: a `group` here would be an invalid owned
+            // element of the radiogroup, and its label would double-announce the
+            // button it wraps. The plain div contributes nothing to the a11y
+            // tree, leaving the CTA reachable by Tab as an ordinary button.
+            onKeyDown={(event) => {
+              // Why: nested controls live inside the radiogroup for layout; do not
+              // let arrow keys bubble and flip the selected path.
+              if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+                event.stopPropagation()
+              }
+            }}
+            className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-accent/40 py-2.5 pl-10 pr-3"
+            data-testid="anywhere-sign-in-panel"
+          >
+            <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+              {translate(
+                'auto.components.settings.MobilePairingConnectionOptions.signInRequired',
+                'Relay only — LAN does not need an account.'
+              )}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              className="shrink-0"
+              disabled={connecting}
+              onClick={() => {
+                onChange('automatic')
+                void connect()
+              }}
+            >
+              {connecting ? <Loader2 className="animate-spin" /> : null}
+              {reconnectRequired
+                ? translate(
+                    'auto.components.settings.MobilePairingConnectionOptions.signInAgain',
+                    'Sign in again for Relay'
+                  )
+                : translate(
+                    'auto.components.settings.MobilePairingConnectionOptions.signIn',
+                    'Sign in for Relay'
+                  )}
+            </Button>
+          </div>
+        ) : null}
         <div className="border-t border-border" />
-        <PathOption
+        <MobilePairingPathOption
           selected={value === 'local-only'}
-          tabIndex={value === 'local-only' || relayMintRetrying ? 0 : -1}
+          tabIndex={focusableMode === 'local-only' ? 0 : -1}
+          positionInSet={2}
+          setSize={3}
           optionRef={(el) => {
             optionRefs.current['local-only'] = el
           }}
@@ -280,14 +293,16 @@ export function MobilePairingConnectionOptions({
           )}
           description={translate(
             'auto.components.settings.MobilePairingConnectionOptions.localDescription',
-            'Phone must be on this Wi‑Fi or connected through Tailscale. No sign-in required.'
+            'Phone must be on this Wi‑Fi or connected through Tailscale. No account needed.'
           )}
         />
         <div className="border-t border-border" />
-        <PathOption
+        <MobilePairingPathOption
           selected={value === 'iroh'}
-          tabIndex={value === 'iroh' ? 0 : -1}
+          tabIndex={focusableMode === 'iroh' ? 0 : -1}
           disabled={irohDisabled}
+          positionInSet={3}
+          setSize={3}
           optionRef={(el) => {
             optionRefs.current.iroh = el
           }}
@@ -319,60 +334,6 @@ export function MobilePairingConnectionOptions({
           }
         />
       </div>
-
-      {needsSignIn ? (
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
-          data-testid="anywhere-sign-in-panel"
-        >
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-            {translate(
-              'auto.components.settings.MobilePairingConnectionOptions.signInRequired',
-              'Sign in to use Orca Mobile Relay.'
-            )}
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            disabled={connecting}
-            onClick={() => {
-              onChange('automatic')
-              void connect()
-            }}
-          >
-            {connecting ? <Loader2 className="animate-spin" /> : null}
-            {reconnectRequired
-              ? translate(
-                  'auto.components.settings.MobilePairingConnectionOptions.signInAgain',
-                  'Sign in again'
-                )
-              : translate(
-                  'auto.components.settings.MobilePairingConnectionOptions.signIn',
-                  'Sign in'
-                )}
-          </Button>
-        </div>
-      ) : null}
-
-      {relayUnavailable ? (
-        <div
-          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
-          data-testid="anywhere-unavailable-panel"
-        >
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-            {translate(
-              'auto.components.settings.MobilePairingConnectionOptions.relayUnavailable',
-              'Orca Relay isn’t available in this build. Use LAN.'
-            )}
-          </p>
-          <Badge variant="outline" className="shrink-0">
-            {translate(
-              'auto.components.settings.MobilePairingConnectionOptions.unavailable',
-              'Unavailable'
-            )}
-          </Badge>
-        </div>
-      ) : null}
     </div>
   )
 }

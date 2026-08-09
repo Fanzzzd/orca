@@ -115,6 +115,7 @@ import {
   queuePanePtyResizeIfHeld,
   type PanePtyResizeHoldFlushDetail
 } from '@/lib/pane-manager/pane-pty-resize-hold'
+import { CSI_SEQUENCE_PATTERN } from '../../../../shared/ansi-escape-sequences'
 import {
   buildPostReplayLiveAgentReattachReset,
   POST_REPLAY_LIVE_AGENT_SNAPSHOT_RESET,
@@ -164,6 +165,10 @@ import {
 import { recordTerminalOutput } from '@/lib/pane-manager/pane-scroll'
 import { ensureArabicShapingJoinerForText } from '@/lib/pane-manager/terminal-arabic-shaping-joiner'
 import { clearTerminalScrollbackAndFollowOutput } from '@/lib/pane-manager/terminal-scrollback-clear'
+import {
+  installTerminalLiveScrollbackRestore,
+  type TerminalLiveScrollbackRestore
+} from '@/lib/pane-manager/terminal-live-scrollback-restore'
 import {
   enforceTerminalCurrentScrollIntent,
   getTerminalScrollIntentKind,
@@ -230,6 +235,7 @@ import { getTerminalPasteSshRemotePlatform } from './terminal-paste-ssh-platform
 import { resolveTerminalPasteRuntime } from './terminal-paste-runtime'
 import { isKnownTuiAgentTerminalStartupCommand } from './terminal-startup-command-classifier'
 import { createCommandCodeOutputStatusDetector } from '../../../../shared/command-code-output-status'
+import { createCodexBackfillErrorDetector } from './codex-backfill-error-detector'
 import type { PtyDataMeta } from './pty-dispatcher'
 import { getEagerPtyBufferHandle } from './pty-dispatcher'
 import { createTerminalGitHubPRLinkDetector } from '../../../../shared/terminal-github-pr-link-detector'
@@ -278,6 +284,7 @@ import {
 } from '@/lib/worktree-runtime-owner'
 import { CLIENT_PLATFORM } from '@/lib/new-workspace'
 import { buildAgentResumeStartupPlan } from '@/lib/tui-agent-startup'
+import { resolveAgentResumeLaunchTarget } from '@/lib/agent-resume-launch-target'
 import { resolveAgentStatusTerminalTitle } from '@/lib/agent-status-terminal-title'
 import {
   resolveTuiAgentLaunchArgs,
@@ -302,7 +309,6 @@ import {
   recognizeAgentProcessFromCommandLine
 } from '../../../../shared/agent-process-recognition'
 import type { SetupSplitDirection, TuiAgent } from '../../../../shared/types'
-import { isWslUncPath } from '../../../../shared/wsl-paths'
 import { isTuiAgent, TUI_AGENT_CONFIG } from '../../../../shared/tui-agent-config'
 import { createDraftPasteReadyScanner } from '../../../../shared/draft-paste-ready-scanner'
 import { sendAgentDraftPasteContent } from '@/lib/agent-draft-paste-content'
@@ -469,33 +475,22 @@ function terminalOwnsDomFocus(terminal: TerminalWithFocusMode): boolean {
   return document.activeElement === terminal.textarea
 }
 
-function stripAnsiCsiSequences(data: string): string {
-  let normalized = ''
-  let index = 0
-  while (index < data.length) {
-    if (data.charCodeAt(index) === 0x1b && data[index + 1] === '[') {
-      index += 2
-      while (index < data.length) {
-        const code = data.charCodeAt(index)
-        index += 1
-        if (code >= 0x40 && code <= 0x7e) {
-          break
-        }
-      }
-      continue
-    }
-    normalized += data[index]
-    index += 1
-  }
-  return normalized
-}
-
 const CURSOR_AGENT_REATTACH_HEADER = 'Cursor Agent'
 const CURSOR_AGENT_REATTACH_INPUT_MARKER = '→'
 const CURSOR_AGENT_REATTACH_SCREEN_SIGNAL_MAX_CHARS = 5000
+// Why bounded: reattach payloads reach multiple MB, but every replay puts the current screen last
+// and only the header nearest the end matters. 256KB clears even a fully SGR-styled frame by ~2x,
+// so the cut only ever drops stale scrollback — which would have been rejected anyway.
+const CURSOR_AGENT_REATTACH_SCAN_TAIL_LIMIT_CHARS = 256 * 1024
 
 function hasCursorAgentReattachPayloadScreenSignal(data: string): boolean {
-  const normalized = stripAnsiCsiSequences(data)
+  const tail =
+    data.length > CURSOR_AGENT_REATTACH_SCAN_TAIL_LIMIT_CHARS
+      ? data.slice(-CURSOR_AGENT_REATTACH_SCAN_TAIL_LIMIT_CHARS)
+      : data
+  // Why CSI only: OSC-carried titles must keep counting as a header occurrence, as they did when
+  // this stripped CSI by hand.
+  const normalized = tail.replace(CSI_SEQUENCE_PATTERN, '')
   // Why: anchor on the LAST header occurrence — replay buffers keep scrollback,
   // and an earlier finished run must not classify the current screen.
   const headerIndex = normalized.lastIndexOf(CURSOR_AGENT_REATTACH_HEADER)
@@ -945,21 +940,56 @@ function shouldWritePtyOutputForeground(isPaneVisible: boolean): boolean {
   return isDocumentVisibilityProvenStale()
 }
 
-function containsSynchronizedOutputStart(data: string): boolean {
-  return data.includes(SYNCHRONIZED_OUTPUT_START_SEQUENCE)
+type SynchronizedForegroundScan = {
+  started: boolean
+  ended: boolean
+  active: boolean
+  markerTail: string
 }
 
-function containsSynchronizedOutputEnd(data: string): boolean {
-  return data.includes(SYNCHRONIZED_OUTPUT_END_SEQUENCE)
-}
+// Why the carried tail: ConPTY can split \x1b[?2026l across chunks; scanning the raw
+// chunk alone left the foreground DEC 2026 latch stuck open so every later chunk was
+// held instead of coalesced, freezing the visible pane (#8754). Mirrors the hidden path.
+function scanSynchronizedForegroundOutput(
+  data: string,
+  markerTail: string,
+  wasActive: boolean
+): SynchronizedForegroundScan {
+  const scanData = markerTail ? `${markerTail}${data}` : data
+  const currentChunkStartIndex = scanData.length - data.length
+  let active = wasActive
+  let started = false
+  let ended = false
+  let offset = 0
 
-function shouldSynchronizedOutputRemainActive(data: string, wasActive: boolean): boolean {
-  const lastStartIndex = data.lastIndexOf(SYNCHRONIZED_OUTPUT_START_SEQUENCE)
-  const lastEndIndex = data.lastIndexOf(SYNCHRONIZED_OUTPUT_END_SEQUENCE)
-  if (lastStartIndex === -1 && lastEndIndex === -1) {
-    return wasActive
+  while (offset < scanData.length) {
+    const startIndex = scanData.indexOf(SYNCHRONIZED_OUTPUT_START_SEQUENCE, offset)
+    const endIndex = scanData.indexOf(SYNCHRONIZED_OUTPUT_END_SEQUENCE, offset)
+    if (startIndex === -1 && endIndex === -1) {
+      break
+    }
+    if (endIndex !== -1 && (startIndex === -1 || endIndex < startIndex)) {
+      active = false
+      if (endIndex + SYNCHRONIZED_OUTPUT_END_SEQUENCE.length > currentChunkStartIndex) {
+        ended = true
+      }
+      offset = endIndex + SYNCHRONIZED_OUTPUT_END_SEQUENCE.length
+      continue
+    }
+    active = true
+    if (startIndex + SYNCHRONIZED_OUTPUT_START_SEQUENCE.length > currentChunkStartIndex) {
+      started = true
+    }
+    offset = startIndex + SYNCHRONIZED_OUTPUT_START_SEQUENCE.length
   }
-  return lastStartIndex > lastEndIndex
+
+  return {
+    started,
+    ended,
+    active,
+    // Why length-1: a full marker can never hide in the tail, so no marker is counted twice.
+    markerTail: scanData.slice(-SYNCHRONIZED_OUTPUT_MARKER_TAIL_CHARS)
+  }
 }
 
 function containsCursorPositionSequence(data: string): boolean {
@@ -1115,6 +1145,8 @@ export function connectPanePty(
   let alternateScreenBackgroundRepaintTimer: ReturnType<typeof setTimeout> | null = null
   let shiftEnterReconfirmTimer: ReturnType<typeof setTimeout> | null = null
   let synchronizedForegroundOutputActive = false
+  // Why: carries up to one marker-length-1 of trailing bytes so a ConPTY-split DEC 2026 marker is still detected (#8754).
+  let synchronizedForegroundMarkerTail = ''
   // Why: tracks the keystroke proximity captured when the current synchronized
   // foreground frame opened, so a split end marker that lands after the redraw
   // window still drains on the fast path instead of the 1s coalesce fallback.
@@ -4473,6 +4505,7 @@ export function connectPanePty(
   // override, which legitimately parks the PTY at phone dims). See
   // pty-size-reconcile.ts for the convergence loop.
   let ptySizeReconcileHandle: PtySizeReconcileHandle | null = null
+  let liveScrollbackRestore: TerminalLiveScrollbackRestore | null = null
   const reconcilePtySizeAfterSpawn = (
     ptyId: string,
     spawnCols: number,
@@ -4635,6 +4668,10 @@ export function connectPanePty(
       }
       deps.onPtyErrorRef?.current?.(pane.id, message)
     }
+    const codexBackfillErrorDetector =
+      paneStartup?.launchAgent === 'codex' || tab?.launchAgent === 'codex'
+        ? createCodexBackfillErrorDetector()
+        : null
 
     // Why: shared registration so both fresh-spawn and reattach paths install
     // the same SerializeAddon-backed serializer plus the onTitleChange wrapper
@@ -4931,18 +4968,6 @@ export function connectPanePty(
       sessionRestoredBannerShown = reason
       deps.onShowSessionRestoredBanner(pane.id, reason)
     }
-    const getColdRestoreAgentResumePlatform = (): NodeJS.Platform => {
-      if (projectRuntime?.status === 'repair-required') {
-        return projectRuntime.repair.preferredRuntime.kind === 'wsl' ? 'linux' : CLIENT_PLATFORM
-      }
-      if (projectRuntime?.status === 'resolved' && projectRuntime.runtime.kind === 'wsl') {
-        return 'linux'
-      }
-      if (connectionId || (worktree?.path && isWslUncPath(worktree.path))) {
-        return 'linux'
-      }
-      return CLIENT_PLATFORM
-    }
     const buildColdRestoreAgentResumeStartup = (): ColdRestoreAgentResumeStartup | null => {
       if (pendingStartupCommand) {
         return null
@@ -4975,7 +5000,16 @@ export function connectPanePty(
       const launchConfig =
         (useLiveEntry && entry ? state.getAgentLaunchConfigForStatusEntry(entry) : undefined) ??
         matchingSleepingLaunchConfig
-      const resumePlatform = getColdRestoreAgentResumePlatform()
+      // Why: the resume line is typed into this pane's live shell, so its quoting must
+      // follow the tab's effective Windows shell, not the win32 PowerShell default.
+      const resumeTarget = resolveAgentResumeLaunchTarget({
+        projectRuntime,
+        connectionId,
+        executionHostId,
+        worktreePath: worktree?.path,
+        terminalWindowsShell: state.settings?.terminalWindowsShell,
+        tabShellOverride: shellOverride
+      })
       const startupPlan = buildAgentResumeStartupPlan({
         agent,
         providerSession,
@@ -4992,7 +5026,8 @@ export function connectPanePty(
         ...(launchConfig?.ompResumeFilePath
           ? { ompResumeFilePath: launchConfig.ompResumeFilePath }
           : {}),
-        platform: resumePlatform
+        platform: resumeTarget.platform,
+        shell: resumeTarget.shell
       })
       if (!startupPlan) {
         return null
@@ -6411,6 +6446,12 @@ export function connectPanePty(
       recordHiddenMode2031Reply()
     }
 
+    // Why installed here: the handler observes CSI 3 J inside xterm's parse, so a
+    // redraw split across PTY chunks is reported once, with the pane's rows for
+    // this write already applied.
+    liveScrollbackRestore?.dispose()
+    liveScrollbackRestore = installTerminalLiveScrollbackRestore(pane.terminal)
+
     function writePtyOutputToXterm(
       data: string,
       foreground: boolean,
@@ -6427,22 +6468,20 @@ export function connectPanePty(
         canUseHiddenOutputSnapshot(transport.getPtyId()) &&
         shouldSnapshotHiddenCodexOutput &&
         (opts?.hiddenStartupRendererQuery === true || containsHiddenStartupRendererQuery(data))
-      const synchronizedOutputStarted =
-        shouldProtectNativeWindowsSynchronizedOutput &&
-        foreground &&
-        containsSynchronizedOutputStart(data)
-      const synchronizedOutputEnded =
-        shouldProtectNativeWindowsSynchronizedOutput &&
-        foreground &&
-        containsSynchronizedOutputEnd(data)
+      const synchronizedForegroundScan =
+        shouldProtectNativeWindowsSynchronizedOutput && foreground
+          ? scanSynchronizedForegroundOutput(
+              data,
+              synchronizedForegroundMarkerTail,
+              synchronizedForegroundOutputActive
+            )
+          : null
+      const synchronizedOutputStarted = synchronizedForegroundScan?.started === true
+      const synchronizedOutputEnded = synchronizedForegroundScan?.ended === true
       const synchronizedForegroundOutput =
-        shouldProtectNativeWindowsSynchronizedOutput &&
-        foreground &&
+        synchronizedForegroundScan !== null &&
         (synchronizedForegroundOutputActive || synchronizedOutputStarted || synchronizedOutputEnded)
-      const nextSynchronizedForegroundOutputActive =
-        shouldProtectNativeWindowsSynchronizedOutput &&
-        foreground &&
-        shouldSynchronizedOutputRemainActive(data, synchronizedForegroundOutputActive)
+      const nextSynchronizedForegroundOutputActive = synchronizedForegroundScan?.active === true
       // Why: xterm's DOM renderer draws the cursor as row content, so Windows cursor-only restores need row invalidation even outside DEC 2026.
       const nativeWindowsCursorRestore =
         shouldProtectNativeWindowsSynchronizedOutput && foreground && containsCursorRestore(data)
@@ -6486,6 +6525,7 @@ export function connectPanePty(
       const synchronizedFrameLatencySensitive =
         synchronizedForegroundOutput && synchronizedForegroundFrameInteractive
       synchronizedForegroundOutputActive = nextSynchronizedForegroundOutputActive
+      synchronizedForegroundMarkerTail = synchronizedForegroundScan?.markerTail ?? ''
       writeTerminalOutput(pane.terminal, data, {
         foreground: foregroundOutput,
         beforeWrite: beforeTerminalOutputWrite,
@@ -7746,6 +7786,10 @@ export function connectPanePty(
         commandLifecycle.handlePtyData(data)
       }
       commandCodeOutputStatusDetector?.observe(data)
+      const codexBackfillNotice = codexBackfillErrorDetector?.observe(data)
+      if (codexBackfillNotice) {
+        reportError(codexBackfillNotice)
+      }
       // Why: split panes have visible-but-inactive panes the user watches; throttle only when the pane or whole document is hidden.
       const foreground =
         shouldWritePtyOutputForeground(deps.isVisibleRef.current) && meta?.background !== true
@@ -9331,6 +9375,8 @@ export function connectPanePty(
       unregisterUndeliverableWriteHandler()
       unsubscribeRemoteDesktopActivationClaim()
       cancelHiddenOutputSnapshotScrollRestore()
+      liveScrollbackRestore?.dispose()
+      liveScrollbackRestore = null
       structuralReplayCoordinator.dispose()
       cancelFreshSpawnFollowReset()
       // Why: cancel the post-spawn reconcile's pending rAF so a torn-down pane can't keep fitting/resizing after disposal.
