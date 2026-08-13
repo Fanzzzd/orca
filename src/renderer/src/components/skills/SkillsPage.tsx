@@ -85,36 +85,44 @@ export default function SkillsPage(): React.JSX.Element {
   const mountedRef = useMountedRef()
   const scanGenerationRef = useRef(0)
 
-  const loadSkills = useCallback(async (): Promise<void> => {
-    setLoading(true)
-    // Why: a cold local scan walks every skill root, so switching runtimes can
-    // land a stale result after a newer one. Only the newest scan may write.
-    const scanGeneration = ++scanGenerationRef.current
-    const isCurrentScan = (): boolean =>
-      mountedRef.current && scanGeneration === scanGenerationRef.current
-    if (!runtimeTarget) {
-      // Why: keep scanning until the owning runtime is known, rather than
-      // showing the client's skills to someone whose skills live remotely.
-      return
-    }
-    try {
-      const nextResult = await discoverSkillsForRuntimeTarget(runtimeTarget)
-      if (isCurrentScan()) {
-        setResult(nextResult)
+  // `refresh` bypasses the host's shared scans; only an explicit user re-scan does
+  // that, so opening the page rides the same cached roots every other surface uses.
+  const loadSkills = useCallback(
+    async (refresh = false): Promise<void> => {
+      setLoading(true)
+      // Why: a cold local scan walks every skill root, so switching runtimes can
+      // land a stale result after a newer one. Only the newest scan may write.
+      const scanGeneration = ++scanGenerationRef.current
+      const isCurrentScan = (): boolean =>
+        mountedRef.current && scanGeneration === scanGenerationRef.current
+      if (!runtimeTarget) {
+        // Why: keep scanning until the owning runtime is known, rather than
+        // showing the client's skills to someone whose skills live remotely.
+        return
       }
-    } catch (error) {
-      console.error('Failed to discover skills:', error)
-      if (isCurrentScan()) {
-        toast.error(
-          translate('auto.components.skills.SkillsPage.ea72d6185b', 'Could not scan skills')
+      try {
+        const nextResult = await discoverSkillsForRuntimeTarget(
+          runtimeTarget,
+          refresh ? { refresh: true } : undefined
         )
+        if (isCurrentScan()) {
+          setResult(nextResult)
+        }
+      } catch (error) {
+        console.error('Failed to discover skills:', error)
+        if (isCurrentScan()) {
+          toast.error(
+            translate('auto.components.skills.SkillsPage.ea72d6185b', 'Could not scan skills')
+          )
+        }
+      } finally {
+        if (isCurrentScan()) {
+          setLoading(false)
+        }
       }
-    } finally {
-      if (isCurrentScan()) {
-        setLoading(false)
-      }
-    }
-  }, [mountedRef, runtimeTarget])
+    },
+    [mountedRef, runtimeTarget]
+  )
 
   useEffect(() => {
     void loadSkills()
@@ -274,7 +282,7 @@ export default function SkillsPage(): React.JSX.Element {
               className="h-8"
               disabled={loading}
               onClick={() => {
-                void loadSkills()
+                void loadSkills(true)
               }}
             >
               <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
@@ -302,7 +310,7 @@ export default function SkillsPage(): React.JSX.Element {
           <EmptyState
             loading={loading}
             hasSkills={skills.length > 0}
-            onRefresh={() => void loadSkills()}
+            onRefresh={() => void loadSkills(true)}
           />
         )}
       </section>

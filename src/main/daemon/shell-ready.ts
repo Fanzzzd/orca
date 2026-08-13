@@ -12,9 +12,11 @@ import {
 } from '../powershell-osc133-bootstrap'
 import { getPosixOmpShellWrapper } from '../pty/omp-shell-wrapper'
 import {
+  getFishShellReadyInitCommand,
   getZshEnvTemplate,
   getZshFinalZdotdirRestoreBlock,
   getZshShellReadyMarkerRegistrationBlock,
+  SHELL_STARTUP_IDENTITY_MARKER_BLOCK,
   getZshStartupFileSourceBlock
 } from '../shell-templates'
 
@@ -87,6 +89,7 @@ function shellReadyWrappersExist(): boolean {
 
 export function getDaemonBashShellReadyRcfileContent(): string {
   return `# Orca daemon bash shell-ready wrapper
+${SHELL_STARTUP_IDENTITY_MARKER_BLOCK}
 [[ -f /etc/profile ]] && source /etc/profile
 if [[ -f "$HOME/.bash_profile" ]]; then
   source "$HOME/.bash_profile"
@@ -100,14 +103,6 @@ fi
 # treat each embedded newline as Enter and mangle the prompt into PS2
 # continuation. Modern readline defaults this on; force it for the rest.
 [[ $- == *i* ]] && bind 'set enable-bracketed-paste on' 2>/dev/null
-__orca_restore_attribution_path() {
-  [[ -n "\${ORCA_ATTRIBUTION_SHIM_DIR:-}" ]] || return 0
-  case "$PATH" in
-    "\${ORCA_ATTRIBUTION_SHIM_DIR}"|"\${ORCA_ATTRIBUTION_SHIM_DIR}:"*) return 0 ;;
-  esac
-  export PATH="\${ORCA_ATTRIBUTION_SHIM_DIR}:$PATH"
-}
-__orca_restore_attribution_path
 __orca_restore_agent_teams_path() {
   [[ -n "\${ORCA_AGENT_TEAMS_SHIM_DIR:-}" ]] || return 0
   case "$PATH" in
@@ -221,14 +216,6 @@ ${getZshStartupFileSourceBlock({
   interactiveOnly: true,
   skipWhenHomeIsCurrentZdotdir: true
 })}
-__orca_restore_attribution_path() {
-  [[ -n "\${ORCA_ATTRIBUTION_SHIM_DIR:-}" ]] || return 0
-  case "$PATH" in
-    "\${ORCA_ATTRIBUTION_SHIM_DIR}"|"\${ORCA_ATTRIBUTION_SHIM_DIR}:"*) return 0 ;;
-  esac
-  export PATH="\${ORCA_ATTRIBUTION_SHIM_DIR}:$PATH"
-}
-[[ ! -o login ]] && __orca_restore_attribution_path
 __orca_restore_agent_teams_path() {
   [[ -n "\${ORCA_AGENT_TEAMS_SHIM_DIR:-}" ]] || return 0
   case "$PATH" in
@@ -285,14 +272,6 @@ ${getZshStartupFileSourceBlock({ fileName: '.zprofile' })}
   const zshRc = getDaemonZshShellReadyRcfileContent()
   const zshLogin = `# Orca daemon zsh shell-ready wrapper
 ${getZshStartupFileSourceBlock({ fileName: '.zlogin', interactiveOnly: true })}
-__orca_restore_attribution_path() {
-  [[ -n "\${ORCA_ATTRIBUTION_SHIM_DIR:-}" ]] || return 0
-  case "$PATH" in
-    "\${ORCA_ATTRIBUTION_SHIM_DIR}"|"\${ORCA_ATTRIBUTION_SHIM_DIR}:"*) return 0 ;;
-  esac
-  export PATH="\${ORCA_ATTRIBUTION_SHIM_DIR}:$PATH"
-}
-__orca_restore_attribution_path
 __orca_restore_agent_teams_path() {
   [[ -n "\${ORCA_AGENT_TEAMS_SHIM_DIR:-}" ]] || return 0
   case "$PATH" in
@@ -350,7 +329,9 @@ export function resolvePtyShellPath(env: Record<string, string>): string {
 
 export function shellPathSupportsPtyStartupBarrier(shellPath: string): boolean {
   const shellName = pathWin32.basename(basename(shellPath)).toLowerCase()
-  return shellName === 'zsh' || shellName === 'bash'
+  // Why fish: markerless, its startup command is written before fish's reader owns
+  // the PTY and the launch is lost under slow prompts like Starship (STA-3417).
+  return shellName === 'zsh' || shellName === 'bash' || shellName === 'fish'
 }
 
 export function supportsPtyStartupBarrier(env: Record<string, string>): boolean {
@@ -381,7 +362,8 @@ function getWrappedShellLaunchConfig(
         ORCA_ORIG_ZDOTDIR: resolveOriginalZdotdir(),
         ORCA_ZSHENV_SOURCE_DIR: resolveOriginalZshenvSourceDir(),
         ZDOTDIR: join(root, 'zsh'),
-        ORCA_SHELL_READY_MARKER: options.emitReadyMarker ? '1' : '0'
+        ORCA_SHELL_READY_MARKER: options.emitReadyMarker ? '1' : '0',
+        ORCA_SHELL_STARTUP_IDENTITY: options.emitReadyMarker ? '1' : '0'
       },
       supportsReadyMarker: options.emitReadyMarker
     }
@@ -393,7 +375,8 @@ function getWrappedShellLaunchConfig(
     return {
       args: ['--rcfile', join(root, 'bash', 'rcfile')],
       env: {
-        ORCA_SHELL_READY_MARKER: options.emitReadyMarker ? '1' : '0'
+        ORCA_SHELL_READY_MARKER: options.emitReadyMarker ? '1' : '0',
+        ORCA_SHELL_STARTUP_IDENTITY: options.emitReadyMarker ? '1' : '0'
       },
       supportsReadyMarker: options.emitReadyMarker
     }
@@ -412,6 +395,15 @@ function getWrappedShellLaunchConfig(
     }
   }
 
+  // Why: mirrors local-pty-shell-ready.ts; markerless fish stays unwrapped.
+  if (shellName === 'fish' && options.emitReadyMarker) {
+    return {
+      args: ['-l', '-C', getFishShellReadyInitCommand(SHELL_READY_MARKER)],
+      env: { ORCA_SHELL_READY_MARKER: '1' },
+      supportsReadyMarker: true
+    }
+  }
+
   return {
     args: null,
     env: {},
@@ -423,6 +415,6 @@ export function getShellReadyLaunchConfig(shellPath: string): ShellLaunchConfig 
   return getWrappedShellLaunchConfig(shellPath, { emitReadyMarker: true })
 }
 
-export function getAttributionShellLaunchConfig(shellPath: string): ShellLaunchConfig {
+export function getMarkerlessShellLaunchConfig(shellPath: string): ShellLaunchConfig {
   return getWrappedShellLaunchConfig(shellPath, { emitReadyMarker: false })
 }

@@ -144,16 +144,12 @@ async function sendRemoteRuntimeRequestOnSocket<TResult>(
   })
   const pendingRequest = {
     preparedRequest: prepareRemoteRuntimeRequest(new Map(), () =>
-      serializeRemoteRuntimePayload({
-        id: requestId,
+      serializeRemoteRuntimeRpcRequest({
+        requestId,
         deviceToken: pairing.deviceToken,
         method,
         params,
-        orchestrationCapability: envelope?.orchestrationCapability,
-        orchestrationContractVersion: envelope?.orchestrationContractVersion,
-        orchestrationRequestId: envelope?.orchestrationRequestId,
-        compatibilityInvocationId: envelope?.compatibilityInvocationId,
-        orchestrationCompatibilityEvidence: envelope?.orchestrationCompatibilityEvidence
+        envelope
       })
     )
   }
@@ -501,14 +497,16 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
   params: unknown,
   timeoutMs: number,
   callbacks: RemoteRuntimeSubscriptionCallbacks<TResult>,
-  livenessOptions?: RemoteRuntimeSocketLivenessOptions
+  livenessOptions?: RemoteRuntimeSocketLivenessOptions,
+  envelope?: RuntimeOrchestrationEnvelope
 ): Promise<RemoteRuntimeSubscription> {
   const requestId = randomUUID()
   const serializedRequest = serializeRemoteRuntimeRpcRequest({
     requestId,
     deviceToken: pairing.deviceToken,
     method,
-    params
+    params,
+    envelope
   })
   const serializedAuth = serializeRemoteRuntimePayload({
     type: 'e2ee_auth',

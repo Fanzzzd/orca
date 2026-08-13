@@ -70,6 +70,10 @@ import { shouldShowOnboarding } from './components/onboarding/should-show-onboar
 import { MarkdownTemplatePicker } from './components/editor/MarkdownTemplatePicker'
 import { FloatingTerminalToggleButton } from './components/floating-terminal/FloatingTerminalToggleButton'
 import {
+  persistFloatingTerminalPanelOpen,
+  readPersistedFloatingTerminalPanelViewState
+} from './components/floating-terminal/floating-terminal-panel-view-state'
+import {
   TOGGLE_FLOATING_TERMINAL_EVENT,
   requestFloatingTerminalOpenMaximized
 } from '@/lib/floating-terminal'
@@ -98,6 +102,7 @@ import {
   usePrimarySelectionPaste
 } from './hooks/usePrimarySelectionPaste'
 import { useAppMenuPaste } from './hooks/useAppMenuPaste'
+import { useAppMenuSelectionActions } from './hooks/useAppMenuSelectionActions'
 import { useLargeTextControlPaste } from './hooks/useLargeTextControlPaste'
 import {
   canSkipRuntimeMobileSessionSyncKeyBuild,
@@ -356,6 +361,9 @@ const AddProjectFromFolderDialog = lazy(
 )
 const ProjectAddedDialog = lazy(() => import('./components/sidebar/ProjectAddedDialog'))
 const DeleteWorktreeDialog = lazy(() => import('./components/sidebar/DeleteWorktreeDialog'))
+const PreservedBranchBatchReviewModal = lazy(
+  () => import('./components/sidebar/PreservedBranchBatchReviewModal')
+)
 const DictationController = lazy(() =>
   import('./components/dictation/DictationController').then((module) => ({
     default: module.DictationController
@@ -440,7 +448,11 @@ function App(): React.JSX.Element {
   const clearUnreadDockBadge = useUnreadDockBadge()
   useRadixBodyPointerEventsRecovery()
   useWebSessionTabsSync()
-  const [floatingTerminalOpen, setFloatingTerminalOpen] = useState(false)
+  // Why restored: leaving the panel closed forces the user to reopen and re-maximize it,
+  // and that size jump reflows a live TUI's buffer (see floating-terminal-panel-view-state).
+  const [floatingTerminalOpen, setFloatingTerminalOpen] = useState(
+    () => readPersistedFloatingTerminalPanelViewState()?.open === true
+  )
   const floatingWorkspaceTourInteractionSnapshotRef = useRef<{
     wasPreviouslyInteracted?: boolean
     persisted?: Promise<void>
@@ -535,6 +547,10 @@ function App(): React.JSX.Element {
   const historyBackShortcutLabel = useShortcutLabel('worktree.history.back')
   const historyForwardShortcutLabel = useShortcutLabel('worktree.history.forward')
   const floatingTerminalEnabled = useAppStore((s) => s.settings?.floatingTerminalEnabled === true)
+  // Why tracked separately: the flag reads false while settings are still loading, and a
+  // false read at boot must not be treated as the user disabling the feature. The store
+  // initializes `settings` to null (not undefined) - fetchSettings replaces it atomically.
+  const floatingTerminalSettingsHydrated = useAppStore((s) => s.settings != null)
   const floatingTerminalTriggerLocation = useAppStore(
     (s) => s.settings?.floatingTerminalTriggerLocation ?? 'floating-button'
   )
@@ -632,8 +648,19 @@ function App(): React.JSX.Element {
         restoreFloatingTerminalReturnFocus()
       }
       setFloatingTerminalOpen(resolvedOpen)
+      // Why gated on the flag: `settings` is undefined until it hydrates, so the
+      // feature-off effect force-closes the panel on every boot. Persisting there would
+      // overwrite the user's restored `open` with a value they never chose.
+      if (floatingTerminalEnabled) {
+        persistFloatingTerminalPanelOpen(resolvedOpen)
+      }
     },
-    [floatingTerminalOpen, rememberFloatingTerminalReturnFocus, restoreFloatingTerminalReturnFocus]
+    [
+      floatingTerminalEnabled,
+      floatingTerminalOpen,
+      rememberFloatingTerminalReturnFocus,
+      restoreFloatingTerminalReturnFocus
+    ]
   )
 
   useEffect(() => {
@@ -647,10 +674,13 @@ function App(): React.JSX.Element {
   }, [floatingTerminalEnabled, setFloatingTerminalOpenWithFocus])
 
   useEffect(() => {
-    if (!floatingTerminalEnabled) {
+    // Why the hydration gate: this effect fires on every boot while settings are still
+    // undefined, and closing there discards the restored open state before the real flag
+    // value arrives. Only a hydrated flag-off is an actual disable.
+    if (floatingTerminalSettingsHydrated && !floatingTerminalEnabled) {
       setFloatingTerminalOpenWithFocus(false)
     }
-  }, [floatingTerminalEnabled, setFloatingTerminalOpenWithFocus])
+  }, [floatingTerminalSettingsHydrated, floatingTerminalEnabled, setFloatingTerminalOpenWithFocus])
 
   const sidebarWidth = useAppStore((s) => s.sidebarWidth)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
@@ -660,6 +690,7 @@ function App(): React.JSX.Element {
   const showSleepingWorkspaces = useAppStore((s) => s.showSleepingWorkspaces)
   const hideDefaultBranchWorkspace = useAppStore((s) => s.hideDefaultBranchWorkspace)
   const hideAutomationGeneratedWorkspaces = useAppStore((s) => s.hideAutomationGeneratedWorkspaces)
+  const hideWorkspacesFromOtherDevices = useAppStore((s) => s.hideWorkspacesFromOtherDevices)
   const hideCliCreatedWorkspaces = useAppStore((s) => s.hideCliCreatedWorkspaces)
   const hideDetachedHeadWorkspaces = useAppStore((s) => s.hideDetachedHeadWorkspaces)
   const alwaysShowDefaultBranchWorkspace = useAppStore((s) => s.alwaysShowDefaultBranchWorkspace)
@@ -694,6 +725,7 @@ function App(): React.JSX.Element {
   usePrimarySelectionPaste(primarySelectionMiddleClickPaste)
 
   useAppMenuPaste()
+  useAppMenuSelectionActions()
   useLargeTextControlPaste()
   const petEnabled = useAppStore((s) => s.settings?.experimentalPet === true)
   const petVisible = useAppStore((s) => s.petVisible)
@@ -714,14 +746,7 @@ function App(): React.JSX.Element {
   const featureTipsSuppressedByOnboardingThisSessionRef = useRef(false)
   const unmountAddRepoDialogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [featureTipCliInstalled, setFeatureTipCliInstalled] = useState<boolean | null>(null)
-  const [onboardingSettingsDetour, setOnboardingSettingsDetour] = useState(false)
   const shouldRenderOnboarding = onboarding !== null && shouldShowOnboarding(onboarding)
-  const onboardingSettingsDetourActive =
-    onboardingSettingsDetour && activeView === 'settings' && shouldRenderOnboarding
-  if (onboardingSettingsDetour && !onboardingSettingsDetourActive) {
-    // Why: the detour is valid only while Settings is onscreen; clear it during render so onboarding resumes without an extra Effect pass.
-    setOnboardingSettingsDetour(false)
-  }
 
   useEffect(() => {
     if (activeModal === 'add-repo') {
@@ -844,10 +869,6 @@ function App(): React.JSX.Element {
     settings
   ])
 
-  const beginOnboardingSettingsDetour = useCallback(() => {
-    setOnboardingSettingsDetour(true)
-  }, [])
-
   // Why: useLayoutEffect fires before paint, so dispatching SYNC_FIT_PANES_EVENT reflows the terminal in the same frame as the width change — no wrongly-sized transient.
   useLayoutEffect(() => {
     window.dispatchEvent(new CustomEvent(SYNC_FIT_PANES_EVENT))
@@ -941,6 +962,10 @@ function App(): React.JSX.Element {
               hydrationRepoIdSet.has(repo.id) &&
               // Why: disconnected SSH repos hydrate from local metadata; only runtime-owned repos use placeholders.
               parseExecutionHostId(getRepoExecutionHostId(repo))?.kind !== 'runtime'
+          )
+          // Why: worktree refresh can spawn host Git; wait for main's shell-PATH generation fence first.
+          await timeRendererStartupStep('first-window-services-await', () =>
+            window.api.app.awaitFirstWindowStartupServices()
           )
           await timeRendererStartupStep('fetch-hydration-worktrees', () =>
             mapWithConcurrency(hydrationRepos, WORKTREE_REFRESH_CONCURRENCY, (repo) =>
@@ -1074,10 +1099,7 @@ function App(): React.JSX.Element {
             logRendererStartupDiagnostic('ssh-reconnect-skipped', { connectionIds: 0 })
           }
 
-          // Why: main overlaps daemon/hook startup with hydration, but restored terminals need those services ready before they spawn/reconnect PTYs.
-          await timeRendererStartupStep('first-window-services-await', () =>
-            window.api.app.awaitFirstWindowStartupServices()
-          )
+          // first-window-services-await already fenced worktree hydration; terminal recovery reuses that ready state.
           await timeRendererStartupStep('recover-legacy-worker-terminals-pre-reconnect', () =>
             window.api.app.recoverLegacyWorkerTerminalsForRendererStartup()
           )
@@ -1391,9 +1413,12 @@ function App(): React.JSX.Element {
         hideAutomationGeneratedWorkspaces,
         hideCliCreatedWorkspaces,
         hideDetachedHeadWorkspaces,
+        hideWorkspacesFromOtherDevices,
         alwaysShowDefaultBranchWorkspace,
         showDotfilesByWorktree,
-        filterRepoIds,
+        // Why: the store keeps this readonly for identity stability, but PersistedUI crosses to
+        // main, which owns a mutable array — copy at the boundary rather than widening the wire type.
+        filterRepoIds: [...filterRepoIds],
         // Why (#9002): activeView is deliberately NOT included here. It used to
         // ride this same 150ms writer (#8265), which meant every top-level view
         // switch scheduled a full durable-state save. The narrow preference
@@ -1425,6 +1450,7 @@ function App(): React.JSX.Element {
     hideAutomationGeneratedWorkspaces,
     hideCliCreatedWorkspaces,
     hideDetachedHeadWorkspaces,
+    hideWorkspacesFromOtherDevices,
     alwaysShowDefaultBranchWorkspace,
     showDotfilesByWorktree,
     filterRepoIds,
@@ -1452,18 +1478,17 @@ function App(): React.JSX.Element {
     } else if (settings.theme === 'light') {
       applyDocumentTheme('light')
       return undefined
-    } else {
-      // system
-      const mq = window.matchMedia('(prefers-color-scheme: dark)')
-      applyDocumentTheme('system')
-      const handler = (): void => {
-        applyDocumentTheme('system')
-        // System theme changes don't mutate the store, so mobile terminal colors need an explicit graph republish.
-        scheduleRuntimeGraphSync()
-      }
-      mq.addEventListener('change', handler)
-      return () => mq.removeEventListener('change', handler)
     }
+    // system
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    applyDocumentTheme('system')
+    const handler = (): void => {
+      applyDocumentTheme('system')
+      // System theme changes don't mutate the store, so mobile terminal colors need an explicit graph republish.
+      scheduleRuntimeGraphSync()
+    }
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
   }, [settings])
 
   useEffect(() => {
@@ -2319,7 +2344,8 @@ function App(): React.JSX.Element {
                       )
                     ) : null}
                     <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
-                      {stackedSidebarOpen ? (
+                      {/* Why: automations owns its page header; the stacked titlebar would be an empty 36px stripe. */}
+                      {stackedSidebarOpen && activeView !== 'automations' ? (
                         <div className="titlebar">{titlebarMainStrip}</div>
                       ) : null}
                       <div className="relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
@@ -2675,6 +2701,16 @@ function App(): React.JSX.Element {
                   <DeleteWorktreeDialog />
                 </RecoverableRenderErrorBoundary>
               ) : null}
+              {activeModal === 'preserved-branch-review' ? (
+                <RecoverableRenderErrorBoundary
+                  boundaryId="modal.preserved-branch-review"
+                  surface="modal"
+                  resetKey
+                  compact
+                >
+                  <PreservedBranchBatchReviewModal />
+                </RecoverableRenderErrorBoundary>
+              ) : null}
             </Suspense>
             {hasSshCredentialRequest ? (
               <Suspense fallback={null}>
@@ -2710,23 +2746,18 @@ function App(): React.JSX.Element {
             >
               <CrashReportDialog />
             </RecoverableRenderErrorBoundary>
-            {onboarding && shouldRenderOnboarding && !onboardingSettingsDetourActive ? (
+            {onboarding && shouldRenderOnboarding ? (
               <Suspense fallback={null}>
                 <RecoverableRenderErrorBoundary
                   boundaryId="modal.onboarding"
                   surface="modal"
-                  resetKey={onboardingSettingsDetourActive}
                   title={translate('auto.App.f02d37278a', 'Onboarding hit an error.')}
                   description={translate(
                     'auto.App.221a95ba38',
                     'Retry onboarding or close it and continue in the app.'
                   )}
                 >
-                  <OnboardingFlow
-                    onboarding={onboarding}
-                    onOnboardingChange={setOnboarding}
-                    onSettingsDetourStart={beginOnboardingSettingsDetour}
-                  />
+                  <OnboardingFlow onboarding={onboarding} onOnboardingChange={setOnboarding} />
                 </RecoverableRenderErrorBoundary>
               </Suspense>
             ) : null}

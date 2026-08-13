@@ -99,4 +99,24 @@ describe('discoverSkillsForRuntimeTarget', () => {
       expect.objectContaining({ method: 'skills.discover', params: {} })
     )
   })
+
+  // Why: refresh describes the request, not the client's host. Dropping it would
+  // leave an explicit re-check reading the remote host's shared scan instead of
+  // its disk, which is exactly what an install-completed refresh must not do.
+  it('forwards an explicit refresh to a remote runtime', async () => {
+    runtimeEnvironmentCall.mockResolvedValueOnce({
+      id: 'skills',
+      ok: true,
+      result: discoveryResult('orchestration')
+    })
+
+    await discoverSkillsForRuntimeTarget(
+      { kind: 'environment', environmentId: 'env-1' },
+      { runtime: 'wsl', wslDistro: 'Ubuntu', refresh: true }
+    )
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'skills.discover', params: { refresh: true } })
+    )
+  })
 })

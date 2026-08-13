@@ -165,7 +165,7 @@ export class DeviceRegistry {
 
   setRelayBinding(deviceId: string, binding: RelayDeviceBinding): boolean {
     const index = this.devices.findIndex((candidate) => candidate.deviceId === deviceId)
-    if (index < 0 || binding.relayDeviceId !== deviceId) {
+    if (index === -1 || binding.relayDeviceId !== deviceId) {
       return false
     }
     const nextDevices = this.devices.map((device, candidateIndex) =>
@@ -178,7 +178,7 @@ export class DeviceRegistry {
 
   setMobilePairingConnectionMode(deviceId: string, mode: MobilePairingConnectionMode): boolean {
     const index = this.devices.findIndex((candidate) => candidate.deviceId === deviceId)
-    if (index < 0 || this.devices[index]?.scope !== 'mobile') {
+    if (index === -1 || this.devices[index]?.scope !== 'mobile') {
       return false
     }
     // Why: persist before swapping memory so a failed write does not leave a
@@ -211,7 +211,7 @@ export class DeviceRegistry {
 
   updateLastSeen(deviceId: string): void {
     const index = this.devices.findIndex((d) => d.deviceId === deviceId)
-    if (index < 0) {
+    if (index === -1) {
       return
     }
     // Why: persist before memory swap so a failed write cannot leave a scanned
@@ -233,7 +233,7 @@ export class DeviceRegistry {
    */
   updateLastSeenDeferred(deviceId: string): void {
     const index = this.devices.findIndex((d) => d.deviceId === deviceId)
-    if (index < 0) {
+    if (index === -1) {
       return
     }
     if (this.devices[index]!.lastSeenAt === 0) {

@@ -21,7 +21,8 @@ export default defineConfig({
       ORCA_DISABLE_IROH: '1'
     },
     // Why: Node 26's undefined Web Storage globals prevent Vitest from installing happy-dom's.
-    execArgv: ['--no-experimental-webstorage'],
+    // Why --expose-gc: retention tests need a deterministic collection point to measure what a queue really holds.
+    execArgv: ['--no-experimental-webstorage', '--expose-gc'],
     // Why: happy-dom drops MutationObserver callbacks on GC; keep them alive like a browser does.
     setupFiles: [resolve('config/scripts/happy-dom-mutation-observer-retention.ts')],
     include: [

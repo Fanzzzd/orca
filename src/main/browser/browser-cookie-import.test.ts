@@ -22,8 +22,7 @@ const {
 vi.mock('./browser-session-registry', () => ({
   browserSessionRegistry: {
     setPendingCookieImport: setPendingCookieImportMock,
-    clearPendingCookieImport: clearPendingCookieImportMock,
-    persistUserAgent: vi.fn()
+    clearPendingCookieImport: clearPendingCookieImportMock
   }
 }))
 
@@ -424,14 +423,16 @@ describe('importCookiesFromBrowser Chromium', () => {
   let cookiesSetMock: ReturnType<typeof vi.fn>
   let cookiesRemoveMock: ReturnType<typeof vi.fn>
   let cookiesFlushStoreMock: ReturnType<typeof vi.fn>
-  let clearStorageDataMock: ReturnType<typeof vi.fn>
+  let clearDataMock: ReturnType<typeof vi.fn>
+  let setUserAgentMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'orca-chromium-cookie-test-'))
     cookiesSetMock = vi.fn().mockResolvedValue(undefined)
     cookiesRemoveMock = vi.fn().mockResolvedValue(undefined)
     cookiesFlushStoreMock = vi.fn().mockResolvedValue(undefined)
-    clearStorageDataMock = vi.fn().mockResolvedValue(undefined)
+    clearDataMock = vi.fn().mockResolvedValue(undefined)
+    setUserAgentMock = vi.fn()
     appGetPathMock.mockReset()
     appGetPathMock.mockReturnValue(join(tmpDir, 'userData'))
     copyFileSyncMock.mockClear()
@@ -444,11 +445,13 @@ describe('importCookiesFromBrowser Chromium', () => {
     sessionFromPartitionMock.mockReset()
     sessionFromPartitionMock.mockReturnValue({
       cookies: {
+        get: vi.fn().mockResolvedValue([]),
         set: cookiesSetMock,
         remove: cookiesRemoveMock,
         flushStore: cookiesFlushStoreMock
       },
-      clearStorageData: clearStorageDataMock
+      clearData: clearDataMock,
+      setUserAgent: setUserAgentMock
     })
   })
 
@@ -471,6 +474,12 @@ describe('importCookiesFromBrowser Chromium', () => {
     ]).close()
 
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    execFileSyncMock.mockImplementation((command: string) => {
+      if (command === 'defaults') {
+        return '120.0.6099.71\n'
+      }
+      throw new Error(`Unexpected command: ${command}`)
+    })
     try {
       expect(existsSync(`${sourceCookiesPath}-wal`)).toBe(true)
       const sourceFilesBefore = ['', '-wal', '-shm'].map((suffix) =>
@@ -491,6 +500,7 @@ describe('importCookiesFromBrowser Chromium', () => {
         })
       )
       expect(execFileSyncMock.mock.calls.some(([command]) => command === 'security')).toBe(false)
+      expect(execFileSyncMock.mock.calls.some(([command]) => command === 'defaults')).toBe(false)
       expect(copyFileSyncMock.mock.calls.some(([source]) => source === sourceCookiesPath)).toBe(
         true
       )
@@ -501,7 +511,10 @@ describe('importCookiesFromBrowser Chromium', () => {
         ['', '-wal', '-shm'].map((suffix) => readFileSync(sourceCookiesPath + suffix))
       ).toEqual(sourceFilesBefore)
       expect(cookiesRemoveMock).not.toHaveBeenCalled()
-      expect(clearStorageDataMock).toHaveBeenCalledWith({ storages: ['cookies'] })
+      expect(clearDataMock).not.toHaveBeenCalled()
+      // Why: STA-3514 — imports must never impersonate the source browser; the
+      // session keeps the engine UA the registry set at startup.
+      expect(setUserAgentMock).not.toHaveBeenCalled()
     } finally {
       platformSpy.mockRestore()
       sourceDb.close()

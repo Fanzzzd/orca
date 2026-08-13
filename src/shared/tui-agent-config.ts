@@ -144,6 +144,18 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
     promptInjectionMode: 'argv',
     draftPromptEnvVar: 'ORCA_OMP_PREFILL'
   },
+  'prime-agent': {
+    detectCmd: 'prime-agent',
+    launchCmd: 'prime-agent',
+    expectedProcess: 'prime-agent',
+    // Why: `prime-agent [options] [@files...] [message...]` takes the task as positional argv.
+    promptInjectionMode: 'argv',
+    // Why: separator so prompts starting with `help`/`agents`/`-…` aren't parsed as a
+    // subcommand or flag — its help documents `--` as "treat all following arguments as messages".
+    argvPromptSeparator: '--',
+    // Why: Prime Agent embeds Pi's TUI and decodes CSI-u the same way (see pi above).
+    windowsShiftEnterEncoding: 'csi-u'
+  },
   gemini: {
     detectCmd: 'gemini',
     launchCmd: 'gemini',
@@ -319,7 +331,7 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
 }
 
 export function isTuiAgent(value: unknown): value is TuiAgent {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(TUI_AGENT_CONFIG, value)
+  return typeof value === 'string' && Object.hasOwn(TUI_AGENT_CONFIG, value)
 }
 
 export function getTuiAgentDetectCommands(config: TuiAgentConfig): string[] {

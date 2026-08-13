@@ -13,6 +13,7 @@ import {
   iterateTerminalInputChunks
 } from '../../../../shared/terminal-input'
 import { isRuntimeOwnedSshTargetId } from '../../../../shared/execution-host'
+import { SSH_SESSION_EXPIRED_ERROR } from '../../../../shared/ssh-pty-failure-tokens'
 import {
   ptyDataHandlers,
   ptyReplayHandlers,
@@ -66,11 +67,11 @@ export type {
   LocalPtySessionMetadata,
   PtyBufferSnapshot,
   PtyConnectResult,
+  PtyReplayDataMeta,
   PtyTransport
 } from './pty-transport-types'
 export { extractLastOscTitle } from '../../../../shared/agent-detection'
 
-const SSH_SESSION_EXPIRED_ERROR = 'SSH_SESSION_EXPIRED'
 // Why: main rejects a session reattached under a different SSH connection with this phrase; treat as stale (spawn fresh), not a crash.
 const SSH_PTY_CONNECTION_MISMATCH_MARKER = 'belongs to SSH connection'
 const STALE_TITLE_TIMEOUT = 3000 // ms before stale working title is cleared
@@ -104,6 +105,9 @@ type ProcessPtyOutputOptions = {
   clearBeforeReplay?: boolean
   // Why: a mid-escape tail; the replay consumer writes it LAST (after the post-replay reset) so the next live chunk completes it, not renders it literally (#7329).
   pendingEscapeTailAnsi?: string
+  /** Kitty flags the snapshot owner proved at `snapshotSeq`. */
+  kittyKeyboardFlags?: number
+  snapshotSeq?: number
 }
 
 type PendingPtySideEffect = {
@@ -496,7 +500,13 @@ export function createPtyOutputProcessor({
         ...(options.clearBeforeReplay === false ? { clearBeforeReplay: false } : {}),
         ...(options.pendingEscapeTailAnsi
           ? { pendingEscapeTailAnsi: options.pendingEscapeTailAnsi }
-          : {})
+          : {}),
+        // Why forwarded together: the flags are only valid for the boundary the
+        // image describes, so they never travel without their sequence.
+        ...(options.kittyKeyboardFlags !== undefined
+          ? { kittyKeyboardFlags: options.kittyKeyboardFlags }
+          : {}),
+        ...(options.snapshotSeq !== undefined ? { snapshotSeq: options.snapshotSeq } : {})
       }
       // Why: preserve the bare-data call shape when there's no replay metadata, so eager-buffer replay (which passes none) is unchanged.
       if (Object.keys(replayMeta).length > 0) {
@@ -550,6 +560,7 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
     env,
     envToDelete,
     command,
+    commandDelivery,
     launchConfig,
     resumeProviderSession,
     launchToken,
@@ -577,9 +588,17 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
   let ptyId: string | null = null
   // Why: replayed eager-buffer data (often from a prior app session) must not fire fresh bells, unread marks, or notifications on reconnect.
   let suppressAttentionEvents = false
+  let storedCallbacks: Parameters<PtyTransport['connect']>[0]['callbacks'] = {}
   const inputWriteQueue = createPtyInputWriteQueue({
     isWritable: (id) => connected && ptyId === id,
-    write: (id, data) => window.api.pty.write(id, data)
+    write: (id, data) => window.api.pty.write(id, data),
+    // Guard like the registered writeUnavailable handler: a rebind during the async drain
+    // must not tell the new pane that its write failed.
+    onDrainFailure: (id) => {
+      if (ptyId === id) {
+        storedCallbacks.onWriteUnavailable?.()
+      }
+    }
   })
   const outputProcessor = createPtyOutputProcessor({
     onTitleChange,
@@ -593,8 +612,6 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
     onAgentExited,
     onAgentStatus
   })
-  let storedCallbacks: Parameters<PtyTransport['connect']>[0]['callbacks'] = {}
-
   // Why: a new pane can attach to the same ptyId before the old instance's detach() runs; track owned handlers so unregister never deletes the live one.
   const ownedDataAndReplayHandlers = new Map<
     string,
@@ -779,8 +796,14 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         return { id: options.sessionId, exitedBeforeAttach: true } satisfies PtyConnectResult
       }
 
+      // A session id IS the instruction to attach: the provider reattaches on it before any
+      // pane-owner logic runs. So refusing adoption has to drop it here, at the last gate before
+      // the IPC — skipping owner resolution in main is not enough, and left this action still
+      // attaching the very shell it could not reach.
       const admittedSessionId =
-        options.sessionId && !isPreHandlerPtyStateDiscarded(options.sessionId)
+        options.sessionId &&
+        !options.createFreshShellForUnreachablePane &&
+        !isPreHandlerPtyStateDiscarded(options.sessionId)
           ? options.sessionId
           : undefined
 
@@ -793,32 +816,66 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         // Why: cwd fallback is only for fresh local spawns — reattach keeps the session's cwd and SSH transports resolve cwd on the remote host.
         const shouldSendLocalCwdFallback =
           cwdFallback === 'worktree' && !connectionId && !admittedSessionId
+        // Every constructor value that can launch or resume an agent is suppressed together.
+        const saved = options.suppressSavedStartup
+          ? ({} as Partial<{
+              command: typeof command
+              commandDelivery: typeof commandDelivery
+              launchConfig: typeof launchConfig
+              resumeProviderSession: typeof resumeProviderSession
+              launchToken: typeof launchToken
+              launchAgent: typeof launchAgent
+              startupCommandDelivery: typeof startupCommandDelivery
+            }>)
+          : {
+              command,
+              commandDelivery,
+              launchConfig,
+              resumeProviderSession,
+              launchToken,
+              launchAgent,
+              startupCommandDelivery
+            }
+        let spawnEnv = options.env ?? env
+        if (options.suppressSavedStartup && spawnEnv?.ORCA_AGENT_LAUNCH_TOKEN !== undefined) {
+          spawnEnv = { ...spawnEnv }
+          delete spawnEnv.ORCA_AGENT_LAUNCH_TOKEN
+        }
         const result = await window.api.pty.spawn({
           cols: options.cols ?? 80,
           rows: options.rows ?? 24,
           cwd,
           ...(shouldSendLocalCwdFallback ? { cwdFallback } : {}),
-          env: options.env ?? env,
+          ...(options.createFreshShellForUnreachablePane
+            ? { createFreshShellForUnreachablePane: true }
+            : {}),
+          env: spawnEnv,
           ...((options.envToDelete ?? envToDelete)
             ? { envToDelete: options.envToDelete ?? envToDelete }
             : {}),
-          command: options.command ?? command,
-          ...((options.launchConfig ?? launchConfig)
-            ? { launchConfig: options.launchConfig ?? launchConfig }
+          command: options.command ?? saved.command,
+          ...((options.commandDelivery ?? saved.commandDelivery)
+            ? { commandDelivery: options.commandDelivery ?? saved.commandDelivery }
             : {}),
-          ...((options.resumeProviderSession ?? resumeProviderSession)
+          ...((options.launchConfig ?? saved.launchConfig)
+            ? { launchConfig: options.launchConfig ?? saved.launchConfig }
+            : {}),
+          ...((options.resumeProviderSession ?? saved.resumeProviderSession)
             ? {
-                resumeProviderSession: options.resumeProviderSession ?? resumeProviderSession
+                resumeProviderSession: options.resumeProviderSession ?? saved.resumeProviderSession
               }
             : {}),
-          ...((options.launchToken ?? launchToken)
-            ? { launchToken: options.launchToken ?? launchToken }
+          ...((options.launchToken ?? saved.launchToken)
+            ? { launchToken: options.launchToken ?? saved.launchToken }
             : {}),
-          ...((options.launchAgent ?? launchAgent)
-            ? { launchAgent: options.launchAgent ?? launchAgent }
+          ...((options.launchAgent ?? saved.launchAgent)
+            ? { launchAgent: options.launchAgent ?? saved.launchAgent }
             : {}),
-          ...((options.startupCommandDelivery ?? startupCommandDelivery)
-            ? { startupCommandDelivery: options.startupCommandDelivery ?? startupCommandDelivery }
+          ...((options.startupCommandDelivery ?? saved.startupCommandDelivery)
+            ? {
+                startupCommandDelivery:
+                  options.startupCommandDelivery ?? saved.startupCommandDelivery
+              }
             : {}),
           ...(connectionId ? { connectionId } : {}),
           ...(admittedSessionId ? { sessionId: admittedSessionId } : {}),
@@ -887,6 +944,15 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
             snapshot: spawnResult.snapshot,
             snapshotCols: spawnResult.snapshotCols,
             snapshotRows: spawnResult.snapshotRows,
+            ...(spawnResult.snapshotPrefixAnsi !== undefined
+              ? { snapshotPrefixAnsi: spawnResult.snapshotPrefixAnsi }
+              : {}),
+            ...(spawnResult.snapshotFrameAnsi !== undefined
+              ? { snapshotFrameAnsi: spawnResult.snapshotFrameAnsi }
+              : {}),
+            ...(spawnResult.snapshotFrameRestoreAnsi !== undefined
+              ? { snapshotFrameRestoreAnsi: spawnResult.snapshotFrameRestoreAnsi }
+              : {}),
             isAlternateScreen: spawnResult.isAlternateScreen,
             sessionExpired: spawnResult.sessionExpired,
             coldRestore: spawnResult.coldRestore,
@@ -1012,7 +1078,9 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
       inputWriteQueue.clear()
       if (ptyId) {
         const id = ptyId
-        window.api.pty.kill(id)
+        // Why swallow: an unreachable terminal host rejects rather than pretending the
+        // session closed, and teardown must still run — but nothing here can act on it.
+        void Promise.resolve(window.api.pty.kill(id)).catch(() => {})
         connected = false
         ptyId = null
         unregisterPtyHandlers(id)
@@ -1051,7 +1119,7 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
       if (!connected || !ptyId) {
         return false
       }
-      return inputWriteQueue.enqueue(ptyId, data)
+      return inputWriteQueue.enqueueQueryReply(ptyId, data)
     },
 
     ...(connectionId

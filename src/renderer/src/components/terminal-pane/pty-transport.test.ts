@@ -9,11 +9,13 @@ import {
   encodeTerminalStreamText
 } from '../../../../shared/terminal-stream-protocol'
 import { createTerminalSessionStateSaveFailureMessage } from '../../../../shared/terminal-session-state-save-failure'
+import { TERMINAL_ATTRIBUTION_REMOVED_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import {
   TERMINAL_INPUT_CHUNK_MAX_BYTES,
   TERMINAL_INPUT_MAX_BYTES
 } from '../../../../shared/terminal-input'
 import { CLIPBOARD_TEXT_MEASURE_YIELD_CODE_UNITS } from '../../../../shared/clipboard-text'
+import { PTY_INPUT_WRITE_QUEUE_MAX_PENDING_REPLIES } from './pty-input-write-queue'
 
 describe('createIpcPtyTransport', () => {
   const originalWindow = (globalThis as { window?: typeof window }).window
@@ -95,6 +97,24 @@ describe('createIpcPtyTransport', () => {
     transport.disconnect()
   })
 
+  it('threads provider command ownership through the spawn IPC', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const transport = createIpcPtyTransport({
+      command: 'printf ready',
+      commandDelivery: 'provider'
+    })
+
+    await transport.connect({ url: '', callbacks: {} })
+
+    expect(window.api.pty.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'printf ready',
+        commandDelivery: 'provider'
+      })
+    )
+    transport.disconnect()
+  })
+
   it('routes a rejected daemon write to the owning transport recovery callback', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
     const recovery = vi.fn()
@@ -105,6 +125,29 @@ describe('createIpcPtyTransport', () => {
 
     expect(recovery).toHaveBeenCalledOnce()
     transport.disconnect()
+  })
+
+  it('routes a thrown renderer write to the owning transport recovery callback', async () => {
+    const failure = new Error('ipc write failed')
+    vi.mocked(window.api.pty.write).mockImplementation(() => {
+      throw failure
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      const { createIpcPtyTransport } = await import('./pty-transport')
+      const recovery = vi.fn()
+      const transport = createIpcPtyTransport({})
+      await transport.connect({ url: '', callbacks: { onWriteUnavailable: recovery } })
+
+      expect(transport.sendInput('input')).toBe(true)
+      expect(transport.sendInput('later-input')).toBe(false)
+
+      expect(recovery).toHaveBeenCalledOnce()
+      expect(warn).toHaveBeenCalledWith('[pty-input-write-queue] drain failed:', failure)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('does not create a second kill authority when a mounted pane detaches', async () => {
@@ -216,6 +259,29 @@ describe('createIpcPtyTransport', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       expect.objectContaining({ envToDelete: ['CODEX_HOME', 'ORCA_CODEX_HOME'] })
+    )
+  })
+
+  it('drops a retired launch token from a suppressed fresh spawn', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+    const transport = createIpcPtyTransport({
+      env: {
+        ORCA_PANE_KEY: 'tab-1:11111111-1111-4111-8111-111111111111',
+        ORCA_AGENT_LAUNCH_TOKEN: 'retired-token'
+      },
+      launchToken: 'retired-token'
+    })
+
+    await transport.connect({ url: '', callbacks: {}, suppressSavedStartup: true })
+
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: { ORCA_PANE_KEY: 'tab-1:11111111-1111-4111-8111-111111111111' }
+      })
+    )
+    expect(spawn).toHaveBeenCalledWith(
+      expect.not.objectContaining({ launchToken: 'retired-token' })
     )
   })
 
@@ -1132,6 +1198,36 @@ describe('createIpcPtyTransport', () => {
     }
   })
 
+  it('bounds immediate cooked replies without shedding ordinary-path lookalikes', async () => {
+    vi.useFakeTimers()
+    try {
+      const { createIpcPtyTransport } = await import('./pty-transport')
+      const transport = createIpcPtyTransport({})
+      const first = '\x1b[?10000;1n'
+      const ordinary = '\x1b]10;user-ordinary-marker\x1b\\'
+      const replies = Array.from({ length: 10_000 }, (_, index) => `\x1b[?${index};1n`)
+
+      await transport.connect({ url: '', callbacks: {} })
+      expect(transport.sendInputImmediate(first)).toBe(true)
+      expect(transport.sendInput(ordinary)).toBe(true)
+      for (const reply of replies) {
+        expect(transport.sendInputImmediate(reply)).toBe(true)
+      }
+
+      await vi.runAllTimersAsync()
+
+      expect(vi.mocked(window.api.pty.write).mock.calls).toEqual([
+        ['pty-1', first],
+        ['pty-1', ordinary],
+        ...replies
+          .slice(-PTY_INPUT_WRITE_QUEUE_MAX_PENDING_REPLIES)
+          .map((reply) => ['pty-1', reply])
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('yields while validating accepted large local IPC terminal input before renderer-to-main writes', async () => {
     vi.useFakeTimers()
     try {
@@ -1709,7 +1805,7 @@ describe('createIpcPtyTransport', () => {
     expect(writeMock).not.toHaveBeenCalled()
   })
 
-  it('preserves snapshot dimensions when reattaching', async () => {
+  it('preserves snapshot dimensions and split alt-frame strings when reattaching', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
     const spawnMock = vi.fn().mockResolvedValue({
       id: 'pty-reattach',
@@ -1717,7 +1813,10 @@ describe('createIpcPtyTransport', () => {
       launchAgent: 'droid',
       snapshot: 'snapshot data',
       snapshotCols: 132,
-      snapshotRows: 43
+      snapshotRows: 43,
+      snapshotPrefixAnsi: 'history and modes',
+      snapshotFrameAnsi: 'visual frame',
+      snapshotFrameRestoreAnsi: 'live state'
     })
 
     ;(globalThis as { window: typeof window }).window = {
@@ -1757,6 +1856,9 @@ describe('createIpcPtyTransport', () => {
       snapshot: 'snapshot data',
       snapshotCols: 132,
       snapshotRows: 43,
+      snapshotPrefixAnsi: 'history and modes',
+      snapshotFrameAnsi: 'visual frame',
+      snapshotFrameRestoreAnsi: 'live state',
       isAlternateScreen: undefined,
       coldRestore: undefined,
       replay: undefined,
@@ -2434,7 +2536,10 @@ describe('createRemoteRuntimePtyTransport', () => {
             result: {
               runtimeProtocolVersion: 3,
               minCompatibleRuntimeClientVersion: 2,
-              capabilities: ['agent-session.host-authority.v1']
+              capabilities: [
+                'agent-session.host-authority.v1',
+                TERMINAL_ATTRIBUTION_REMOVED_RUNTIME_CAPABILITY
+              ]
             },
             _meta: { runtimeId: 'runtime-remote' }
           }
@@ -2533,12 +2638,14 @@ describe('createRemoteRuntimePtyTransport', () => {
         worktree: 'id:repo1::/remote/wt',
         clientMutationId: expect.any(String),
         command: 'claude',
-        env: { ORCA_TAB_ID: 'tab-1' },
+        env: { ORCA_TAB_ID: 'tab-1', ORCA_ATTRIBUTION_BYPASS: '1' },
+        envToDelete: ['ORCA_ENABLE_GIT_ATTRIBUTION'],
         tabId: 'tab-1',
         leafId: '11111111-1111-4111-8111-111111111111',
         focus: false,
         presentation: 'background'
       },
+      expectedEnvironmentPairingRevision: undefined,
       timeoutMs: 15_000
     })
     expect(runtimeSubscribe).toHaveBeenCalledWith(
@@ -2590,20 +2697,34 @@ describe('createRemoteRuntimePtyTransport', () => {
   })
 
   it('reports a host stable-pane adoption as reattach without fresh-spawn ownership', async () => {
-    runtimeCall.mockResolvedValue({
-      id: 'rpc-create',
-      ok: true,
-      result: {
-        terminal: {
-          handle: 'term-original',
-          worktreeId: 'repo1::/remote/wt',
-          title: 'Original',
-          surface: 'background',
-          isReattach: true
-        }
-      },
-      _meta: { runtimeId: 'runtime-remote' }
-    })
+    runtimeCall.mockImplementation(async (args: { method?: string }) =>
+      args.method === 'status.get'
+        ? {
+            id: 'rpc-status',
+            ok: true,
+            result: {
+              runtimeId: 'runtime-remote',
+              runtimeProtocolVersion: 3,
+              minCompatibleRuntimeClientVersion: 2,
+              capabilities: [TERMINAL_ATTRIBUTION_REMOVED_RUNTIME_CAPABILITY]
+            },
+            _meta: { runtimeId: 'runtime-remote' }
+          }
+        : {
+            id: 'rpc-create',
+            ok: true,
+            result: {
+              terminal: {
+                handle: 'term-original',
+                worktreeId: 'repo1::/remote/wt',
+                title: 'Original',
+                surface: 'background',
+                isReattach: true
+              }
+            },
+            _meta: { runtimeId: 'runtime-remote' }
+          }
+    )
     const onPtySpawn = vi.fn()
     const onReattachDetermined = vi.fn()
     const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
@@ -2731,6 +2852,7 @@ describe('createRemoteRuntimePtyTransport', () => {
         },
         presentation: 'background'
       },
+      expectedEnvironmentPairingRevision: undefined,
       timeoutMs: 15_000
     })
     expect(runtimeCall).not.toHaveBeenCalledWith(
@@ -2756,9 +2878,13 @@ describe('createRemoteRuntimePtyTransport', () => {
             id: 'rpc-status',
             ok: true,
             result: {
+              runtimeId: 'runtime-remote',
               runtimeProtocolVersion: 3,
               minCompatibleRuntimeClientVersion: 2,
-              capabilities: ['agent-session.host-authority.v1']
+              capabilities: [
+                'agent-session.host-authority.v1',
+                TERMINAL_ATTRIBUTION_REMOVED_RUNTIME_CAPABILITY
+              ]
             }
           }
     )
@@ -2804,6 +2930,7 @@ describe('createRemoteRuntimePtyTransport', () => {
         },
         presentation: 'background'
       },
+      expectedEnvironmentPairingRevision: undefined,
       timeoutMs: 15_000
     })
     expect(runtimeCall).not.toHaveBeenCalledWith(

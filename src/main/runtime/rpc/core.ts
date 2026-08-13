@@ -46,6 +46,7 @@ export type RpcRequest = {
   authToken: string
   method: string
   params?: unknown
+  expectedRuntimeId?: string
   orchestrationCapability?: string
   orchestrationContractVersion?: number
   orchestrationRequestId?: string
@@ -107,13 +108,13 @@ export type RpcContext = {
   ) => () => void
 }
 
-export type RpcHandler<TParams> = (params: TParams, ctx: RpcContext) => Promise<unknown> | unknown
+export type RpcHandler<TParams> = (params: TParams, ctx: RpcContext) => unknown
 
 // Why: RpcMethod erases the param type; centralizing the cast in defineMethod sidesteps RpcHandler's contravariance.
 export type RpcMethod = {
   readonly name: string
   readonly params: ZodType | null
-  readonly handler: (params: unknown, ctx: RpcContext) => Promise<unknown> | unknown
+  readonly handler: (params: unknown, ctx: RpcContext) => unknown
 }
 
 type DefineMethodSpec<TSchema extends ZodType | null> = {

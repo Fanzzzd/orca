@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AiVaultListResult,
   AiVaultScanIssue,
@@ -46,6 +46,51 @@ const SCOPE_TRUNCATION: AiVaultScanIssue = {
 }
 
 describe('mergeAiVaultListResults', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps the latest input scannedAt instead of restamping the merge', () => {
+    const merged = mergeAiVaultListResults(
+      [
+        { ...listResult([]), scannedAt: '2026-08-02T00:00:00.000Z' },
+        { ...listResult([]), scannedAt: '2026-08-02T00:00:05.000Z' }
+      ],
+      undefined
+    )
+
+    expect(merged.scannedAt).toBe('2026-08-02T00:00:05.000Z')
+  })
+
+  it('ignores a future or unparsable remote stamp so the merge cannot pin the renderer guard', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-02T00:00:10.000Z'))
+
+    expect(
+      mergeAiVaultListResults(
+        [
+          { ...listResult([]), scannedAt: '2026-08-02T00:00:20.000Z' },
+          { ...listResult([]), scannedAt: '2026-08-02T00:00:05.000Z' }
+        ],
+        undefined
+      ).scannedAt
+    ).toBe('2026-08-02T00:00:05.000Z')
+
+    expect(
+      mergeAiVaultListResults(
+        [
+          { ...listResult([]), scannedAt: 'scan-A' },
+          { ...listResult([]), scannedAt: '2026-08-02T00:00:04.000Z' }
+        ],
+        undefined
+      ).scannedAt
+    ).toBe('2026-08-02T00:00:04.000Z')
+
+    expect(
+      mergeAiVaultListResults([{ ...listResult([]), scannedAt: 'scan-A' }], undefined).scannedAt
+    ).toBe('2026-08-02T00:00:10.000Z')
+  })
+
   it('does not cap an Unlimited all-host merge', () => {
     const sessions = Array.from({ length: 1001 }, (_, index) => session(index))
     const merged = mergeAiVaultListResults([{ ...listResult([]), sessions }], undefined, true)

@@ -3,6 +3,11 @@ import type { StartupCommandDelivery } from '../../../shared/codex-startup-deliv
 import type { SessionOptionValue } from '../../../shared/native-chat-session-options'
 import type { RuntimeTerminalCreate } from '../../../shared/runtime-types'
 import type { TuiAgent } from '../../../shared/types'
+import { TERMINAL_ATTRIBUTION_REMOVED_RUNTIME_CAPABILITY } from '../../../shared/protocol-version'
+import {
+  addLegacyTerminalAttributionDisableRequest,
+  withLegacyTerminalAttributionDisabledEnv
+} from '../../../shared/legacy-terminal-attribution-env'
 import {
   createAgentSessionCreateOperation,
   toAgentLaunchPreferences,
@@ -33,7 +38,8 @@ export async function createRuntimeAgentBackgroundTerminal(args: {
   const launchPreferences = toAgentLaunchPreferences(args.sessionOptions)
   return await runRemoteAgentSessionLaunch({
     environmentId: args.environmentId,
-    hostAuthority: () =>
+    requiredHostAuthorityCapabilities: [TERMINAL_ATTRIBUTION_REMOVED_RUNTIME_CAPABILITY],
+    hostAuthority: (authority) =>
       operation.run((clientOperationId) =>
         callRuntimeRpc<{ terminal: RuntimeTerminalCreate }>(
           { kind: 'environment', environmentId: args.environmentId },
@@ -52,10 +58,14 @@ export async function createRuntimeAgentBackgroundTerminal(args: {
             },
             clientOperationId
           ),
-          { timeoutMs: 15_000 }
+          {
+            timeoutMs: 15_000,
+            expectedEnvironmentPairingRevision: authority.expectedEnvironmentPairingRevision,
+            expectedRuntimeId: authority.runtimeId
+          }
         )
       ),
-    legacy: ({ skipCompatibilityCheck }) =>
+    legacy: ({ skipCompatibilityCheck, authority }) =>
       callRuntimeRpc<{ terminal: RuntimeTerminalCreate }>(
         { kind: 'environment', environmentId: args.environmentId },
         'terminal.create',
@@ -65,7 +75,8 @@ export async function createRuntimeAgentBackgroundTerminal(args: {
           ...(args.legacy.startupCommandDelivery
             ? { startupCommandDelivery: args.legacy.startupCommandDelivery }
             : {}),
-          env: args.legacy.env,
+          env: withLegacyTerminalAttributionDisabledEnv(args.legacy.env),
+          envToDelete: addLegacyTerminalAttributionDisableRequest(undefined),
           launchConfig: args.legacy.launchConfig,
           launchToken: args.legacy.launchToken,
           launchAgent: args.agent,
@@ -74,7 +85,12 @@ export async function createRuntimeAgentBackgroundTerminal(args: {
           leafId: args.leafId,
           presentation: 'background'
         },
-        { timeoutMs: 15_000, skipCompatibilityCheck }
+        {
+          timeoutMs: 15_000,
+          skipCompatibilityCheck,
+          expectedEnvironmentPairingRevision: authority.expectedEnvironmentPairingRevision,
+          expectedRuntimeId: authority.runtimeId
+        }
       )
   })
 }
