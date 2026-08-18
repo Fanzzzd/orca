@@ -31,6 +31,7 @@ export function MobilePane(): React.JSX.Element {
   const autoRestoreFitMs = useAppStore((s) => s.settings?.mobileAutoRestoreFitMs ?? null)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrSize, setQrSize] = useState<number | null>(null)
   const [pairingUrl, setPairingUrl] = useState<string | null>(null)
   const [qrError, setQrError] = useState(false)
   // Why: the QR caption must describe the offer on screen, not the current
@@ -84,6 +85,7 @@ export function MobilePane(): React.JSX.Element {
     pairingRequestIdRef.current += 1
     const hadPending = qrDisplayedRef.current || loadingRef.current
     setQrDataUrl(null)
+    setQrSize(null)
     setPairingUrl(null)
     setQrError(false)
     setQrEncodesIroh(false)
@@ -201,6 +203,7 @@ export function MobilePane(): React.JSX.Element {
           useAppStore.getState().recordFeatureInteraction('mobile-pairing')
           if (mountedRef.current) {
             setQrDataUrl(result.qrDataUrl)
+            setQrSize(result.qrSize)
             setPairingUrl(result.pairingUrl)
             setQrError(result.qrDataUrl === null)
             setQrEncodesIroh(result.connectionMode === 'iroh')
@@ -214,6 +217,7 @@ export function MobilePane(): React.JSX.Element {
           }
         } else if (mountedRef.current) {
           setQrDataUrl(null)
+          setQrSize(null)
           setPairingUrl(null)
           setQrError(false)
           setQrEncodesIroh(false)
@@ -438,6 +442,7 @@ export function MobilePane(): React.JSX.Element {
 
       <MobilePairingQrSection
         qrDataUrl={qrDataUrl}
+        qrSize={qrSize}
         qrError={qrError}
         pairingUrl={pairingUrl}
         // Why: iroh pairings dial by key — showing the legacy ws:// LAN URL reads

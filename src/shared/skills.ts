@@ -20,7 +20,6 @@ export type DiscoveredSkill = {
   directoryPath: string
   skillFilePath: string
   installed: boolean
-  fileCount: number
   updatedAt: number | null
 }
 
@@ -33,7 +32,8 @@ export type SkillDiscoverySource = {
   /** Agent that owns this root; null is the explicit shared-skills scope. */
   owner: AgentType | null
   exists: boolean
-  skippedReason?: 'missing' | 'remote-repo'
+  /** `unavailable`: the root did not answer in time, so its skills are unknown rather than absent. */
+  skippedReason?: 'missing' | 'remote-repo' | 'unavailable'
 }
 
 export type SkillDiscoveryResult = {

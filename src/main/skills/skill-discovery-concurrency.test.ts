@@ -46,10 +46,10 @@ async function buildFixture(
   return { home, panes, noWorkspace: join(root, 'no-workspace') }
 }
 
-// One populated root costs three readdirs per real walk: the root itself, the
-// package directory while looking for SKILL.md, and the package directory again
-// while counting its files. Anything above that is a root walked more than once.
-const READDIR_CALLS_PER_POPULATED_ROOT = 3
+// One populated root costs two readdirs per real walk: the root itself, and the
+// package directory while looking for SKILL.md. Anything above that is a root
+// walked more than once.
+const READDIR_CALLS_PER_POPULATED_ROOT = 2
 
 function readdirCountUnder(path: string): number {
   return readdirPaths.filter(
@@ -180,7 +180,7 @@ describe('bounded concurrent skill discovery', () => {
     const line = String(info.mock.calls.at(0)?.at(0))
     // `present` is the signal that separates "big tree" from "big root set", and
     // is not derivable from the other counts.
-    expect(line).toContain('[skills] scan roots=14 present=3 walked=14 skills=3')
+    expect(line).toContain('[skills] scan roots=23 present=3 walked=23 skills=3')
     expect(line).toContain('home-claude')
     expect(line).not.toContain(home)
     expect(line).not.toContain(tmpdir())

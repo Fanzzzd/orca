@@ -13,13 +13,9 @@ import {
   resolveTuiAgentLaunchEnv
 } from '../../../src/shared/tui-agent-launch-defaults'
 import { normalizeAiVaultResumeFilePath } from '../../../src/shared/ai-vault-resume-path'
-import type { TuiAgent } from '../../../src/shared/types'
+import type { TuiAgent } from '../../../src/shared/tui-agent'
 import { parseWslUncPath } from '../../../src/shared/wsl-paths'
 import { resolveWindowsShellStartupFamily } from '../../../src/shared/windows-terminal-shell'
-import {
-  addLegacyTerminalAttributionDisableRequest,
-  withLegacyTerminalAttributionDisabledEnv
-} from '../../../src/shared/legacy-terminal-attribution-env'
 import type { RpcClient } from '../transport/rpc-client'
 import {
   readMobileReviewCreatedTerminal,
@@ -27,21 +23,6 @@ import {
   type MobileReviewTerminalTab
 } from './mobile-diff-review-rpc'
 import type { MobileAiVaultResumeTargetStatus } from '../agent-history/agent-history-resume-target'
-import { assertMobileTerminalAttributionDisableSupported } from './mobile-terminal-attribution-compat'
-
-const NODE_PLATFORMS = new Set<NodeJS.Platform>([
-  'aix',
-  'android',
-  'darwin',
-  'freebsd',
-  'haiku',
-  'linux',
-  'openbsd',
-  'sunos',
-  'win32',
-  'cygwin',
-  'netbsd'
-])
 
 export function buildMobileAiVaultResumeCommand(args: {
   session: Pick<AiVaultSession, 'agent' | 'sessionId' | 'cwd' | 'codexHome'> &
@@ -174,13 +155,12 @@ export async function resumeAiVaultSessionInTerminal(
   worktreeId: string,
   launch: MobileAiVaultResumeLaunch & { clientMutationId?: string }
 ): Promise<MobileReviewTerminalTab> {
-  const authority = await assertMobileTerminalAttributionDisableSupported(client)
   const created = await client.sendRequest(
     'session.tabs.createTerminal',
     {
       worktree: `id:${worktreeId}`,
-      env: withLegacyTerminalAttributionDisabledEnv(launch.env),
-      envToDelete: addLegacyTerminalAttributionDisableRequest(launch.envToDelete),
+      ...(launch.env ? { env: launch.env } : {}),
+      ...(launch.envToDelete ? { envToDelete: launch.envToDelete } : {}),
       ...(launch.launchConfig ? { launchConfig: launch.launchConfig } : {}),
       ...(launch.launchAgent ? { launchAgent: launch.launchAgent } : {}),
       ...(launch.clientMutationId ? { clientMutationId: launch.clientMutationId } : {}),
@@ -188,11 +168,7 @@ export async function resumeAiVaultSessionInTerminal(
       select: true,
       navigation: 'caller'
     },
-    {
-      timeoutMs: RESUME_RPC_TIMEOUT_MS,
-      budgetSpansConnect: true,
-      expectedRuntimeId: authority.runtimeId
-    }
+    { timeoutMs: RESUME_RPC_TIMEOUT_MS }
   )
   if (!created.ok) {
     throw new Error(created.error?.message || 'Failed to create terminal')
@@ -245,16 +221,6 @@ export function createMobileAiVaultResumeMutationRegistry(
       bySessionId.delete(sessionId)
     }
   }
-}
-
-export function readMobileRuntimeHostPlatform(statusResult: unknown): NodeJS.Platform | null {
-  if (!statusResult || typeof statusResult !== 'object') {
-    return null
-  }
-  const hostPlatform = (statusResult as { hostPlatform?: unknown }).hostPlatform
-  return typeof hostPlatform === 'string' && NODE_PLATFORMS.has(hostPlatform as NodeJS.Platform)
-    ? (hostPlatform as NodeJS.Platform)
-    : null
 }
 
 export function readMobileRuntimeTerminalWindowsShell(statusResult: unknown): string | null {
