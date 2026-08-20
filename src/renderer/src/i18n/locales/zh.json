@@ -5071,6 +5071,12 @@
           "5e1b8d3f62": "永久隐藏外部工作树",
           "c3e8a1f4b2": "不再显示"
         },
+        "NoticeHostGlyph": {
+          "hostDisconnected": "{{hostName}} 已断开连接",
+          "sshHostProject": "SSH 主机 {{hostName}} 上的项目",
+          "localHostProject": "此主机上的项目",
+          "runtimeHostProject": "{{hostName}} 上的项目"
+        },
         "newExternalWorktreesInboxActions": {
           "a11c2f6d89": "无法保持外部工作树隐藏。请重试。",
           "b7e4d1a062": "无法导入外部工作树。请重试。",
@@ -13946,6 +13952,19 @@
         },
         "AutomationListLocalRows": {
           "c92c9463c6": "自动化操作"
+        },
+        "AutomationListFilterMenu": {
+          "926e785e4d": "搜索智能体...",
+          "491043ee45": "没有智能体符合您的搜索。",
+          "agent": "智能体",
+          "lastRun": "上次运行",
+          "all": "全部",
+          "failed": "失败",
+          "succeeded": "成功",
+          "neverRan": "从未运行",
+          "filters": "筛选器",
+          "clear": "清除筛选器",
+          "removeFilter": "移除 {{value0}} 筛选器"
         }
       },
       "agent": {
@@ -14289,6 +14308,13 @@
         "pendingChip": "{{value0}} 待处理",
         "needsActionChip": "{{value0}} 个需要操作",
         "unresolvedChip": "{{value0}} 个未解决"
+      },
+      "artifacts": {
+        "ArtifactsPage": {
+          "deleteTitle": "删除工件？",
+          "deleteDescription": "“{{name}}” 将无法再通过其公共链接访问。",
+          "delete": "删除"
+        }
       }
     },
     "i18n": {

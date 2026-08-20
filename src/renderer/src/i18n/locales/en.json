@@ -2198,7 +2198,8 @@
         "27f10cca63": "Search chats, terminals, worktrees, settings, and actions...",
         "2770f02910": "Search chats, terminals, worktrees, settings, and actions",
         "paletteOpenTabBranch": "Branch name",
-        "paletteOpenTabWorkspace": "Workspace name"
+        "paletteOpenTabWorkspace": "Workspace name",
+        "lastActiveTime": "Last active {{value0}} ago"
       },
       "github": {
         "pr": {
@@ -5726,7 +5727,14 @@
           "5b90e4a2f6": "hidden worktrees",
           "7f18c5b0d3": "Review {{value0}} hidden worktree in {{value1}}",
           "4e2b7a9c05": "Review {{value0}} hidden worktrees in {{value1}}",
-          "c3e8a1f4b2": "Don't show again"
+          "c3e8a1f4b2": "Don't show again",
+          "6c07f3a91e": "{{value0}} on {{value1}}"
+        },
+        "NoticeHostGlyph": {
+          "hostDisconnected": "{{hostName}} disconnected",
+          "sshHostProject": "Project on SSH host {{hostName}}",
+          "localHostProject": "Project on this host",
+          "runtimeHostProject": "Project on {{hostName}}"
         },
         "newExternalWorktreesInboxActions": {
           "a11c2f6d89": "Could not keep external worktrees hidden. Try again.",
@@ -11068,9 +11076,9 @@
           "description": "Switch update channels or jump to any published build, including older ones. Downgrades are allowed and unvetted builds can be broken.",
           "devOnly": "Dev only",
           "channelAriaLabel": "Update channel",
-          "hourlyWarning": "Hourly builds are macOS-only and ship straight from main with no test gate. Keep a stable build handy.",
-          "dailyWarning": "Daily builds are macOS-only and ship straight from main with no test gate. Keep a stable build handy.",
-          "adhocWarning": "Adhoc builds are macOS-only and come from a branch that has not landed. Whoever cut one may abandon it — keep a stable build handy.",
+          "hourlyWarning": "Hourly builds ship straight from main with no test gate, and the Windows ones are unsigned. Keep a stable build handy.",
+          "dailyWarning": "Daily builds ship straight from main with no test gate, and the Windows ones are unsigned. Keep a stable build handy.",
+          "adhocWarning": "Adhoc builds come from a branch that has not landed, and the Windows ones are unsigned. Whoever cut one may abandon it — keep a stable build handy.",
           "loadingBuilds": "Loading builds…",
           "noBuilds": "No builds found",
           "refresh": "Refresh build list",
@@ -11078,8 +11086,10 @@
           "alreadyRunning": "This is the build you are running.",
           "willSwitch": "{{value0}} → {{value1}}",
           "webUnavailable": "Switching builds is only available in the desktop app.",
-          "devChannelMacOnlyAria": "{{value0}} (macOS only)",
-          "devChannelMacOnly": "{{value0}} builds are produced only for macOS. Linux and Windows stay on Stable or RC."
+          "devChannelUnsupportedAria": "{{value0}} ({{value1}} only)",
+          "devChannelUnsupported": "{{value0}} builds are produced only for {{value1}}. Linux stays on Stable or RC.",
+          "downloadInstaller": "Download installer",
+          "manualInstallHint": "{{value0}} builds are unsigned on Windows, so the in-app updater cannot install one over a signed build. Run the downloaded installer once — Windows will warn about an unknown publisher — and every later switch, including back to Stable, works from here."
         },
         "VoiceMicrophoneSetting": {
           "systemDefault": "System default",
@@ -13131,7 +13141,10 @@
           "pairThisPc": "Pair this PC.",
           "pairThisComputer": "Pair this computer.",
           "directAddressDisclosure": "Also use a faster local path",
-          "directAddressHint": "Optional. Pick the Wi‑Fi or Tailscale address your phone should use when nearby — usually faster than Relay. Relay still works when you’re away."
+          "directAddressHint": "Optional. Pick the Wi‑Fi or Tailscale address your phone should use when nearby — usually faster than Relay. Relay still works when you’re away.",
+          "androidHelp": {
+            "guide": "Install guide"
+          }
         },
         "MobilePage": {
           "e17393c6a3": "Phone preview",
@@ -15327,13 +15340,17 @@
           "c92c9463c6": "Automation actions"
         },
         "AutomationListFilterMenu": {
+          "926e785e4d": "Search agents...",
+          "491043ee45": "No agents match your search.",
           "removeFilter": "Remove {{value0}} filter",
           "failed": "Failed",
           "succeeded": "Succeeded",
           "neverRan": "Never ran",
           "filters": "Filters",
           "all": "All",
-          "clear": "Clear filters"
+          "clear": "Clear filters",
+          "agent": "Agent",
+          "lastRun": "Last run"
         },
         "AutomationListSortHeader": {
           "sortedAscending": "{{value0}}, sorted ascending",
@@ -15722,8 +15739,6 @@
           "deleteDescription": "“{{name}}” will no longer be available at its public link.",
           "delete": "Delete",
           "deleteFailed": "Could not delete the artifact.",
-          "closeArtifacts": "Close artifacts",
-          "closeTooltip": "Close · Esc",
           "title": "Artifacts",
           "refresh": "Refresh",
           "signInHeading": "Sign in to Orca",
@@ -15740,8 +15755,6 @@
           "publishingOff": "Publishing is turned off",
           "publishingOffCopy": "Nothing on this device can create a public artifact link yet. Allow publishing in Settings → Artifacts, then share from an open HTML or Markdown file or ask your agent.",
           "openArtifactsSettings": "Open Settings → Artifacts",
-          "loadedCountMore": "{{count}} loaded · more available",
-          "loadedCount": "{{count}} shared",
           "retry": "Retry",
           "reconnectHeading": "Sign in to Orca again",
           "reconnectCopy": "Sign in again to view and manage the artifacts shared through your account.",
@@ -15757,16 +15770,16 @@
         "previewUnavailable": "Preview unavailable",
         "previewUnavailableDescription": "Open this artifact in your browser to view it.",
         "actions": "Artifact actions",
+        "ArtifactActions": {
+          "more": "More artifact actions"
+        },
         "ArtifactCollection": {
-          "loadMore": "Load more"
+          "loadMore": "Load more",
+          "noMatches": "No matches"
         },
         "ArtifactDetailHeader": {
-          "publicLink": "Anyone with this link can view it"
-        },
-        "ArtifactListPane": {
-          "search": "Search artifacts",
-          "listLabel": "Shared artifacts",
-          "noMatches": "No matches"
+          "publicLink": "Anyone with this link can view it",
+          "close": "Close"
         },
         "updatedAt": "Updated {{when}}",
         "updatedRecently": "recently",
@@ -15810,7 +15823,29 @@
           "openLink": "Open link",
           "updating": "Updating…",
           "update": "Update shared content"
-        }
+        },
+        "ArtifactDetailDrawer": {
+          "description": "Preview and manage this shared artifact."
+        },
+        "ArtifactListSearchField": {
+          "label": "Search artifacts",
+          "placeholder": "Search...",
+          "clear": "Clear search"
+        },
+        "ArtifactListTableHeader": {
+          "name": "Name",
+          "type": "Type",
+          "size": "Size",
+          "updated": "Updated",
+          "expires": "Expires",
+          "actions": "Actions"
+        },
+        "ArtifactsPageSkeleton": {
+          "loading": "Loading artifacts"
+        },
+        "expiredCompact": "Expired",
+        "typeMarkdown": "Markdown",
+        "typeHtml": "HTML"
       }
     },
     "i18n": {
@@ -16222,6 +16257,14 @@
           "otherTopLevelItems": "Other top-level items ({{value0}})"
         }
       }
+    },
+    "cmd-j": {
+      "paletteSessionAge": {
+        "minutes": "{{value0}}m",
+        "hours": "{{value0}}h",
+        "days": "{{value0}}d",
+        "underOneMinute": "<1m"
+      }
     }
   },
   "dashboardPopout": {
@@ -16409,5 +16452,8 @@
       "settingsInstruction": "Change the model, dictation mode, or shortcut anytime in",
       "settingsLink": "Settings → Voice"
     }
+  },
+  "quickOpen": {
+    "moreMatchesAvailable": "More matches may be available. Refine your search to narrow the results."
   }
 }
