@@ -1,6 +1,6 @@
 import type { CommandHandler } from '../../dispatch'
 import { printResult } from '../../format'
-import { getOptionalStringFlag } from '../../flags'
+import { getOptionalPresentStringFlag, getOptionalStringFlag } from '../../flags'
 import { RuntimeClientError } from '../../runtime-client'
 import type { RuntimeStatus } from '../../../shared/runtime-types'
 import { ORCHESTRATION_WORKER_LAUNCH_PREFERENCES_RUNTIME_CAPABILITY } from '../../../shared/protocol-version'
@@ -62,7 +62,11 @@ export const ORCHESTRATION_WORKER_LAUNCH_HANDLER: Record<string, CommandHandler>
       agent: getOptionalStringFlag(flags, 'agent'),
       model,
       effort,
-      terminal: getOptionalStringFlag(flags, 'terminal'),
+      terminal: getOptionalPresentStringFlag(
+        flags,
+        'terminal',
+        '--terminal requires a non-empty handle. Omit --terminal to launch in a new terminal.'
+      ),
       retryOf: getOptionalStringFlag(flags, 'retry-of'),
       timeoutMs: getOptionalPositiveIntegerValueFlag(flags, 'timeout-ms'),
       run: getOptionalStringFlag(flags, 'run'),

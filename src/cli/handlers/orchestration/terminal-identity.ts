@@ -1,8 +1,12 @@
 import type { RuntimeClient } from '../../runtime-client'
-import { getOptionalStringFlag } from '../../flags'
+import { getOptionalPresentStringFlag } from '../../flags'
 import { RuntimeClientError } from '../../runtime-client'
 import { getTerminalHandle } from '../../selectors'
 import { isStructuredSessionWithoutIdentity } from '../../../shared/structured-session-marker'
+
+function emptyHandleMessage(flagName: 'from' | 'terminal'): string {
+  return `--${flagName} requires a non-empty handle. Omit --${flagName} to use the current terminal.`
+}
 
 export async function resolveOrchestrationTerminalHandle(
   flags: Map<string, string | boolean>,
@@ -11,7 +15,7 @@ export async function resolveOrchestrationTerminalHandle(
   flagName: 'from' | 'terminal',
   options: { validateEnvHandle?: boolean } = {}
 ): Promise<string> {
-  const explicit = getOptionalStringFlag(flags, flagName)
+  const explicit = getOptionalPresentStringFlag(flags, flagName, emptyHandleMessage(flagName))
   if (explicit) {
     return explicit
   }
