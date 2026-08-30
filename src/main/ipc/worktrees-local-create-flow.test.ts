@@ -52,6 +52,9 @@ vi.mock('./worktree-symlinks', async () =>
   (await import('./worktrees-test-module-mocks')).worktreeSymlinksModuleMock()
 )
 vi.mock('./ssh', async () => (await import('./worktrees-test-module-mocks')).sshModuleMock())
+vi.mock('../ssh/ssh-target-registry', async () =>
+  (await import('./worktrees-test-module-mocks')).sshTargetRegistryModuleMock()
+)
 vi.mock('../hooks', async () => (await import('./worktrees-test-module-mocks')).hooksModuleMock())
 vi.mock('../setup-runner-script-text', async (importOriginal) =>
   (await import('./worktrees-test-module-mocks')).setupRunnerScriptTextModuleMock(
@@ -511,10 +514,14 @@ describe('registerWorktreeHandlers', () => {
         isMainWorktree: false
       }
     ])
-    loadHooksMock.mockReturnValue({ scripts: { setup: 'pnpm install' } })
+    loadHooksMock.mockReturnValue({
+      scripts: { setup: 'pnpm install' },
+      setupAgentStartupPolicy: 'wait-for-setup'
+    })
     getEffectiveHooksMock.mockReturnValue({ scripts: { setup: 'pnpm install' } })
     getEffectiveHooksFromConfigMock.mockReturnValue({ scripts: { setup: 'pnpm install' } })
     shouldRunSetupForCreateMock.mockReturnValue(true)
+    expect(createSetupRunnerScriptMock).not.toHaveBeenCalled()
 
     const result = (await handlers['worktrees:create'](null, {
       repoId: 'repo-1',
@@ -535,6 +542,14 @@ describe('registerWorktreeHandlers', () => {
       startupTerminal?: { spawned: boolean; surface?: string }
       timing?: { phases: { phase: string }[] }
     }
+    expect(createSetupRunnerScriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'repo-1' }),
+      '/workspace/improve-dashboard',
+      'pnpm install',
+      undefined,
+      undefined,
+      'wait-for-setup'
+    )
 
     expect(runtimeStub.createTerminal).toHaveBeenNthCalledWith(
       1,

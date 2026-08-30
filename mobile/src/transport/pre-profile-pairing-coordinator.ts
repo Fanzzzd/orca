@@ -27,6 +27,7 @@ import {
   type PairingCandidateClient
 } from './mobile-relay-physical-client'
 import { racePairingCandidates, type PairingCandidate } from './pairing-candidate-race'
+import { attributePairingLogPath } from './pairing-log-path'
 import { resolvePairingInviteThroughDirector } from './mobile-relay-invite-director'
 import { createRecoveringPairingRelayCandidate } from './pairing-relay-candidate'
 import { createPairingRelayLogger } from './pairing-relay-log'
@@ -158,6 +159,7 @@ async function runPairing(
   // cellular alike, so the ws dial (and its failure noise) is skipped entirely
   // unless iroh is unavailable on this platform (Android stub / Expo Go).
   let irohPairingClient: ReturnType<typeof openIrohRpcClient> = null
+  const irohLog = attributePairingLogPath('iroh', connectOptions?.onLog)
   if (offer.iroh && !journal && dependencies.platform === 'ios') {
     irohPairingClient = dependencies.connectIroh({
       desktopEndpointId: offer.iroh.endpointId,
@@ -173,7 +175,7 @@ async function runPairing(
         : {}),
       deviceToken: offer.deviceToken,
       publicKeyB64: offer.publicKeyB64,
-      ...(connectOptions?.onLog ? { onLog: connectOptions.onLog } : {})
+      ...(irohLog ? { onLog: irohLog } : {})
     })
   }
 
@@ -186,7 +188,7 @@ async function runPairing(
       offer.endpoint,
       offer.deviceToken,
       offer.publicKeyB64,
-      connectOptions
+      { ...connectOptions, onLog: attributePairingLogPath('direct', connectOptions?.onLog) }
     )
     clients.add(directClient)
     candidates.push({ path: 'direct', client: directClient })
@@ -223,7 +225,7 @@ async function runPairing(
         await dependencies.updateJournal(journal.metadata.journalId, () => journal!.metadata)
       },
       now: dependencies.now,
-      onLog: connectOptions?.onLog
+      onLog: attributePairingLogPath('relay', connectOptions?.onLog)
     })
     clients.add(relayClient)
     candidates.push({ path: 'relay', client: relayClient })
