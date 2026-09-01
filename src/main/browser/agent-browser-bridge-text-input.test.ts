@@ -543,6 +543,32 @@ describe('AgentBrowserBridge', () => {
     expect(chunks).toEqual(['y'.repeat(AGENT_BROWSER_TEXT_ARGUMENT_MAX_BYTES), 'zz'])
   })
 
+  it('routes page-targeted type through the requested page debugger', async () => {
+    const wc = mockWebContents(100)
+    const activeWc = mockWebContents(101)
+    wc.debugger.sendCommand.mockResolvedValue({})
+    webContentsFromIdMock.mockImplementation((id: number) => (id === 100 ? wc : activeWc))
+    bridge = new AgentBrowserBridge(
+      mockBrowserManager(
+        new Map([
+          ['tab-target', 100],
+          ['tab-active', 101]
+        ])
+      )
+    )
+    bridge.setActiveTab(101)
+
+    await bridge.type('HELLO-SOLO', undefined, 'tab-target')
+
+    expect(execFileMock).not.toHaveBeenCalled()
+    expect(wc.focus).toHaveBeenCalledTimes(1)
+    expect(activeWc.focus).not.toHaveBeenCalled()
+    expect(activeWc.debugger.sendCommand).not.toHaveBeenCalled()
+    expect(wc.debugger.sendCommand).toHaveBeenCalledWith('Input.insertText', {
+      text: 'HELLO-SOLO'
+    })
+  })
+
   it('chunks large agent-browser keyboard insert text before transport', async () => {
     const text = ['z'.repeat(AGENT_BROWSER_TEXT_ARGUMENT_MAX_BYTES), 'qq'].join('')
     succeedWith({ inserted: true })
