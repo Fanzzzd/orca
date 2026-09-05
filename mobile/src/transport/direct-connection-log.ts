@@ -35,6 +35,14 @@ export class DirectConnectionLog {
     })
   }
 
+  emitWarning = (
+    message: string,
+    detail: string,
+    evidence?: Pick<ConnectionLogEntry, 'code' | 'path'>
+  ): void => {
+    this.emit('warn', message, detail, evidence)
+  }
+
   livenessTimeout = (evidence: LivenessTimeoutEvidence): void => {
     this.emit(
       'error',
@@ -42,5 +50,9 @@ export class DirectConnectionLog {
       `${evidence.reason}; ${evidence.missedProbes}/${evidence.missedProbeLimit} probes missed; last authenticated activity ${evidence.lastInboundAgeMs}ms ago`,
       { code: 'liveness-timeout' }
     )
+  }
+
+  connected = (): void => {
+    this.emit('success', 'Authenticated', 'Channel ready for RPC', { code: 'direct-connected' })
   }
 }

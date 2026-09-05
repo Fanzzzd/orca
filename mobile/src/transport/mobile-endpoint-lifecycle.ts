@@ -91,7 +91,7 @@ function createSupervisor(
 ): MobileEndpointSupervisor {
   return new MobileEndpointSupervisor(logical, host, {
     openDirect: (endpoint) => connect(endpoint, host.deviceToken, host.publicKeyB64, { onLog }),
-    openRelay: (relay, credential, confirmReqId) =>
+    openRelay: (relay, credential, confirmReqId, onHostCloseReason) =>
       connectMobileRelayRpcSession({
         relay,
         resumeToken: credential.token,
@@ -99,6 +99,7 @@ function createSupervisor(
         resumeConfirmReqId: confirmReqId,
         deviceToken: host.deviceToken,
         desktopPublicKeyB64: host.publicKeyB64,
+        onHostCloseReason,
         onLog
       }),
     resolveRelay: resolveMobileRelayEndpoint,

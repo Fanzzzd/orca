@@ -34,9 +34,6 @@ export function MobilePane(): React.JSX.Element {
   const [qrSize, setQrSize] = useState<number | null>(null)
   const [pairingUrl, setPairingUrl] = useState<string | null>(null)
   const [qrError, setQrError] = useState(false)
-  // Why: the QR caption must describe the offer on screen, not the current
-  // selection — an iroh QR carries no ws:// address to advertise.
-  const [qrEncodesIroh, setQrEncodesIroh] = useState(false)
   const [relayMintFailure, setRelayMintFailure] = useState<MobileRelayMintFailure | null>(null)
   const [endpoint, setEndpoint] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -88,7 +85,6 @@ export function MobilePane(): React.JSX.Element {
     setQrSize(null)
     setPairingUrl(null)
     setQrError(false)
-    setQrEncodesIroh(false)
     setRelayMintFailure(null)
     setEndpoint(null)
     // Why: a superseded in-flight generate no longer clears loading in its
@@ -206,9 +202,11 @@ export function MobilePane(): React.JSX.Element {
             setQrSize(result.qrSize)
             setPairingUrl(result.pairingUrl)
             setQrError(result.qrDataUrl === null)
-            setQrEncodesIroh(result.connectionMode === 'iroh')
             setRelayMintFailure(null)
-            setEndpoint(result.endpoint)
+            // Why null for iroh: the caption describes the offer on screen, and an
+            // iroh QR dials by key — showing the ws:// LAN URL reads as "this QR is
+            // bound to that address", which it is not.
+            setEndpoint(result.connectionMode === 'iroh' ? null : result.endpoint)
             setDeviceCountAtQr(getPairedMobileDevicesSnapshot().length)
             clearCodeCopiedResetTimer()
             setCodeCopied(false)
@@ -220,10 +218,12 @@ export function MobilePane(): React.JSX.Element {
           setQrSize(null)
           setPairingUrl(null)
           setQrError(false)
-          setQrEncodesIroh(false)
           setEndpoint(null)
           if (result.reason === 'relay_mint_failed' && result.relayFailure) {
             setRelayMintFailure(result.relayFailure)
+            // Why: a revoked session is the likeliest cause; re-read it so the
+            // notice can offer sign-in instead of a retry that cannot succeed.
+            void useAppStore.getState().fetchOrcaProfileAuthStatus()
           } else {
             setRelayMintFailure(null)
             // Why: IPC now forwards reason/guidance for all unavailability paths;
@@ -445,9 +445,7 @@ export function MobilePane(): React.JSX.Element {
         qrSize={qrSize}
         qrError={qrError}
         pairingUrl={pairingUrl}
-        // Why: iroh pairings dial by key — showing the legacy ws:// LAN URL reads
-        // as "this QR is bound to that address", which it is not.
-        endpoint={qrEncodesIroh ? null : endpoint}
+        endpoint={endpoint}
         qrEnlarged={qrEnlarged}
         codeCopied={codeCopied}
         onQrEnlargedChange={setQrEnlarged}

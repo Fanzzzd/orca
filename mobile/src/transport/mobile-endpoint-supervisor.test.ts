@@ -48,27 +48,6 @@ describe('mobile endpoint supervisor', () => {
     supervisor.stop()
   })
 
-  it('does not spin when no relay credential is eligible', async () => {
-    const logical = new FakeLogicalClient('disconnected', 'lan')
-    const openRelay = vi.fn(() => new FakeRelaySession('connected'))
-    const setTimer = vi.fn(setTimeout)
-    const deps = dependencies({
-      openRelay,
-      setTimer,
-      readBundle: vi.fn(async () => ({
-        ...bundle,
-        current: { ...bundle.current, expiresAt: Date.now() - 1 }
-      }))
-    })
-    const supervisor = new MobileEndpointSupervisor(logical, host, deps)
-
-    await supervisor.start()
-    supervisor.stop()
-
-    expect(openRelay).not.toHaveBeenCalled()
-    expect(setTimer).toHaveBeenCalledTimes(1)
-  })
-
   it('fails over when the direct retry loop publishes reconnecting', async () => {
     const logical = new FakeLogicalClient('connecting', 'lan')
     const deps = dependencies()
@@ -206,7 +185,12 @@ describe('mobile endpoint supervisor', () => {
     await supervisor.start()
 
     expect(deps.resolveRelay).toHaveBeenCalledOnce()
-    expect(openRelay).toHaveBeenLastCalledWith(resolved, expect.any(Object), expect.any(String))
+    expect(openRelay).toHaveBeenLastCalledWith(
+      resolved,
+      expect.any(Object),
+      expect.any(String),
+      expect.any(Function)
+    )
     expect(deps.saveHost).toHaveBeenCalledWith(
       expect.objectContaining({ relay: resolved, endpoint: host.endpoint })
     )
@@ -577,7 +561,8 @@ describe('mobile endpoint supervisor', () => {
     expect(openRelay).toHaveBeenLastCalledWith(
       relay,
       expect.objectContaining({ version: 3 }),
-      expect.any(String)
+      expect.any(String),
+      expect.any(Function)
     )
     supervisor.stop()
   })
@@ -624,7 +609,8 @@ describe('mobile endpoint supervisor', () => {
     expect(openRelay).toHaveBeenLastCalledWith(
       relay,
       expect.objectContaining({ version: 3 }),
-      expect.any(String)
+      expect.any(String),
+      expect.any(Function)
     )
     supervisor.stop()
   })

@@ -4,6 +4,7 @@ import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { translate } from '../../i18n/i18n'
 import { useAppStore } from '../../store'
+import { useOrcaProfileAuthStatusRefresh } from '@/hooks/use-orca-profile-auth-status-refresh'
 import { cn } from '@/lib/utils'
 import type { MobileRelayStatus } from '../../../../shared/mobile-relay-status'
 import type { MobilePairingConnectionMode } from '../../../../shared/mobile-pairing-connection-mode'
@@ -56,7 +57,6 @@ export function MobilePairingConnectionOptions({
   const authStatus = useAppStore((state) => state.orcaProfileAuthStatus)
   const connecting = useAppStore((state) => state.orcaProfileConnecting)
   const connect = useAppStore((state) => state.connectCurrentOrcaProfile)
-  const fetchAuthStatus = useAppStore((state) => state.fetchOrcaProfileAuthStatus)
   const [relayStatus, setRelayStatus] = useState<MobileRelayStatus>('offline')
   const [irohBound, setIrohBound] = useState(false)
   const signedIn = authStatus?.state === 'connected'
@@ -111,11 +111,7 @@ export function MobilePairingConnectionOptions({
     }
   }
 
-  useEffect(() => {
-    if (!authStatus) {
-      void fetchAuthStatus()
-    }
-  }, [authStatus, fetchAuthStatus])
+  useOrcaProfileAuthStatusRefresh()
 
   useEffect(() => {
     let receivedEvent = false
