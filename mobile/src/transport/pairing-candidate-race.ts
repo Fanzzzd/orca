@@ -55,7 +55,13 @@ export function racePairingCandidates(
     function rejectIfFinished(): void {
       if (!settled && failures === candidates.length && successes.length === 0) {
         settled = true
-        reject(new Error('all pairing paths failed'))
+        // Why: iroh hosts race alone; the direct/relay wording is pinned by frozen recordings.
+        const irohOnly = candidates.every((candidate) => candidate.path === 'iroh')
+        reject(
+          new Error(
+            irohOnly ? 'iroh pairing path failed' : 'direct and relay pairing paths both failed'
+          )
+        )
       }
     }
   })

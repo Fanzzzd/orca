@@ -260,8 +260,8 @@ describe('MobilePairingConnectionOptions', () => {
         'Relay cell: c27.relay.example.test'
       )
     )
-    // Why: the line is a diagnostic, not an option; it must not join the group.
-    expect(within(screen.getByRole('radiogroup')).getAllByRole('radio')).toHaveLength(2)
+    // Why: the line is a diagnostic, not an option; it must not join the group (Relay, LAN, Iroh).
+    expect(within(screen.getByRole('radiogroup')).getAllByRole('radio')).toHaveLength(3)
 
     statusListener?.({ status: 'offline' })
     await waitFor(() => expect(screen.queryByTestId('relay-cell-line')).toBeNull())
