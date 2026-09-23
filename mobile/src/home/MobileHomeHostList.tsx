@@ -7,9 +7,9 @@ import { spacing } from '../theme/mobile-theme'
 import { classifyConnection } from '../transport/connection-health'
 import { getIrohHostStatus, irohStatusDisplayLabel } from '../transport/mobile-iroh-host-status'
 import { resolveHomeHostConnectionState } from '../transport/home-host-auto-connect'
-import type { MobileConnectionPath } from '../transport/stable-logical-rpc-client'
 import type { ConnectionState, HostCatalogEntry } from '../transport/types'
 import type { HostWorktreeInfo } from '../worktree/home-worktree-info'
+import type { HomeHostConnections } from './home-host-connection-projection'
 import { MobileHomeListHeader } from './MobileHomeListHeader'
 
 type MobileHomeHostListProps = {
@@ -19,10 +19,7 @@ type MobileHomeHostListProps = {
   footer: ReactElement
   hostAttempts: Record<string, number>
   hostLastConnected: Record<string, number | null>
-  hostPairingRejected: Record<string, boolean>
-  hostSignedOut: Record<string, boolean>
-  hostPaths: Record<string, MobileConnectionPath>
-  hostPendingPaths: Record<string, MobileConnectionPath | null>
+  hostConnections: HomeHostConnections
   hosts: HostCatalogEntry[]
   hostStates: Record<string, ConnectionState>
   isWideLayout: boolean
@@ -41,10 +38,7 @@ export function MobileHomeHostList(props: MobileHomeHostListProps) {
         autoConnectHostIds={props.autoConnectHostIds}
         hostAttempts={props.hostAttempts}
         hostLastConnected={props.hostLastConnected}
-        hostPairingRejected={props.hostPairingRejected}
-        hostSignedOut={props.hostSignedOut}
-        hostPaths={props.hostPaths}
-        hostPendingPaths={props.hostPendingPaths}
+        hostConnections={props.hostConnections}
         hostStates={props.hostStates}
         worktreeInfo={props.worktreeInfo}
         onOpen={props.onOpen}
@@ -56,10 +50,7 @@ export function MobileHomeHostList(props: MobileHomeHostListProps) {
       props.autoConnectHostIds,
       props.hostAttempts,
       props.hostLastConnected,
-      props.hostPairingRejected,
-      props.hostSignedOut,
-      props.hostPaths,
-      props.hostPendingPaths,
+      props.hostConnections,
       props.hostStates,
       props.onLongPress,
       props.onOpen,
@@ -94,10 +85,7 @@ type MobileHomeHostRowProps = Pick<
   | 'autoConnectHostIds'
   | 'hostAttempts'
   | 'hostLastConnected'
-  | 'hostPairingRejected'
-  | 'hostSignedOut'
-  | 'hostPaths'
-  | 'hostPendingPaths'
+  | 'hostConnections'
   | 'hostStates'
   | 'worktreeInfo'
   | 'onOpen'
@@ -112,15 +100,17 @@ const MobileHomeHostRow = memo(function MobileHomeHostRow(props: MobileHomeHostR
     props.hostStates[item.id],
     props.autoConnectHostIds
   )
+  const connection = props.hostConnections[item.id]
   const verdict = classifyConnection({
     state,
     reconnectAttempts: props.hostAttempts[item.id] ?? 0,
     lastConnectedAt: props.hostLastConnected[item.id] ?? null,
     endpoint: item.endpoint,
     irohHint: irohStatusDisplayLabel(getIrohHostStatus(item.id)),
-    pendingPath: props.hostPendingPaths[item.id] ?? null,
-    pairingRejected: props.hostPairingRejected[item.id] ?? false,
-    hostSignedOut: props.hostSignedOut[item.id] ?? false
+    pendingPath: connection?.pendingPath ?? null,
+    pairingRejected: connection?.pairingRejected ?? false,
+    relayHostReachability: connection?.relayHostReachability ?? 'connecting',
+    hostName: item.name
   })
   const open = useCallback(() => onOpen(item), [item, onOpen])
   const longPress = useCallback(() => onLongPress(item), [item, onLongPress])
@@ -132,7 +122,7 @@ const MobileHomeHostRow = memo(function MobileHomeHostRow(props: MobileHomeHostR
       credentialStatus={item.credentialStatus}
       state={state}
       verdict={verdict}
-      path={props.hostPaths[item.id] ?? 'lan'}
+      path={connection?.path ?? 'lan'}
       worktreeInfo={props.worktreeInfo[item.id]}
       onPress={open}
       onLongPress={longPress}

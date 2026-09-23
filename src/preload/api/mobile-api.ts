@@ -1,4 +1,4 @@
-import type { MobileRelayStatus } from '../../shared/mobile-relay-status'
+import type { MobileRelayStatusDetail } from '../../shared/mobile-relay-status'
 import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
 import type { MobileRelayMintFailure } from '../../shared/mobile-relay-mint-failure'
@@ -81,8 +81,8 @@ export type MobileApi = {
   isWebSocketReady: () => Promise<{ ready: boolean; endpoint: string | null }>
   /** Iroh endpoint bind status for the pairing path picker. */
   getIrohStatus: () => Promise<{ bound: boolean; endpointId: string | null }>
-  getRelayStatus: () => Promise<{ status: MobileRelayStatus }>
-  onRelayStatusChanged: (callback: (status: MobileRelayStatus) => void) => () => void
+  getRelayStatus: () => Promise<MobileRelayStatusDetail>
+  onRelayStatusChanged: (callback: (detail: MobileRelayStatusDetail) => void) => () => void
   /** Consumes an auth-failure notification that arrived before the renderer listener mounted. */
   consumePendingUnpairedDeviceAuthFailure?: () => Promise<boolean>
   /** Fires (throttled, once per session) when an unpaired phone repeatedly fails direct-transport auth. */

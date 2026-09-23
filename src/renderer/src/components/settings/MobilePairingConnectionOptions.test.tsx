@@ -6,13 +6,12 @@ import { StrictMode, useSyncExternalStore } from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MobileRelayStatus } from '../../../../shared/mobile-relay-status'
+import type { MobileRelayStatusDetail } from '../../../../shared/mobile-relay-status'
 import type { OrcaProfileAuthStatus } from '../../../../shared/orca-profiles'
 import { MobilePairingConnectionOptions } from './MobilePairingConnectionOptions'
 
 type MobileRelayStoreState = {
   orcaProfileAuthStatus: OrcaProfileAuthStatus | null
-  orcaProfileConnecting: boolean
   connectCurrentOrcaProfile: () => Promise<null>
   fetchOrcaProfileAuthStatus: () => Promise<OrcaProfileAuthStatus | null>
 }
@@ -45,7 +44,7 @@ vi.mock('../../i18n/i18n', () => ({
 }))
 
 describe('MobilePairingConnectionOptions', () => {
-  let statusListener: ((status: MobileRelayStatus) => void) | null
+  let statusListener: ((detail: MobileRelayStatusDetail) => void) | null
   const connect = vi.fn().mockResolvedValue(null)
   const fetchAuthStatus = vi.fn().mockResolvedValue(null)
   const getIrohStatus = vi.fn().mockResolvedValue({ bound: false, endpointId: null })
@@ -62,7 +61,7 @@ describe('MobilePairingConnectionOptions', () => {
         mobile: {
           getRelayStatus: vi.fn().mockResolvedValue({ status: 'registered' }),
           getIrohStatus,
-          onRelayStatusChanged: vi.fn((listener: (status: MobileRelayStatus) => void) => {
+          onRelayStatusChanged: vi.fn((listener: (detail: MobileRelayStatusDetail) => void) => {
             statusListener = listener
             return vi.fn()
           })
@@ -77,7 +76,6 @@ describe('MobilePairingConnectionOptions', () => {
         state: 'local',
         persistence: 'none'
       },
-      orcaProfileConnecting: false,
       connectCurrentOrcaProfile: connect,
       fetchOrcaProfileAuthStatus: fetchAuthStatus
     }
@@ -226,7 +224,6 @@ describe('MobilePairingConnectionOptions', () => {
         state: 'connected',
         persistence: 'encrypted'
       },
-      orcaProfileConnecting: false,
       connectCurrentOrcaProfile: connect,
       fetchOrcaProfileAuthStatus: fetchAuthStatus
     }
@@ -239,7 +236,35 @@ describe('MobilePairingConnectionOptions', () => {
 
     await user.click(screen.getByRole('radio', { name: /^LAN\b/i }))
     expect(onChange).toHaveBeenCalledWith('local-only')
-    statusListener?.('standby')
+    statusListener?.({ status: 'standby' })
+  })
+
+  it('names the assigned relay cell by host once the status carries one', async () => {
+    mocks.state = {
+      ...mocks.state,
+      orcaProfileAuthStatus: {
+        activeProfileId: 'profile-1',
+        configured: true,
+        state: 'connected',
+        persistence: 'encrypted'
+      }
+    }
+    render(<MobilePairingConnectionOptions value="automatic" onChange={vi.fn()} />)
+
+    expect(screen.queryByTestId('relay-cell-line')).toBeNull()
+
+    statusListener?.({ status: 'registered', cellUrl: 'https://c27.relay.example.test' })
+
+    await waitFor(() =>
+      expect(screen.getByTestId('relay-cell-line')).toHaveTextContent(
+        'Relay cell: c27.relay.example.test'
+      )
+    )
+    // Why: the line is a diagnostic, not an option; it must not join the group.
+    expect(within(screen.getByRole('radiogroup')).getAllByRole('radio')).toHaveLength(2)
+
+    statusListener?.({ status: 'offline' })
+    await waitFor(() => expect(screen.queryByTestId('relay-cell-line')).toBeNull())
   })
 
   it('shows a selectable Iroh option when the transport is bound', async () => {

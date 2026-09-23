@@ -5,10 +5,7 @@ import {
   type PageInitiatedTabBudget
 } from './browser-page-initiated-tab-budget'
 import type { KeybindingOverrides } from '../../shared/keybindings'
-import type {
-  BrowserLoadError,
-  BrowserSessionUserAgentMode
-} from '../../shared/browser-workspace-types'
+import type { BrowserLoadError } from '../../shared/browser-workspace-types'
 import { resolveBrowserRouteGuestPopupOpener } from './browser-route-guest-popup-ownership'
 import type {
   ActiveDownload,
@@ -78,7 +75,10 @@ export abstract class BrowserManagerState extends BrowserManagerViewportScrollSt
   ): void
   protected abstract cancelGrabOp(browserTabId: string, reason: BrowserGrabCancelReason): void
   protected abstract hasActiveGrabOp(browserTabId: string): boolean
-  protected abstract unregisterGuest(browserTabId: string): void
+  protected abstract unregisterGuest(
+    browserTabId: string,
+    reason?: 'page-closed' | 'guest-destroyed'
+  ): void
   protected abstract cancelDownloadInternal(downloadId: string, reason: string): void
   protected abstract bindDownloadToTab(downloadId: string, browserTabId: string): void
   protected abstract flushDownloadSnapshot(downloadId: string): void
@@ -102,7 +102,11 @@ export abstract class BrowserManagerState extends BrowserManagerViewportScrollSt
     error: string | null
   ): void
   protected abstract getDownloadReceivedBytes(item: Electron.DownloadItem): number
-  protected abstract openLinkInOrcaTab(browserTabId: string, rawUrl: string): boolean
+  protected abstract openLinkInOrcaTab(
+    browserTabId: string,
+    rawUrl: string,
+    activate?: boolean
+  ): boolean
 
   protected settingsResolver:
     | (() => {
@@ -119,7 +123,6 @@ export abstract class BrowserManagerState extends BrowserManagerViewportScrollSt
   // Why: guests are keyed by page id but renderer visibility by workspace id; bridge the mismatch to activate the right tab before capture.
   protected readonly workspaceIdByPageId = new Map<string, string>()
   protected readonly sessionProfileIdByPageId = new Map<string, string | null>()
-  protected readonly userAgentModeByPageId = new Map<string, BrowserSessionUserAgentMode>()
   // Why: serialize per-tab setViewportOverride so rapid toggles don't interleave CDP commands and leave emulation in a wrong state.
   protected readonly viewportOpsByTabId = new Map<string, Promise<unknown>>()
   // Why: presence means the preset requires a CDP UA override (installed or in flight), so navigation
@@ -143,7 +146,6 @@ export abstract class BrowserManagerState extends BrowserManagerViewportScrollSt
   protected readonly policyAttachedGuestIds = new Set<number>()
   protected readonly offscreenGuestIds = new Set<number>()
   protected readonly policyCleanupByGuestId = new Map<number, () => void>()
-  protected readonly clickedLinkFrameNameByGuestId = new Map<number, string>()
   protected readonly loadErrorsByGuestId = new Map<number, BrowserLoadError>()
   // Why: did-start-navigation hides the overlay optimistically; stash the cleared error so did-fail-load(-3) can restore an aborted nav.
   protected readonly clearedLoadErrorsByGuestId = new Map<number, BrowserLoadError>()

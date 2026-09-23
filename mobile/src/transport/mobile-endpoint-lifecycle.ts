@@ -11,6 +11,7 @@ import {
 import { saveHost } from './host-store'
 import { upgradeDirectMobileRelay } from './mobile-relay-direct-upgrade'
 import { MobileRelayDirectUpgradeController } from './mobile-relay-direct-upgrade-controller'
+import { defaultCancelTimer, defaultScheduleTimer } from './timer-scheduler'
 import type { StableLogicalRpcClient } from './stable-logical-rpc-client'
 import { hostHasIrohEndpoint } from './mobile-iroh-availability'
 
@@ -109,7 +110,7 @@ function createSupervisor(
     onLog,
     now: Date.now,
     randomBytes: ExpoCrypto.getRandomBytes,
-    setTimer: setTimeout,
-    clearTimer: clearTimeout
+    setTimer: defaultScheduleTimer,
+    clearTimer: defaultCancelTimer
   })
 }

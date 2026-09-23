@@ -8,6 +8,7 @@ import type {
   RelayRevokeOutbox,
   RelayRevokeOutboxItem
 } from '../relay/relay-revoke-outbox'
+import type { PushUnregisterOutbox } from '../push/push-unregister-outbox'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../../shared/pairing'
 import type { RuntimePairingReach } from '../../../shared/runtime-pairing-reach'
 import { resolveAdvertisedPairingEndpoint } from '../pairing-endpoint'
@@ -22,6 +23,8 @@ import {
 } from './runtime-rpc-pairing-types'
 
 export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
+  private onPushUnregisterQueued?: () => void
+
   getIrohEndpointId(): string | null {
     return this.irohTransport?.endpointId ?? null
   }
@@ -63,6 +66,10 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
 
   getRelayRevokeOutbox(): RelayRevokeOutbox {
     return this.relayRevokeOutbox
+  }
+
+  getPushUnregisterOutbox(): PushUnregisterOutbox {
+    return this.pushUnregisterOutbox
   }
 
   setMobileRelayBinding(deviceId: string, binding: RelayDeviceBinding): boolean {
@@ -110,6 +117,9 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
         return false
       }
     }
+    // Why: unpairing must delete the phone's push token at the gateway too, and the
+    // registration id is only readable while the device row still exists.
+    this.queuePushUnregister(deviceId, device.pushRegistration?.registrationId)
     if (!this.deviceRegistry?.removeDevice(deviceId)) {
       return false
     }
@@ -221,6 +231,23 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
       webClientUrl:
         this.webClientRoot && scope === 'runtime' ? createWebClientUrl(endpoint, pairingUrl) : null
     }
+  }
+
+  /** Best-effort: a failed enqueue must never block the revoke the user asked for. */
+  protected queuePushUnregister(deviceId: string, registrationId: string | undefined): void {
+    if (!registrationId) {
+      return
+    }
+    try {
+      this.pushUnregisterOutbox.enqueue({ registrationId, deviceId })
+      this.onPushUnregisterQueued?.()
+    } catch (error) {
+      console.error('[runtime] Failed to persist a push token cleanup:', error)
+    }
+  }
+
+  setOnPushUnregisterQueued(callback: (() => void) | null): void {
+    this.onPushUnregisterQueued = callback ?? undefined
   }
 
   protected queueOrRetainRelayDeviceRevoke(deviceId: string, binding: RelayDeviceBinding): void {

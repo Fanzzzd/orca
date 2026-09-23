@@ -216,12 +216,14 @@ export function connectMobileRelayRpcSession(args: {
         // Why: the frame was written long ago — the desktop may have processed it.
         reject(markRpcDeliveryUnknown(new Error(`relay RPC timed out: ${method}`)))
       }, timeoutMs)
-      pending.track(id, { resolve, reject, timer })
+      pending.track(id, { resolve, reject, timer, written: false })
       if (!sendFrame({ id, method, params })) {
         clearTimeout(timer)
         pending.drop(id)
         reject(new Error('relay E2EE channel not ready'))
+        return
       }
+      pending.markWritten(id)
     })
   }
 
@@ -294,6 +296,7 @@ export function connectMobileRelayRpcSession(args: {
     closed = true
     failure = error
     livenessWatchdog.stop(livenessIdentity)
+    streams.clear()
     link.close()
     pending.rejectAll(error)
     publishState(error instanceof MobileE2EEAuthenticationError ? 'auth-failed' : 'disconnected')

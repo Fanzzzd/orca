@@ -30,7 +30,8 @@ import { RpcDispatcher } from './rpc/dispatcher'
 import { STRUCTURED_AGENT_SESSION_METHODS } from './rpc/methods/structured-agent-session'
 import {
   ensureStructuredAgentSessionHost,
-  stopStructuredAgentSessionRuntime
+  stopStructuredAgentSessionRuntime,
+  waitForStructuredAgentSessionRecovery
 } from './structured-agent-session-runtime'
 
 const SESSION = 'claude-integration-1'
@@ -390,6 +391,7 @@ beforeEach(async () => {
   }
   const runtime = {
     getRuntimeId: () => 'runtime-1',
+    getClientSettings: () => ({ experimentalStructuredNativeChat: true }),
     getStructuredAgentSessionCreateSupport: async () => ({ supported: true }),
     resolveStructuredAgentSessionCreateIntent: async (input: { envelope: unknown }) => ({
       ...ensureParams(1),
@@ -524,13 +526,9 @@ describe('a structured Claude session over agentSession.*', () => {
     connection.exitVerdict = { root: 'exited', tree: 'unverifiable' }
     connection.handlers.onExit?.(new Error('claude stream-json exited (code 1): crashed'))
 
-    for (
-      let attempt = 0;
-      attempt < 20 && leaseOf(SESSION).claimStatus !== 'released';
-      attempt += 1
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 5))
-    }
+    // Claude publishes an exit only after its close ladder and transcript write,
+    // so the recovery barrier — not a wall-clock poll — is what says it landed.
+    await waitForStructuredAgentSessionRecovery()
     expect(leaseOf(SESSION)).toMatchObject({ claimStatus: 'released', handoffStage: null })
   })
 
@@ -602,6 +600,58 @@ describe('a structured Claude session over agentSession.*', () => {
       `claude:${PROVIDER_SESSION}:assistant-leaf`
     )
 
+    // A background task can wake Claude after the preceding dispatch settled.
+    // This assistant frame opens the provider-owned turn without an Orca send
+    // echo; Stop must target that frame's id rather than the settled user row.
+    claude.live().handlers.onMessage?.({
+      type: 'assistant',
+      session_id: PROVIDER_SESSION,
+      uuid: 'provider-opened-assistant',
+      parent_tool_use_id: null,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Background task update.' }] }
+    })
+    await getStructuredAgentSessionHost()?.flushStreamedEvents(SESSION)
+
+    claude.live().handlers.onMessage?.({
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      session_id: PROVIDER_SESSION,
+      uuid: 'background-roster',
+      tasks: [
+        { task_id: 'task-one', task_type: 'local_agent', description: 'First task' },
+        { task_id: 'task-two', task_type: 'local_bash', description: 'Second task' }
+      ]
+    })
+    const itemsBeforeTaskStop = itemsOf(stream)
+    const targetedStopFields = {
+      turnId: 'background-tasks',
+      scope: 'background-tasks',
+      taskId: 'task-two'
+    }
+    await expect(
+      ok('agentSession.cancel', {
+        envelope: envelope('agentSession.cancel', targetedStopFields, created.fence),
+        ...targetedStopFields
+      })
+    ).resolves.toMatchObject({ turnId: 'background-tasks', cancelled: true })
+    expect(claude.live().calls.filter((entry) => entry.subtype === 'stop_task')).toEqual([
+      { subtype: 'stop_task', params: { taskId: 'task-two' } }
+    ])
+    expect(itemsOf(stream)).toEqual(itemsBeforeTaskStop)
+
+    const staleStopFields = {
+      turnId: 'background-tasks',
+      scope: 'background-tasks',
+      taskId: 'task-stale'
+    }
+    await expect(
+      ok('agentSession.cancel', {
+        envelope: envelope('agentSession.cancel', staleStopFields, created.fence),
+        ...staleStopFields
+      })
+    ).resolves.toMatchObject({ turnId: 'background-tasks', cancelled: false })
+    expect(claude.live().calls.filter((entry) => entry.subtype === 'stop_task')).toHaveLength(1)
+
     const answeredPermission = Promise.resolve(
       claude.live().handlers.canUseTool?.('Bash', { command: 'ls' }, {
         requestId: 'permission-1',
@@ -611,7 +661,10 @@ describe('a structured Claude session over agentSession.*', () => {
     )
     await getStructuredAgentSessionHost()?.flushStreamedEvents(SESSION)
     const approval = itemsOf(stream).find((item) => item.body?.kind === 'approval')
-    expect(approval?.body).toMatchObject({ title: 'Allow Bash?', detail: '{"command":"ls"}' })
+    expect(approval?.body).toMatchObject({
+      title: 'Allow Bash?',
+      detail: '{\n  "command": "ls"\n}'
+    })
     await ok('agentSession.respondToApproval', {
       envelope: envelope(
         'agentSession.respondTo:approval',
@@ -634,10 +687,14 @@ describe('a structured Claude session over agentSession.*', () => {
 
     await expect(
       ok('agentSession.cancel', {
-        envelope: envelope('agentSession.cancel', { turnId: 'user-1' }, created.fence),
-        turnId: 'user-1'
+        envelope: envelope(
+          'agentSession.cancel',
+          { turnId: 'provider-opened-assistant' },
+          created.fence
+        ),
+        turnId: 'provider-opened-assistant'
       })
-    ).resolves.toMatchObject({ turnId: 'user-1', cancelled: true })
+    ).resolves.toMatchObject({ turnId: 'provider-opened-assistant', cancelled: true })
     expect(claude.live().calls.at(-1)).toMatchObject({ subtype: 'interrupt' })
 
     const host = getStructuredAgentSessionHost() as unknown as {
@@ -662,13 +719,13 @@ describe('a structured Claude session over agentSession.*', () => {
     })
     expect(claude.live().launch.options).toMatchObject({
       resume: PROVIDER_SESSION,
-      resumeSessionAt: 'assistant-leaf'
+      resumeSessionAt: 'provider-opened-assistant'
     })
     expect(host.deps.store.getRecord(SESSION).providerHandleChain.at(-1)).toMatchObject({
       handle: {
         provider: 'claude',
         sessionId: PROVIDER_SESSION,
-        leafUuid: 'assistant-leaf'
+        leafUuid: 'provider-opened-assistant'
       },
       origin: 'resumed'
     })
@@ -707,9 +764,10 @@ describe('a structured Claude session over agentSession.*', () => {
 
     await ok('agentSession.requestHandoff', handoffParams('to-tui', created.fence))
     const host = getStructuredAgentSessionHost()!
-    await vi.waitFor(async () =>
-      expect(await host.handoffStatus(SESSION)).toMatchObject({ owner: 'tui', phase: 'idle' })
-    )
+    // No poll: the request enqueues the flow on the session's serialized chain before it returns,
+    // so this status read is already ordered behind it. Polling only added a wall-clock deadline
+    // that a loaded runner missed, abandoning a live flow into the suite's teardown.
+    expect(await host.handoffStatus(SESSION)).toMatchObject({ owner: 'tui', phase: 'idle' })
     expect(claude.connections[0]?.closed).toBe(true)
 
     const tuiFence = (
@@ -719,9 +777,7 @@ describe('a structured Claude session over agentSession.*', () => {
     ).deps.store.getRecord(SESSION).lease.runtimeFence
     readClaudeTranscriptLeafUuid.mockResolvedValueOnce('tui-assistant')
     await ok('agentSession.requestHandoff', handoffParams('to-native', tuiFence))
-    await vi.waitFor(async () =>
-      expect(await host.handoffStatus(SESSION)).toMatchObject({ owner: 'native', phase: 'idle' })
-    )
+    expect(await host.handoffStatus(SESSION)).toMatchObject({ owner: 'native', phase: 'idle' })
 
     const frames = await subscribe()
     const texts = itemsOf(frames).map(textOf).filter(Boolean)
