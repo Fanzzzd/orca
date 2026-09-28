@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import {
   OffscreenPageCommandSchema,
+  OffscreenPageFileDropSchema,
   OffscreenPageSelectMenuPointSchema,
   OffscreenPageUserInputSchema,
   OffscreenPageViewportSchema
@@ -11,6 +12,10 @@ import {
 import { isBrowserRoutePartition } from '../../shared/browser-route-partition'
 import { isAdmissibleBrowserPageGuest } from '../browser/browser-page-guest-admission'
 import { OffscreenPageHost } from '../browser/offscreen-page-host'
+import {
+  clearOffscreenPageKeyboardFocus,
+  setOffscreenPageKeyboardFocus
+} from '../browser/offscreen-page-keyboard-routing'
 import { isTrustedBrowserRenderer } from './browser-renderer-trust'
 
 export const offscreenPageHost = new OffscreenPageHost()
@@ -29,7 +34,9 @@ const SEND_CHANNELS = [
   'offscreenPage:input',
   'offscreenPage:command',
   'offscreenPage:focus',
+  'offscreenPage:keyboardFocus',
   'offscreenPage:selectMenu',
+  'offscreenPage:dropFiles',
   'offscreenPage:close'
 ] as const
 
@@ -91,6 +98,18 @@ export function registerOffscreenPageHandlers(): void {
     }
   })
   onOwnedPage('offscreenPage:focus', (pageId) => offscreenPageHost.focusPage(pageId))
+  ipcMain.on('offscreenPage:keyboardFocus', (event, rawPageId: unknown, focused: unknown) => {
+    const pageId = ownedPageId(event, rawPageId)
+    if (pageId && typeof focused === 'boolean') {
+      setOffscreenPageKeyboardFocus(event.sender.id, pageId, focused)
+    }
+  })
+  onOwnedPage('offscreenPage:dropFiles', (pageId, payload) => {
+    const drop = OffscreenPageFileDropSchema.safeParse(payload)
+    if (drop.success) {
+      offscreenPageHost.dropFiles(pageId, drop.data)
+    }
+  })
   onOwnedPage('offscreenPage:selectMenu', (pageId, payload) => {
     const point = OffscreenPageSelectMenuPointSchema.safeParse(payload)
     if (point.success) {
@@ -126,7 +145,10 @@ function closePagesWithRenderer(renderer: WebContents): void {
     return
   }
   watchedRenderers.add(renderer)
-  const closeOwned = () => offscreenPageHost.closeOwnedBy(renderer.id)
+  const closeOwned = () => {
+    clearOffscreenPageKeyboardFocus(renderer.id)
+    offscreenPageHost.closeOwnedBy(renderer.id)
+  }
   renderer.once('destroyed', closeOwned)
   renderer.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) {

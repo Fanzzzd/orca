@@ -4,6 +4,7 @@ import type {
   OffscreenPageGuestState
 } from '../../../../../shared/offscreen-page-protocol'
 import { OFFSCREEN_PAGE_TAG } from './browser-page-guest-element-kind'
+import { dispatchBrowserPageZoomEvent } from './browser-page-zoom'
 import { bindOffscreenPageInputSurface, cssCursorFor } from './offscreen-page-input-surface'
 
 const EMPTY_STATE: OffscreenPageGuestState = {
@@ -26,6 +27,8 @@ export class OrcaOffscreenPageElement extends HTMLElement {
   private state: OffscreenPageGuestState = EMPTY_STATE
   private webContentsId: number | null = null
   private domReady = false
+  /** Main destroyed the page under a live element; only a replacement element brings it back. */
+  private gone = false
   private creating = false
   private pendingSrc: string | null = null
   private nextFindRequestId = 1
@@ -64,6 +67,10 @@ export class OrcaOffscreenPageElement extends HTMLElement {
       input: (input) => window.api.offscreenPage.input(this.browserPageId, input),
       edit: (action) => this.command({ kind: 'edit', action }),
       focusPage: () => window.api.offscreenPage.focus(this.browserPageId),
+      setKeyboardFocus: (focused) =>
+        window.api.offscreenPage.setKeyboardFocus(this.browserPageId, focused),
+      zoom: (direction) =>
+        dispatchBrowserPageZoomEvent({ browserPageId: this.browserPageId, direction }),
       readCaret: () => window.api.offscreenPage.readCaret(this.browserPageId)
     })
   }
@@ -197,12 +204,17 @@ export class OrcaOffscreenPageElement extends HTMLElement {
   }
 
   isDestroyed(): boolean {
-    return !this.isConnected && this.webContentsId === null
+    return this.gone || (!this.isConnected && this.webContentsId === null)
   }
 
   // ── internals ──
 
   private command(command: OffscreenPageCommand): void {
+    // Why throw: a <webview> whose guest died throws here, which is what sends the pane's recovery
+    // to rebuild the guest instead of waiting on a reload that can never land.
+    if (this.gone) {
+      throw new Error('The offscreen page is gone.')
+    }
     if (this.webContentsId !== null) {
       window.api.offscreenPage.command(this.browserPageId, command)
     }
@@ -269,14 +281,17 @@ export class OrcaOffscreenPageElement extends HTMLElement {
   }
 
   private onGuestEvent(event: OffscreenPageGuestEvent): void {
-    this.state = event.state
+    this.state = event.state ?? this.state
     if (event.type === 'state') {
       return
     }
     if (event.type === 'dom-ready') {
       this.domReady = true
     }
-    if (event.type === 'render-process-gone') {
+    if (event.type === 'destroyed') {
+      this.gone = true
+    }
+    if (event.type === 'render-process-gone' || event.type === 'destroyed') {
       this.domReady = false
     }
     this.dispatchGuestEvent(event.type, event.detail)

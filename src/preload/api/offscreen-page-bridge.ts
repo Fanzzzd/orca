@@ -1,4 +1,5 @@
-import { ipcRenderer, sharedTexture } from 'electron'
+import { ipcRenderer, sharedTexture, webUtils } from 'electron'
+import { OFFSCREEN_PAGE_TAG } from '../../shared/offscreen-page-protocol'
 import type {
   OffscreenPageCaret,
   OffscreenPageCommand,
@@ -30,6 +31,8 @@ export type OffscreenPageApi = {
   input(browserPageId: string, input: OffscreenPageUserInput): void
   command(browserPageId: string, command: OffscreenPageCommand): void
   focus(browserPageId: string): void
+  /** Whether Orca's keyboard focus sits in this page, so main routes page chords to it. */
+  setKeyboardFocus(browserPageId: string, focused: boolean): void
   /** `point` is window-client CSS px where the open select's menu should appear. */
   showSelectMenu(browserPageId: string, point: { x: number; y: number }): void
   readCaret(browserPageId: string): Promise<OffscreenPageCaret | null>
@@ -98,10 +101,46 @@ export const offscreenPageApi: OffscreenPageApi = {
   input: (id, input) => ipcRenderer.send('offscreenPage:input', id, input),
   command: (id, command) => ipcRenderer.send('offscreenPage:command', id, command),
   focus: (id) => ipcRenderer.send('offscreenPage:focus', id),
+  setKeyboardFocus: (id, focused) => ipcRenderer.send('offscreenPage:keyboardFocus', id, focused),
   showSelectMenu: (id, point) => ipcRenderer.send('offscreenPage:selectMenu', id, point),
   readCaret: (id) => ipcRenderer.invoke('offscreenPage:caret', id),
   close: (id) => {
     attachments.delete(id)
     ipcRenderer.send('offscreenPage:close', id)
   }
+}
+
+const MAX_DROPPED_FILES = 256
+
+/**
+ * Hands an OS file drop that landed on an offscreen page to that page, as a <webview> receives it
+ * natively. Returns true when the drop was the page's, so the generic file-drop routing skips it.
+ */
+export function claimOffscreenPageFileDrop(event: DragEvent): boolean {
+  const host = event
+    .composedPath()
+    .find(
+      (entry): entry is HTMLElement =>
+        entry instanceof HTMLElement && entry.tagName === OFFSCREEN_PAGE_TAG.toUpperCase()
+    )
+  const browserPageId = host?.dataset.browserPageId
+  const files = event.dataTransfer?.files
+  if (!host || !browserPageId || !files || files.length === 0) {
+    return false
+  }
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  const paths = [...files]
+    .slice(0, MAX_DROPPED_FILES)
+    .map((file) => webUtils.getPathForFile(file))
+    .filter((path) => path.length > 0)
+  if (paths.length > 0) {
+    const box = host.getBoundingClientRect()
+    ipcRenderer.send('offscreenPage:dropFiles', browserPageId, {
+      x: event.clientX - box.left,
+      y: event.clientY - box.top,
+      files: paths
+    })
+  }
+  return true
 }

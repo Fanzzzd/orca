@@ -1,4 +1,6 @@
 import type { OffscreenPageUserInput } from '../../../../../shared/offscreen-page-protocol'
+import { APP_MENU_PASTE_EVENT } from '@/lib/app-menu-paste'
+import { APP_MENU_SELECTION_ACTION_EVENT } from '@/lib/app-menu-selection-actions'
 
 type Modifier = 'shift' | 'control' | 'alt' | 'meta'
 type EditAction = 'copy' | 'cut' | 'paste' | 'selectAll' | 'undo' | 'redo'
@@ -7,6 +9,10 @@ export type OffscreenPageInputSink = {
   input(input: OffscreenPageUserInput): void
   edit(action: EditAction): void
   focusPage(): void
+  /** Tells main whether Orca's keys belong to the page, so page chords act on it. */
+  setKeyboardFocus(focused: boolean): void
+  /** Ctrl/Cmd+wheel zooms the page through Orca's page zoom, as it does over a <webview>. */
+  zoom(direction: 'in' | 'out'): void
   /** Re-reads the page caret; resolves to element-relative CSS px or null. */
   readCaret(): Promise<{ x: number; y: number; height: number } | null>
 }
@@ -117,11 +123,22 @@ export function bindOffscreenPageInputSurface(
     })
   )
   on(canvas, 'contextmenu', (event) => event.preventDefault())
+  let lastWheelZoomAt = Number.NEGATIVE_INFINITY
   on(
     canvas,
     'wheel',
     (event) => {
       event.preventDefault()
+      const zoom = wheelZoomDirection(event)
+      if (zoom) {
+        // Why throttle: a trackpad pinch arrives as a burst of ctrl+wheel events.
+        const now = performance.now()
+        if (now - lastWheelZoomAt >= WHEEL_ZOOM_INTERVAL_MS) {
+          lastWheelZoomAt = now
+          sink.zoom(zoom)
+        }
+        return
+      }
       sink.input({
         kind: 'wheel',
         x: event.offsetX,
@@ -172,10 +189,39 @@ export function bindOffscreenPageInputSurface(
       return
     }
     forwardKey(event, sink)
-    // Why: the page owns the key's text; letting it through would leave it in the textarea too.
-    if (!isEditChord(event)) {
+    // Why: the page owns the key's text and its edit chords; the empty textarea must not act too,
+    // and on macOS a handled key keeps the Edit menu from firing a second time.
+    event.preventDefault()
+  })
+  // Why: the Edit menu asks whoever owns focus to copy, select all or paste. The textarea never
+  // holds a selection, so native handling would do nothing; the page's own commands do.
+  let imeFocused = false
+  on(ime, 'focus', () => {
+    imeFocused = true
+    sink.setKeyboardFocus(true)
+  })
+  on(ime, 'blur', () => {
+    imeFocused = false
+    sink.setKeyboardFocus(false)
+  })
+  const focused = () => imeFocused && ime.isConnected
+  const onMenuSelection = (event: Event) => {
+    if (focused() && event instanceof CustomEvent) {
       event.preventDefault()
+      sink.edit(event.detail === 'select-all' ? 'selectAll' : 'copy')
     }
+  }
+  const onMenuPaste = (event: Event) => {
+    if (focused()) {
+      event.preventDefault()
+      sink.edit('paste')
+    }
+  }
+  window.addEventListener(APP_MENU_SELECTION_ACTION_EVENT, onMenuSelection)
+  window.addEventListener(APP_MENU_PASTE_EVENT, onMenuPaste)
+  cleanups.push(() => {
+    window.removeEventListener(APP_MENU_SELECTION_ACTION_EVENT, onMenuSelection)
+    window.removeEventListener(APP_MENU_PASTE_EVENT, onMenuPaste)
   })
   on(ime, 'keyup', (event) => {
     if (!composing && !event.isComposing) {
@@ -187,22 +233,35 @@ export function bindOffscreenPageInputSurface(
     for (const cleanup of cleanups) {
       cleanup()
     }
+    if (imeFocused) {
+      sink.setKeyboardFocus(false)
+    }
   }
 }
 
-function isEditChord(event: KeyboardEvent): boolean {
-  const primary = navigator.userAgent.includes('Mac') ? event.metaKey : event.ctrlKey
-  return primary && ['c', 'x', 'v'].includes(event.key.toLowerCase())
+const WHEEL_ZOOM_INTERVAL_MS = 100
+
+function wheelZoomDirection(event: WheelEvent): 'in' | 'out' | null {
+  const zoomModifier = event.ctrlKey || (navigator.userAgent.includes('Mac') && event.metaKey)
+  if (!zoomModifier || event.altKey || event.shiftKey || event.deltaY === 0) {
+    return null
+  }
+  return event.deltaY < 0 ? 'in' : 'out'
+}
+
+const EDIT_CHORDS: Record<string, EditAction> = {
+  a: 'selectAll',
+  c: 'copy',
+  x: 'cut',
+  v: 'paste',
+  z: 'undo'
 }
 
 function forwardKey(event: KeyboardEvent, sink: OffscreenPageInputSink): void {
   const primary = navigator.userAgent.includes('Mac') ? event.metaKey : event.ctrlKey
-  if (primary && ['a', 'z'].includes(event.key.toLowerCase())) {
-    sink.edit(event.key.toLowerCase() === 'a' ? 'selectAll' : event.shiftKey ? 'redo' : 'undo')
-    return
-  }
-  if (isEditChord(event)) {
-    // Copy/cut/paste arrive as clipboard events on the textarea.
+  const chord = primary && !event.altKey ? EDIT_CHORDS[event.key.toLowerCase()] : undefined
+  if (chord) {
+    sink.edit(chord === 'undo' && event.shiftKey ? 'redo' : chord)
     return
   }
   const modifiers = modifiersOf(event)

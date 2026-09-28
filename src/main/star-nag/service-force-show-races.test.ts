@@ -9,6 +9,7 @@ import {
   resetStarNagMocks,
   type TestWindow
 } from './service-test-harness'
+import { markOffscreenPageWindow } from '../window/offscreen-page-windows'
 
 const mocks = vi.hoisted(() => ({
   appMock: {
@@ -101,6 +102,20 @@ describe('StarNagService', () => {
       next_threshold: STAR_NAG_INITIAL_THRESHOLD * 2
     })
     expect(ui.starNagNextThreshold).toBe(STAR_NAG_INITIAL_THRESHOLD * 2)
+  })
+
+  it('shows the prompt in the Orca window, not in an offscreen browser page listed first', () => {
+    const page = createWindow()
+    markOffscreenPageWindow(page)
+    const window = createWindow()
+    browserWindowMock.getAllWindows.mockReturnValue([page, window])
+    const { service } = createHarness()
+
+    service.registerIpcHandlers()
+    getIpcHandler('star-nag:forceShow')()
+
+    expect(page.webContents.send).not.toHaveBeenCalled()
+    expect(window.webContents.send).toHaveBeenCalledWith('star-nag:show', expect.anything())
   })
 
   it('does not log or block a later force_show when no window exists', () => {

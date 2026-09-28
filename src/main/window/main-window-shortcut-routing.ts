@@ -21,6 +21,10 @@ import type { CreateMainWindowOptions } from './main-window-contracts'
 import type { MainWindowFocusLifecycle } from './main-window-focus-lifecycle'
 import { sendResolvedWindowShortcutAction } from './main-window-shortcut-actions'
 import { isMacAppPasteInput } from './main-window-visual-lifecycle'
+import {
+  routeOffscreenPageShortcut,
+  routeOffscreenPageZoomCommand
+} from '../browser/offscreen-page-keyboard-routing'
 
 export function installMainWindowShortcutRouting(args: {
   focus: MainWindowFocusLifecycle
@@ -205,6 +209,11 @@ export function installMainWindowShortcutRouting(args: {
       return
     }
 
+    // Why: keys typed into an offscreen page land here, not on a guest; its page chords act on it.
+    if (routeOffscreenPageShortcut(mainWindow.webContents.id, event, input)) {
+      return
+    }
+
     // Why: keep interception an explicit allowlist so readline control chords reach the PTY instead of being silently stolen.
     const action = resolveWindowShortcutAction(
       input,
@@ -250,6 +259,9 @@ export function installMainWindowShortcutRouting(args: {
         }
       )
     ) {
+      return
+    }
+    if (routeOffscreenPageZoomCommand(mainWindow.webContents.id, event, zoomDirection)) {
       return
     }
     event.preventDefault()

@@ -68,10 +68,10 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
 
     this.setupContextMenu(browserTabId, guest)
     this.setupGrabShortcut(browserTabId, guest)
-    // Why: keys and wheel over an offscreen page reach the renderer's own DOM first, so bouncing them
-    // back from the guest would fire every app shortcut twice.
+    this.setupShortcutForwarding(browserTabId, guest, isRendererOffscreen)
+    // Why: wheel over an offscreen page reaches the renderer's own DOM first, so bouncing it back
+    // from the guest would zoom twice.
     if (!isRendererOffscreen) {
-      this.setupShortcutForwarding(browserTabId, guest)
       this.setupMouseWheelZoomForwarding(browserTabId, guest)
     }
     this.flushPendingLoadFailure(browserTabId, webContentsId)

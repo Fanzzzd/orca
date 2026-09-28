@@ -4,6 +4,7 @@ import { checkOrcaStarred } from '../github/client'
 import type { Store } from '../persistence'
 import type { StatsCollector } from '../stats/collector'
 import { track } from '../telemetry/client'
+import { isOffscreenPageWindow } from '../window/offscreen-page-windows'
 import type {
   StarNagOutcome,
   StarNagPromptMode,
@@ -174,7 +175,9 @@ export class StarNagService {
     mode: StarNagPromptMode,
     surface: StarNagSurface = 'card'
   ): boolean {
-    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+    const win = BrowserWindow.getAllWindows().find(
+      (w) => !w.isDestroyed() && !isOffscreenPageWindow(w)
+    )
     if (!win) {
       this.promptVisible = false
       this.promptSession = null

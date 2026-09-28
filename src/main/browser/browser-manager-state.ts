@@ -67,7 +67,8 @@ export abstract class BrowserManagerState extends BrowserManagerViewportScrollSt
   protected abstract setupGrabShortcut(browserTabId: string, guest: Electron.WebContents): void
   protected abstract setupShortcutForwarding(
     browserTabId: string,
-    guest: Electron.WebContents
+    guest: Electron.WebContents,
+    isOffscreen?: boolean
   ): void
   protected abstract setupMouseWheelZoomForwarding(
     browserTabId: string,

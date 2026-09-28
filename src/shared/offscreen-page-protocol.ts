@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+/** Custom element that stands in for <webview> when a browser page renders offscreen. */
+export const OFFSCREEN_PAGE_TAG = 'orca-offscreen-page'
+
 // Why a closed schema: the renderer is the only sender, but it is still a separate process — main
 // validates every event before it reaches sendInputEvent or the page's debugger.
 
@@ -57,6 +60,14 @@ export type OffscreenPageCaret = { x: number; y: number; height: number }
 /** Border box of an open <select>; page CSS px from main, element-relative CSS px to the renderer. */
 export type OffscreenPageSelectAnchor = { x: number; y: number; width: number; height: number }
 
+/** OS files dropped on the page, at host CSS px relative to the page element. */
+export const OffscreenPageFileDropSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  files: z.array(z.string().min(1).max(4096)).min(1).max(256)
+})
+export type OffscreenPageFileDrop = z.infer<typeof OffscreenPageFileDropSchema>
+
 /** Where the renderer wants an open select's menu, in its own window-client CSS px. */
 export const OffscreenPageSelectMenuPointSchema = z.object({
   x: z.number().finite(),
@@ -89,10 +100,12 @@ export type OffscreenPageGuestEvent = {
     | 'console-message'
     | 'found-in-page'
     | 'render-process-gone'
+    | 'destroyed'
     // Orca-only: refreshes the element's state cache without firing a DOM event.
     | 'state'
   detail: Record<string, unknown>
-  state: OffscreenPageGuestState
+  /** Absent only on `destroyed`, when there is no page left to read. */
+  state?: OffscreenPageGuestState
 }
 
 /** Commands the renderer element issues on behalf of webview-style method calls. */

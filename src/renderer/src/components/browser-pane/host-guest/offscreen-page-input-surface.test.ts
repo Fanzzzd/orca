@@ -2,7 +2,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OffscreenPageUserInput } from '../../../../../shared/offscreen-page-protocol'
+import { APP_MENU_PASTE_EVENT } from '@/lib/app-menu-paste'
+import { APP_MENU_SELECTION_ACTION_EVENT } from '@/lib/app-menu-selection-actions'
 import { bindOffscreenPageInputSurface } from './offscreen-page-input-surface'
+
+const unbinds: (() => void)[] = []
 
 function setup() {
   const host = document.createElement('div')
@@ -16,9 +20,12 @@ function setup() {
     input: vi.fn((input: OffscreenPageUserInput) => void inputs.push(input)),
     edit: vi.fn<(action: string) => void>(),
     focusPage: vi.fn<() => void>(),
+    setKeyboardFocus: vi.fn<(focused: boolean) => void>(),
+    zoom: vi.fn<(direction: 'in' | 'out') => void>(),
     readCaret: vi.fn(() => Promise.resolve({ x: 40, y: 12, height: 18 }))
   }
   const unbind = bindOffscreenPageInputSurface(canvas, ime, sink)
+  unbinds.push(unbind)
   return { canvas, ime, sink, inputs, unbind }
 }
 
@@ -38,6 +45,9 @@ describe('bindOffscreenPageInputSurface', () => {
     document.body.innerHTML = ''
   })
   afterEach(() => {
+    for (const unbind of unbinds.splice(0)) {
+      unbind()
+    }
     vi.restoreAllMocks()
   })
 
@@ -131,10 +141,62 @@ describe('bindOffscreenPageInputSurface', () => {
     expect(inputs).toEqual([])
   })
 
+  it('sends copy, cut and paste chords to the page instead of the empty textarea', () => {
+    const { ime, sink, inputs } = setup()
+    const isMac = navigator.userAgent.includes('Mac')
+    for (const key of ['c', 'x', 'v']) {
+      const event = keydown(ime, { key, metaKey: isMac, ctrlKey: !isMac, cancelable: true })
+      expect(event.defaultPrevented).toBe(true)
+    }
+    expect(sink.edit.mock.calls).toEqual([['copy'], ['cut'], ['paste']])
+    expect(inputs).toEqual([])
+  })
+
+  it('claims Edit menu copy, select all and paste only while the page has focus', () => {
+    const { ime, sink } = setup()
+    const menu = (type: string, detail?: string) => {
+      const event = new CustomEvent(type, { detail, cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    expect(menu(APP_MENU_SELECTION_ACTION_EVENT, 'copy')).toBe(false)
+    ime.focus()
+    expect(menu(APP_MENU_SELECTION_ACTION_EVENT, 'copy')).toBe(true)
+    expect(menu(APP_MENU_SELECTION_ACTION_EVENT, 'select-all')).toBe(true)
+    expect(menu(APP_MENU_PASTE_EVENT)).toBe(true)
+    expect(sink.edit.mock.calls).toEqual([['copy'], ['selectAll'], ['paste']])
+  })
+
   it('inverts wheel deltas into page scroll deltas', () => {
     const { canvas, inputs } = setup()
     canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, cancelable: true }))
     expect(inputs[0]).toMatchObject({ kind: 'wheel', deltaX: -0, deltaY: -120 })
+  })
+
+  it('turns ctrl+wheel into one page zoom step per burst instead of a scroll', () => {
+    const { canvas, sink, inputs } = setup()
+    const now = vi.spyOn(performance, 'now')
+    const wheel = (deltaY: number, at: number) => {
+      now.mockReturnValue(at)
+      const event = new WheelEvent('wheel', { deltaY, cancelable: true })
+      // Why: happy-dom's WheelEvent drops modifier init fields.
+      Object.defineProperty(event, 'ctrlKey', { value: true })
+      canvas.dispatchEvent(event)
+    }
+    wheel(-10, 1000)
+    wheel(-10, 1020)
+    wheel(10, 1200)
+    expect(sink.zoom.mock.calls).toEqual([['in'], ['out']])
+    expect(inputs).toEqual([])
+  })
+
+  it('reports keyboard focus to main while the page owns it, and clears it on unbind', () => {
+    const { ime, sink, unbind } = setup()
+    ime.focus()
+    ime.blur()
+    ime.focus()
+    unbind()
+    expect(sink.setKeyboardFocus.mock.calls).toEqual([[true], [false], [true], [false]])
   })
 
   it('stops forwarding after unbind', () => {

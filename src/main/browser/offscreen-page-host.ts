@@ -3,6 +3,7 @@ import type { OffscreenSharedTexture, WebContents, WebPreferences } from 'electr
 import type {
   OffscreenPageCaret,
   OffscreenPageCommand,
+  OffscreenPageFileDrop,
   OffscreenPageGuestEvent,
   OffscreenPageUserInput,
   OffscreenPageViewport
@@ -14,8 +15,7 @@ import {
 import { browserManager } from './browser-manager'
 import {
   forwardOffscreenPageGuestEvents,
-  OFFSCREEN_PAGE_EVENT_CHANNEL,
-  readOffscreenPageGuestState
+  OFFSCREEN_PAGE_EVENT_CHANNEL
 } from './offscreen-page-guest-events'
 import {
   createOffscreenPageFrameForwarder,
@@ -25,6 +25,12 @@ import { dispatchOffscreenPageUserInput } from './offscreen-page-user-input'
 import { readOffscreenPageCaret } from './offscreen-page-caret'
 import { runOffscreenPageCommand } from './offscreen-page-commands'
 import { sendOffscreenPageFrame } from './offscreen-page-frame-delivery'
+import { syncOffscreenPageHostZoom, type OffscreenPageHostZoom } from './offscreen-page-host-zoom'
+import { createOffscreenPageDragBridge, type OffscreenPageDragBridge } from './offscreen-page-drag'
+import {
+  createOffscreenPageFrameRate,
+  type OffscreenPageFrameRate
+} from './offscreen-page-frame-rate'
 import {
   mayOpenOffscreenPageSelect,
   readOpenOffscreenPageSelect,
@@ -32,23 +38,20 @@ import {
   toHostSelectAnchor,
   type OffscreenPageSelectPopup
 } from './offscreen-page-select-popup'
+import { markOffscreenPageWindow } from '../window/offscreen-page-windows'
 
 export const OFFSCREEN_PAGE_FRAME_CHANNEL = 'offscreen-page:frame'
 export const OFFSCREEN_PAGE_CURSOR_CHANNEL = 'offscreen-page:cursor'
 export const OFFSCREEN_PAGE_SELECT_CHANNEL = 'offscreen-page:select'
-
-const VISIBLE_FRAME_RATE = 60
-// Why not 0: hidden pages still paint slowly so agent screenshots and the mobile screencast see
-// fresh content without the page burning a full frame budget.
-const HIDDEN_FRAME_RATE = 4
 
 type HostedPage = {
   window: BrowserWindow
   rendererWebContentsId: number
   forwarder: OffscreenPageFrameForwarder<OffscreenSharedTexture>
   stopForwardingEvents: () => void
-  /** The showing renderer's own zoom; its CSS px are this many page DIPs. */
-  hostZoom: { level: number; factor: number } | null
+  frameRate: OffscreenPageFrameRate
+  drag: OffscreenPageDragBridge
+  hostZoom: OffscreenPageHostZoom | null
   /** An open select waiting for the renderer to say where its menu goes. */
   openSelect: OffscreenPageSelectPopup | null
 }
@@ -95,11 +98,14 @@ export class OffscreenPageHost {
         }
       }
     })
+    markOffscreenPageWindow(window)
     const contents = window.webContents
     const page: HostedPage = {
       window,
       rendererWebContentsId: params.rendererWebContentsId,
       hostZoom: null,
+      frameRate: createOffscreenPageFrameRate(contents),
+      drag: createOffscreenPageDragBridge(contents),
       openSelect: null,
       stopForwardingEvents: forwardOffscreenPageGuestEvents(contents, (event) => {
         this.rendererFor(page)?.send(OFFSCREEN_PAGE_EVENT_CHANNEL, params.browserPageId, event)
@@ -134,9 +140,12 @@ export class OffscreenPageHost {
       this.rendererFor(page)?.send(OFFSCREEN_PAGE_CURSOR_CHANNEL, params.browserPageId, type)
     })
     contents.once('destroyed', () => {
+      // Only an unrequested death reaches here; close() unmaps the page first.
       if (this.pages.get(params.browserPageId) === page) {
-        page.forwarder.dispose()
         this.pages.delete(params.browserPageId)
+        disposeHostedPage(page)
+        const event: OffscreenPageGuestEvent = { type: 'destroyed', detail: {} }
+        this.rendererFor(page)?.send(OFFSCREEN_PAGE_EVENT_CHANNEL, params.browserPageId, event)
       }
     })
     this.setViewport(params.browserPageId, params.viewport)
@@ -152,17 +161,27 @@ export class OffscreenPageHost {
     if (!page) {
       return
     }
-    const factor = this.syncHostZoom(browserPageId, page)
+    page.hostZoom = syncOffscreenPageHostZoom({
+      browserPageId,
+      contents: page.window.webContents,
+      renderer: this.rendererFor(page),
+      current: page.hostZoom
+    })
+    const factor = page.hostZoom?.factor ?? 1
     const width = Math.max(1, Math.round(viewport.width * factor))
     const height = Math.max(1, Math.round(viewport.height * factor))
     const [currentWidth, currentHeight] = page.window.getContentSize()
     if (currentWidth !== width || currentHeight !== height) {
       page.window.setContentSize(width, height)
     }
-    page.window.webContents.setFrameRate(viewport.visible ? VISIBLE_FRAME_RATE : HIDDEN_FRAME_RATE)
-    if (viewport.visible) {
-      // Why: a newly shown pane needs a frame even when the page itself is idle.
-      page.window.webContents.invalidate()
+    page.frameRate.setVisible(viewport.visible)
+  }
+
+  dropFiles(browserPageId: string, drop: OffscreenPageFileDrop): void {
+    const page = this.livePage(browserPageId)
+    if (page) {
+      const factor = page.hostZoom?.factor ?? 1
+      void page.drag.dropFiles({ ...drop, x: drop.x * factor, y: drop.y * factor })
     }
   }
 
@@ -242,10 +261,11 @@ export class OffscreenPageHost {
   close(browserPageId: string): void {
     const page = this.pages.get(browserPageId)
     this.pages.delete(browserPageId)
-    page?.forwarder.dispose()
-    page?.stopForwardingEvents()
-    if (page && !page.window.isDestroyed()) {
-      page.window.destroy()
+    if (page) {
+      disposeHostedPage(page)
+      if (!page.window.isDestroyed()) {
+        page.window.destroy()
+      }
     }
   }
 
@@ -253,30 +273,6 @@ export class OffscreenPageHost {
     for (const browserPageId of this.pages.keys()) {
       this.close(browserPageId)
     }
-  }
-
-  /**
-   * Mirrors a <webview>: when the host's UI zoom changes, the page adopts the same zoom level, so
-   * it keeps its CSS size on screen and renders at the host's sharper pixel ratio. Checked on
-   * viewport sync because every UI zoom change resizes the element.
-   */
-  private syncHostZoom(browserPageId: string, page: HostedPage): number {
-    const renderer = this.rendererFor(page)
-    if (!renderer) {
-      return page.hostZoom?.factor ?? 1
-    }
-    const level = renderer.getZoomLevel()
-    if (page.hostZoom?.level !== level) {
-      page.hostZoom = { level, factor: renderer.getZoomFactor() }
-      const contents = page.window.webContents
-      contents.setZoomLevel(level)
-      renderer.send(OFFSCREEN_PAGE_EVENT_CHANNEL, browserPageId, {
-        type: 'state',
-        detail: {},
-        state: readOffscreenPageGuestState(contents)
-      } satisfies OffscreenPageGuestEvent)
-    }
-    return page.hostZoom.factor
   }
 
   private livePage(browserPageId: string): HostedPage | null {
@@ -288,4 +284,11 @@ export class OffscreenPageHost {
     const renderer = electronWebContents.fromId(page.rendererWebContentsId)
     return renderer && !renderer.isDestroyed() ? renderer : null
   }
+}
+
+function disposeHostedPage(page: HostedPage): void {
+  page.forwarder.dispose()
+  page.stopForwardingEvents()
+  page.frameRate.dispose()
+  page.drag.dispose()
 }

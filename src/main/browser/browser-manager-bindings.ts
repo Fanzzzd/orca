@@ -2,7 +2,12 @@ import { resolveRendererWebContents } from './browser-guest-renderer-target'
 import { setupGuestContextMenu } from './browser-guest-context-menu'
 import { setupGrabShortcutForwarding } from './browser-guest-grab-shortcuts'
 import { setupGuestMouseWheelZoomForwarding } from './browser-guest-wheel-zoom'
-import { setupGuestShortcutForwarding } from './browser-guest-shortcut-forwarding'
+import {
+  createGuestShortcutForwardContext,
+  setupGuestShortcutForwarding,
+  type GuestShortcutForwardingArgs
+} from './browser-guest-shortcut-forwarding'
+import { setOffscreenPageShortcutContext } from './offscreen-page-keyboard-routing'
 import { BrowserManagerGrab } from './browser-manager-grab'
 
 export abstract class BrowserManagerBindings extends BrowserManagerGrab {
@@ -39,27 +44,43 @@ export abstract class BrowserManagerBindings extends BrowserManagerGrab {
   }
 
   // Why: a focused webview guest is a separate process, so its key events never reach the renderer; intercept and forward app shortcuts.
-  protected setupShortcutForwarding(browserTabId: string, guest: Electron.WebContents): void {
+  // An offscreen page's keys reach the Orca window instead, whose key routing consults the same context.
+  protected setupShortcutForwarding(
+    browserTabId: string,
+    guest: Electron.WebContents,
+    isOffscreen = false
+  ): void {
     const previousCleanup = this.shortcutForwardingCleanupByTabId.get(browserTabId)
     if (previousCleanup) {
       previousCleanup()
       this.shortcutForwardingCleanupByTabId.delete(browserTabId)
     }
 
+    const args = this.shortcutForwardingArgs(browserTabId)
+    if (isOffscreen) {
+      setOffscreenPageShortcutContext(browserTabId, createGuestShortcutForwardContext(args))
+      this.shortcutForwardingCleanupByTabId.set(browserTabId, () =>
+        setOffscreenPageShortcutContext(browserTabId, null)
+      )
+      return
+    }
     this.shortcutForwardingCleanupByTabId.set(
       browserTabId,
-      setupGuestShortcutForwarding({
-        browserTabId,
-        guest,
-        resolveRenderer: (tabId) =>
-          resolveRendererWebContents(this.rendererWebContentsIdByTabId, tabId),
-        shouldForwardDictationShortcut: () => this.shouldForwardDictationShortcut?.() ?? false,
-        isMobileEmulatorEnabled: () => this.settingsResolver?.().mobileEmulatorEnabled !== false,
-        getKeybindings: () => this.settingsResolver?.().keybindings,
-        resolveWorktreeId: (tabId) => this.worktreeIdByTabId.get(tabId) ?? null,
-        resolveWorkspaceId: (tabId) => this.workspaceIdByPageId.get(tabId) ?? null
-      })
+      setupGuestShortcutForwarding({ ...args, guest })
     )
+  }
+
+  private shortcutForwardingArgs(browserTabId: string): GuestShortcutForwardingArgs {
+    return {
+      browserTabId,
+      resolveRenderer: (tabId) =>
+        resolveRendererWebContents(this.rendererWebContentsIdByTabId, tabId),
+      shouldForwardDictationShortcut: () => this.shouldForwardDictationShortcut?.() ?? false,
+      isMobileEmulatorEnabled: () => this.settingsResolver?.().mobileEmulatorEnabled !== false,
+      getKeybindings: () => this.settingsResolver?.().keybindings,
+      resolveWorktreeId: (tabId) => this.worktreeIdByTabId.get(tabId) ?? null,
+      resolveWorkspaceId: (tabId) => this.workspaceIdByPageId.get(tabId) ?? null
+    }
   }
 
   protected setupMouseWheelZoomForwarding(browserTabId: string, guest: Electron.WebContents): void {
