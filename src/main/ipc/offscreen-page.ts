@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import {
   OffscreenPageCommandSchema,
+  OffscreenPageSelectMenuPointSchema,
   OffscreenPageUserInputSchema,
   OffscreenPageViewportSchema
 } from '../../shared/offscreen-page-protocol'
@@ -28,6 +29,7 @@ const SEND_CHANNELS = [
   'offscreenPage:input',
   'offscreenPage:command',
   'offscreenPage:focus',
+  'offscreenPage:selectMenu',
   'offscreenPage:close'
 ] as const
 
@@ -89,6 +91,12 @@ export function registerOffscreenPageHandlers(): void {
     }
   })
   onOwnedPage('offscreenPage:focus', (pageId) => offscreenPageHost.focusPage(pageId))
+  onOwnedPage('offscreenPage:selectMenu', (pageId, payload) => {
+    const point = OffscreenPageSelectMenuPointSchema.safeParse(payload)
+    if (point.success) {
+      offscreenPageHost.showSelectMenu(pageId, point.data)
+    }
+  })
   onOwnedPage('offscreenPage:close', (pageId) => offscreenPageHost.close(pageId))
 }
 

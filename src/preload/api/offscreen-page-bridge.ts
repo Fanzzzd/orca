@@ -3,6 +3,7 @@ import type {
   OffscreenPageCaret,
   OffscreenPageCommand,
   OffscreenPageGuestEvent,
+  OffscreenPageSelectAnchor,
   OffscreenPageUserInput,
   OffscreenPageViewport
 } from '../../shared/offscreen-page-protocol'
@@ -10,6 +11,8 @@ import type {
 export type OffscreenPageListeners = {
   onEvent: (event: OffscreenPageGuestEvent) => void
   onCursor: (cursorType: string) => void
+  /** The page opened a <select>; answer with showSelectMenu to draw its menu. */
+  onSelect: (anchor: OffscreenPageSelectAnchor) => void
 }
 
 export type OffscreenPageApi = {
@@ -27,6 +30,8 @@ export type OffscreenPageApi = {
   input(browserPageId: string, input: OffscreenPageUserInput): void
   command(browserPageId: string, command: OffscreenPageCommand): void
   focus(browserPageId: string): void
+  /** `point` is window-client CSS px where the open select's menu should appear. */
+  showSelectMenu(browserPageId: string, point: { x: number; y: number }): void
   readCaret(browserPageId: string): Promise<OffscreenPageCaret | null>
   close(browserPageId: string): void
 }
@@ -72,6 +77,12 @@ function installFrameReceiver(): void {
   ipcRenderer.on('offscreen-page:cursor', (_e, pageId: string, cursorType: string) => {
     attachments.get(pageId)?.listeners.onCursor(cursorType)
   })
+  ipcRenderer.on(
+    'offscreen-page:select',
+    (_e, pageId: string, anchor: OffscreenPageSelectAnchor) => {
+      attachments.get(pageId)?.listeners.onSelect(anchor)
+    }
+  )
 }
 
 export const offscreenPageApi: OffscreenPageApi = {
@@ -87,6 +98,7 @@ export const offscreenPageApi: OffscreenPageApi = {
   input: (id, input) => ipcRenderer.send('offscreenPage:input', id, input),
   command: (id, command) => ipcRenderer.send('offscreenPage:command', id, command),
   focus: (id) => ipcRenderer.send('offscreenPage:focus', id),
+  showSelectMenu: (id, point) => ipcRenderer.send('offscreenPage:selectMenu', id, point),
   readCaret: (id) => ipcRenderer.invoke('offscreenPage:caret', id),
   close: (id) => {
     attachments.delete(id)

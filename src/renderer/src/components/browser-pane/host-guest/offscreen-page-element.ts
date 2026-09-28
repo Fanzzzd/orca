@@ -4,22 +4,7 @@ import type {
   OffscreenPageGuestState
 } from '../../../../../shared/offscreen-page-protocol'
 import { OFFSCREEN_PAGE_TAG } from './browser-page-guest-element-kind'
-import { bindOffscreenPageInputSurface } from './offscreen-page-input-surface'
-
-const CURSOR_CSS: Record<string, string> = {
-  hand: 'pointer',
-  ibeam: 'text',
-  crosshair: 'crosshair',
-  move: 'move',
-  wait: 'wait',
-  progress: 'progress',
-  'not-allowed': 'not-allowed',
-  grab: 'grab',
-  grabbing: 'grabbing',
-  'col-resize': 'col-resize',
-  'row-resize': 'row-resize',
-  help: 'help'
-}
+import { bindOffscreenPageInputSurface, cssCursorFor } from './offscreen-page-input-surface'
 
 const EMPTY_STATE: OffscreenPageGuestState = {
   url: '',
@@ -251,7 +236,15 @@ export class OrcaOffscreenPageElement extends HTMLElement {
     window.api.offscreenPage.attach(this.browserPageId, this.canvas, {
       onEvent: (event) => this.onGuestEvent(event),
       onCursor: (type) => {
-        this.canvas.style.cursor = CURSOR_CSS[type] ?? 'default'
+        this.canvas.style.cursor = cssCursorFor(type)
+      },
+      onSelect: (anchor) => {
+        // Main needs window coordinates; only this side knows where the element sits.
+        const box = this.getBoundingClientRect()
+        window.api.offscreenPage.showSelectMenu(this.browserPageId, {
+          x: box.left + anchor.x,
+          y: box.top + anchor.y
+        })
       }
     })
     const webContentsId = await window.api.offscreenPage.create({

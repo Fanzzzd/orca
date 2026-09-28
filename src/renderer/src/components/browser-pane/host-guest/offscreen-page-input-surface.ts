@@ -13,6 +13,26 @@ export type OffscreenPageInputSink = {
 
 const BUTTONS = ['left', 'middle', 'right'] as const
 
+const CURSOR_CSS: Record<string, string> = {
+  hand: 'pointer',
+  ibeam: 'text',
+  crosshair: 'crosshair',
+  move: 'move',
+  wait: 'wait',
+  progress: 'progress',
+  'not-allowed': 'not-allowed',
+  grab: 'grab',
+  grabbing: 'grabbing',
+  'col-resize': 'col-resize',
+  'row-resize': 'row-resize',
+  help: 'help'
+}
+
+/** CSS cursor for an Electron `cursor-changed` type. */
+export function cssCursorFor(cursorType: string): string {
+  return CURSOR_CSS[cursorType] ?? 'default'
+}
+
 function modifiersOf(event: MouseEvent | KeyboardEvent): Modifier[] {
   const modifiers: Modifier[] = []
   if (event.shiftKey) {

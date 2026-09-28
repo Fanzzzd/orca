@@ -54,6 +54,15 @@ export type OffscreenPageViewport = z.infer<typeof OffscreenPageViewportSchema>
 /** Page-space rect of the text caret, used to park the hidden IME textarea under it. */
 export type OffscreenPageCaret = { x: number; y: number; height: number }
 
+/** Border box of an open <select>; page CSS px from main, element-relative CSS px to the renderer. */
+export type OffscreenPageSelectAnchor = { x: number; y: number; width: number; height: number }
+
+/** Where the renderer wants an open select's menu, in its own window-client CSS px. */
+export const OffscreenPageSelectMenuPointSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite()
+})
+
 /** Snapshot that backs the renderer element's synchronous webview-style getters. */
 export type OffscreenPageGuestState = {
   url: string

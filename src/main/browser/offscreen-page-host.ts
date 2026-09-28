@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, sharedTexture, webContents as electronWebContents } from 'electron'
+import { BrowserWindow, screen, webContents as electronWebContents } from 'electron'
 import type { OffscreenSharedTexture, WebContents, WebPreferences } from 'electron'
 import type {
   OffscreenPageCaret,
@@ -23,9 +23,19 @@ import {
 } from './offscreen-page-frame-forwarder'
 import { dispatchOffscreenPageUserInput } from './offscreen-page-user-input'
 import { readOffscreenPageCaret } from './offscreen-page-caret'
+import { runOffscreenPageCommand } from './offscreen-page-commands'
+import { sendOffscreenPageFrame } from './offscreen-page-frame-delivery'
+import {
+  mayOpenOffscreenPageSelect,
+  readOpenOffscreenPageSelect,
+  showOffscreenPageSelectMenu,
+  toHostSelectAnchor,
+  type OffscreenPageSelectPopup
+} from './offscreen-page-select-popup'
 
 export const OFFSCREEN_PAGE_FRAME_CHANNEL = 'offscreen-page:frame'
 export const OFFSCREEN_PAGE_CURSOR_CHANNEL = 'offscreen-page:cursor'
+export const OFFSCREEN_PAGE_SELECT_CHANNEL = 'offscreen-page:select'
 
 const VISIBLE_FRAME_RATE = 60
 // Why not 0: hidden pages still paint slowly so agent screenshots and the mobile screencast see
@@ -39,6 +49,8 @@ type HostedPage = {
   stopForwardingEvents: () => void
   /** The showing renderer's own zoom; its CSS px are this many page DIPs. */
   hostZoom: { level: number; factor: number } | null
+  /** An open select waiting for the renderer to say where its menu goes. */
+  openSelect: OffscreenPageSelectPopup | null
 }
 
 export type OffscreenPageCreateParams = {
@@ -88,11 +100,19 @@ export class OffscreenPageHost {
       window,
       rendererWebContentsId: params.rendererWebContentsId,
       hostZoom: null,
+      openSelect: null,
       stopForwardingEvents: forwardOffscreenPageGuestEvents(contents, (event) => {
         this.rendererFor(page)?.send(OFFSCREEN_PAGE_EVENT_CHANNEL, params.browserPageId, event)
       }),
       forwarder: createOffscreenPageFrameForwarder(
-        { deliver: (texture) => this.deliverFrame(params.browserPageId, texture) },
+        {
+          deliver: (texture) =>
+            sendOffscreenPageFrame(
+              this.pages.get(params.browserPageId) === page ? this.rendererFor(page) : null,
+              texture,
+              params.browserPageId
+            )
+        },
         (error) => console.warn('[offscreen-page] frame delivery failed:', String(error))
       )
     }
@@ -100,9 +120,15 @@ export class OffscreenPageHost {
     attachBrowserPageGuestPolicies(contents)
     browserManager.admitRendererOffscreenGuest(contents.id, params.rendererWebContentsId)
     contents.on('paint', (event) => {
-      if (event.texture) {
-        page.forwarder.onPaint(event.texture)
+      if (!event.texture) {
+        return
       }
+      // Why drop popups: Electron gives no position for them; selects are drawn by showSelectMenu.
+      if (event.texture.textureInfo.widgetType === 'popup') {
+        event.texture.release()
+        return
+      }
+      page.forwarder.onPaint(event.texture)
     })
     contents.on('cursor-changed', (_event, type) => {
       this.rendererFor(page)?.send(OFFSCREEN_PAGE_CURSOR_CHANNEL, params.browserPageId, type)
@@ -149,50 +175,41 @@ export class OffscreenPageHost {
           ? { ...input, x: input.x * factor, y: input.y * factor }
           : input
       await dispatchOffscreenPageUserInput(page.window.webContents, scaled)
+      if (mayOpenOffscreenPageSelect(input)) {
+        const renderer = this.rendererFor(page)
+        page.openSelect = await readOpenOffscreenPageSelect(page.window.webContents)
+        if (page.openSelect && renderer) {
+          const anchor = toHostSelectAnchor(page.openSelect, page.window.webContents, page.hostZoom)
+          renderer.send(OFFSCREEN_PAGE_SELECT_CHANNEL, browserPageId, anchor)
+        }
+      }
     }
+  }
+
+  /** Shows the menu for the select offered by offerOpenSelect; `point` is window-client CSS px. */
+  showSelectMenu(browserPageId: string, point: { x: number; y: number }): void {
+    const page = this.livePage(browserPageId)
+    const renderer = page && this.rendererFor(page)
+    const window = renderer && BrowserWindow.fromWebContents(renderer)
+    const popup = page?.openSelect
+    if (!page || !window || !popup) {
+      return
+    }
+    page.openSelect = null
+    const hostFactor = renderer.getZoomFactor()
+    showOffscreenPageSelectMenu({
+      contents: page.window.webContents,
+      window,
+      popup,
+      point: { x: point.x * hostFactor, y: point.y * hostFactor },
+      pageZoomFactor: page.window.webContents.getZoomFactor()
+    })
   }
 
   runCommand(browserPageId: string, command: OffscreenPageCommand): void {
     const contents = this.livePage(browserPageId)?.window.webContents
-    if (!contents) {
-      return
-    }
-    switch (command.kind) {
-      case 'loadURL':
-        void contents.loadURL(command.url).catch(() => {})
-        return
-      case 'goBack':
-        contents.navigationHistory.goBack()
-        return
-      case 'goForward':
-        contents.navigationHistory.goForward()
-        return
-      case 'reload':
-        contents.reload()
-        return
-      case 'reloadIgnoringCache':
-        contents.reloadIgnoringCache()
-        return
-      case 'stop':
-        contents.stop()
-        return
-      case 'setZoomLevel':
-        contents.setZoomLevel(command.level)
-        return
-      case 'findInPage': {
-        // Why drop undefined keys: Electron silently ignores a find whose options carry them.
-        const { kind: _kind, text, ...options } = command
-        contents.findInPage(
-          text,
-          Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined))
-        )
-        return
-      }
-      case 'edit':
-        contents[command.action]()
-        return
-      case 'stopFindInPage':
-        contents.stopFindInPage(command.action)
+    if (contents) {
+      runOffscreenPageCommand(contents, command)
     }
   }
 
@@ -270,29 +287,5 @@ export class OffscreenPageHost {
   private rendererFor(page: HostedPage): WebContents | null {
     const renderer = electronWebContents.fromId(page.rendererWebContentsId)
     return renderer && !renderer.isDestroyed() ? renderer : null
-  }
-
-  private async deliverFrame(
-    browserPageId: string,
-    texture: OffscreenSharedTexture
-  ): Promise<void> {
-    const page = this.pages.get(browserPageId)
-    const renderer = page ? this.rendererFor(page) : null
-    if (!renderer) {
-      texture.release()
-      return
-    }
-    const imported = sharedTexture.importSharedTexture({
-      textureInfo: texture.textureInfo,
-      allReferencesReleased: () => texture.release()
-    })
-    try {
-      await sharedTexture.sendSharedTexture(
-        { frame: renderer.mainFrame, importedSharedTexture: imported },
-        browserPageId
-      )
-    } finally {
-      imported.release()
-    }
   }
 }
