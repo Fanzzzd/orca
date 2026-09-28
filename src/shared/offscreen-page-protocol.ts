@@ -80,6 +80,8 @@ export type OffscreenPageGuestEvent = {
     | 'console-message'
     | 'found-in-page'
     | 'render-process-gone'
+    // Orca-only: refreshes the element's state cache without firing a DOM event.
+    | 'state'
   detail: Record<string, unknown>
   state: OffscreenPageGuestState
 }

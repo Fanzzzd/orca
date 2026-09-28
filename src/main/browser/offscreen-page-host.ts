@@ -3,6 +3,7 @@ import type { OffscreenSharedTexture, WebContents, WebPreferences } from 'electr
 import type {
   OffscreenPageCaret,
   OffscreenPageCommand,
+  OffscreenPageGuestEvent,
   OffscreenPageUserInput,
   OffscreenPageViewport
 } from '../../shared/offscreen-page-protocol'
@@ -13,13 +14,15 @@ import {
 import { browserManager } from './browser-manager'
 import {
   forwardOffscreenPageGuestEvents,
-  OFFSCREEN_PAGE_EVENT_CHANNEL
+  OFFSCREEN_PAGE_EVENT_CHANNEL,
+  readOffscreenPageGuestState
 } from './offscreen-page-guest-events'
 import {
   createOffscreenPageFrameForwarder,
   type OffscreenPageFrameForwarder
 } from './offscreen-page-frame-forwarder'
 import { dispatchOffscreenPageUserInput } from './offscreen-page-user-input'
+import { readOffscreenPageCaret } from './offscreen-page-caret'
 
 export const OFFSCREEN_PAGE_FRAME_CHANNEL = 'offscreen-page:frame'
 export const OFFSCREEN_PAGE_CURSOR_CHANNEL = 'offscreen-page:cursor'
@@ -34,6 +37,8 @@ type HostedPage = {
   rendererWebContentsId: number
   forwarder: OffscreenPageFrameForwarder<OffscreenSharedTexture>
   stopForwardingEvents: () => void
+  /** The showing renderer's own zoom; its CSS px are this many page DIPs. */
+  hostZoom: { level: number; factor: number } | null
 }
 
 export type OffscreenPageCreateParams = {
@@ -82,6 +87,7 @@ export class OffscreenPageHost {
     const page: HostedPage = {
       window,
       rendererWebContentsId: params.rendererWebContentsId,
+      hostZoom: null,
       stopForwardingEvents: forwardOffscreenPageGuestEvents(contents, (event) => {
         this.rendererFor(page)?.send(OFFSCREEN_PAGE_EVENT_CHANNEL, params.browserPageId, event)
       }),
@@ -120,9 +126,12 @@ export class OffscreenPageHost {
     if (!page) {
       return
     }
-    const [width, height] = page.window.getContentSize()
-    if (width !== viewport.width || height !== viewport.height) {
-      page.window.setContentSize(viewport.width, viewport.height)
+    const factor = this.syncHostZoom(browserPageId, page)
+    const width = Math.max(1, Math.round(viewport.width * factor))
+    const height = Math.max(1, Math.round(viewport.height * factor))
+    const [currentWidth, currentHeight] = page.window.getContentSize()
+    if (currentWidth !== width || currentHeight !== height) {
+      page.window.setContentSize(width, height)
     }
     page.window.webContents.setFrameRate(viewport.visible ? VISIBLE_FRAME_RATE : HIDDEN_FRAME_RATE)
     if (viewport.visible) {
@@ -134,7 +143,12 @@ export class OffscreenPageHost {
   async dispatchUserInput(browserPageId: string, input: OffscreenPageUserInput): Promise<void> {
     const page = this.livePage(browserPageId)
     if (page) {
-      await dispatchOffscreenPageUserInput(page.window.webContents, input)
+      const factor = page.hostZoom?.factor ?? 1
+      const scaled =
+        input.kind === 'mouse' || input.kind === 'wheel'
+          ? { ...input, x: input.x * factor, y: input.y * factor }
+          : input
+      await dispatchOffscreenPageUserInput(page.window.webContents, scaled)
     }
   }
 
@@ -182,13 +196,7 @@ export class OffscreenPageHost {
 
   async readCaret(browserPageId: string): Promise<OffscreenPageCaret | null> {
     const page = this.livePage(browserPageId)
-    if (!page) {
-      return null
-    }
-    const caret: unknown = await page.window.webContents
-      .executeJavaScript(READ_CARET_SCRIPT, false)
-      .catch(() => null)
-    return isCaret(caret) ? caret : null
+    return page ? readOffscreenPageCaret(page.window.webContents, page.hostZoom?.factor ?? 1) : null
   }
 
   /** Gives the page keyboard focus inside its own WebContents; there is no native view to activate. */
@@ -228,6 +236,30 @@ export class OffscreenPageHost {
     }
   }
 
+  /**
+   * Mirrors a <webview>: when the host's UI zoom changes, the page adopts the same zoom level, so
+   * it keeps its CSS size on screen and renders at the host's sharper pixel ratio. Checked on
+   * viewport sync because every UI zoom change resizes the element.
+   */
+  private syncHostZoom(browserPageId: string, page: HostedPage): number {
+    const renderer = this.rendererFor(page)
+    if (!renderer) {
+      return page.hostZoom?.factor ?? 1
+    }
+    const level = renderer.getZoomLevel()
+    if (page.hostZoom?.level !== level) {
+      page.hostZoom = { level, factor: renderer.getZoomFactor() }
+      const contents = page.window.webContents
+      contents.setZoomLevel(level)
+      renderer.send(OFFSCREEN_PAGE_EVENT_CHANNEL, browserPageId, {
+        type: 'state',
+        detail: {},
+        state: readOffscreenPageGuestState(contents)
+      } satisfies OffscreenPageGuestEvent)
+    }
+    return page.hostZoom.factor
+  }
+
   private livePage(browserPageId: string): HostedPage | null {
     const page = this.pages.get(browserPageId)
     return page && !page.window.isDestroyed() ? page : null
@@ -261,31 +293,4 @@ export class OffscreenPageHost {
       imported.release()
     }
   }
-}
-
-// Why read in the page: the caret lives in the guest's layout, and the hidden IME textarea must sit
-// on it so the OS candidate window opens next to the text being composed.
-const READ_CARET_SCRIPT = `(() => {
-  const sel = document.getSelection()
-  if (sel && sel.rangeCount) {
-    const rects = sel.getRangeAt(0).getClientRects()
-    const r = rects[rects.length - 1]
-    if (r) return { x: r.left, y: r.top, height: r.height || 16 }
-  }
-  const el = document.activeElement
-  if (el && el !== document.body && el.getBoundingClientRect) {
-    const b = el.getBoundingClientRect()
-    return { x: b.left + 4, y: b.top, height: b.height }
-  }
-  return null
-})()`
-
-function isCaret(value: unknown): value is OffscreenPageCaret {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-  if (!('x' in value && 'y' in value && 'height' in value)) {
-    return false
-  }
-  return [value.x, value.y, value.height].every((n) => typeof n === 'number' && Number.isFinite(n))
 }

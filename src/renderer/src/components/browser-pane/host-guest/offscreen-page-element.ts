@@ -277,6 +277,9 @@ export class OrcaOffscreenPageElement extends HTMLElement {
 
   private onGuestEvent(event: OffscreenPageGuestEvent): void {
     this.state = event.state
+    if (event.type === 'state') {
+      return
+    }
     if (event.type === 'dom-ready') {
       this.domReady = true
     }
