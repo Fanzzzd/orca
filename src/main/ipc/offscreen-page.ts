@@ -7,6 +7,7 @@ import {
   OffscreenPageUserInputSchema,
   OffscreenPageViewportSchema
 } from '../../shared/offscreen-page-protocol'
+import { isBrowserRoutePartition } from '../../shared/browser-route-partition'
 import { isAdmissibleBrowserPageGuest } from '../browser/browser-page-guest-admission'
 import { OffscreenPageHost } from '../browser/offscreen-page-host'
 import { isTrustedBrowserRenderer } from './browser-renderer-trust'
@@ -47,7 +48,12 @@ export function registerOffscreenPageHandlers(): void {
     }
     const args = CreateArgsSchema.safeParse(rawArgs)
     // Why fail closed: this is the offscreen twin of will-attach-webview and must refuse the same inputs.
-    if (!args.success || !isAdmissibleBrowserPageGuest(args.data.partition, args.data.src)) {
+    // Why refuse routed partitions: route registration authenticates guests by webview host.
+    if (
+      !args.success ||
+      isBrowserRoutePartition(args.data.partition) ||
+      !isAdmissibleBrowserPageGuest(args.data.partition, args.data.src)
+    ) {
       return null
     }
     closePagesWithRenderer(event.sender)

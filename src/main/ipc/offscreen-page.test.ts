@@ -66,7 +66,7 @@ describe('offscreen page IPC', () => {
     )
   })
 
-  it('refuses creation from an untrusted renderer, for a refused partition, or with bad args', () => {
+  it('refuses creation from an untrusted renderer, for a refused or routed partition, or with bad args', () => {
     admissible.value = false
     expect(handlers.get('offscreenPage:create')?.({ sender: owner }, createArgs)).toBeNull()
     admissible.value = true
@@ -75,6 +75,12 @@ describe('offscreen page IPC', () => {
     trusted.value = true
     expect(
       handlers.get('offscreenPage:create')?.({ sender: owner }, { browserPageId: 'p1' })
+    ).toBeNull()
+    expect(
+      handlers.get('offscreenPage:create')?.(
+        { sender: owner },
+        { ...createArgs, partition: `persist:orca-browser-v1-${'a'.repeat(64)}` }
+      )
     ).toBeNull()
     expect(host.create).not.toHaveBeenCalled()
   })
