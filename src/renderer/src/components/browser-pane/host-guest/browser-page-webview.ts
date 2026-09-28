@@ -1,5 +1,7 @@
 import { ORCA_BROWSER_BLANK_URL } from '../../../../../shared/constants'
 import { ORCA_BROWSER_GUEST_WEB_PREFERENCES_ATTRIBUTE } from '../../../../../shared/browser-guest-web-preferences'
+import { useAppStore } from '@/store'
+import { createOffscreenPageGuestElement } from './offscreen-page-guest-element'
 import {
   destroyPersistentWebview,
   registerPersistentWebview,
@@ -55,7 +57,9 @@ export function ensureBrowserPageWebview({
     return { container: activeContainer, created, webview }
   }
 
-  webview = document.createElement('webview') as Electron.WebviewTag
+  webview = useAppStore.getState().settings?.experimentalOffscreenBrowserPages
+    ? createOffscreenPageGuestElement(browserTabId)
+    : (document.createElement('webview') as Electron.WebviewTag)
   webview.setAttribute('partition', webviewPartition)
   webview.setAttribute('allowpopups', '')
   // Why: Electron spreads the webpreferences keys verbatim, so the shared

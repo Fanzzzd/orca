@@ -1,0 +1,291 @@
+import type {
+  OffscreenPageCommand,
+  OffscreenPageGuestEvent,
+  OffscreenPageGuestState
+} from '../../../../../shared/offscreen-page-protocol'
+import { OFFSCREEN_PAGE_TAG } from './browser-page-guest-element-kind'
+import { bindOffscreenPageInputSurface } from './offscreen-page-input-surface'
+
+const CURSOR_CSS: Record<string, string> = {
+  hand: 'pointer',
+  ibeam: 'text',
+  crosshair: 'crosshair',
+  move: 'move',
+  wait: 'wait',
+  progress: 'progress',
+  'not-allowed': 'not-allowed',
+  grab: 'grab',
+  grabbing: 'grabbing',
+  'col-resize': 'col-resize',
+  'row-resize': 'row-resize',
+  help: 'help'
+}
+
+const EMPTY_STATE: OffscreenPageGuestState = {
+  url: '',
+  title: '',
+  canGoBack: false,
+  canGoForward: false,
+  isLoading: false,
+  zoomLevel: 0
+}
+
+/**
+ * A <webview> stand-in whose page lives offscreen in main and paints into a canvas here. It keeps
+ * the slice of the webview interface the browser pane uses, so the pane cannot tell the two apart;
+ * what changes is that no input to the page, agent or user, can move this window's focus.
+ */
+export class OrcaOffscreenPageElement extends HTMLElement {
+  private readonly canvas = document.createElement('canvas')
+  private readonly ime = document.createElement('textarea')
+  private state: OffscreenPageGuestState = EMPTY_STATE
+  private webContentsId: number | null = null
+  private domReady = false
+  private creating = false
+  private pendingSrc: string | null = null
+  private nextFindRequestId = 1
+  private unbindInput: (() => void) | null = null
+  private resizeObserver: ResizeObserver | null = null
+  private closeTimer: ReturnType<typeof setTimeout> | null = null
+
+  constructor() {
+    super()
+    const root = this.attachShadow({ mode: 'open' })
+    const style = document.createElement('style')
+    style.textContent = `
+      :host { display: block; position: relative; overflow: hidden; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      textarea { position: absolute; left: 0; top: 0; width: 1px; height: 16px; padding: 0;
+        border: 0; margin: 0; opacity: 0; resize: none; overflow: hidden; pointer-events: none; }`
+    this.ime.setAttribute('aria-hidden', 'true')
+    this.ime.tabIndex = -1
+    root.append(style, this.canvas, this.ime)
+  }
+
+  get browserPageId(): string {
+    return this.dataset.browserPageId ?? ''
+  }
+
+  connectedCallback(): void {
+    if (this.closeTimer) {
+      clearTimeout(this.closeTimer)
+      this.closeTimer = null
+    }
+    this.resizeObserver ??= new ResizeObserver(() => this.syncViewport())
+    this.resizeObserver.observe(this)
+    this.unbindInput ??= bindOffscreenPageInputSurface(this.canvas, this.ime, {
+      input: (input) => window.api.offscreenPage.input(this.browserPageId, input),
+      edit: (action) => this.command({ kind: 'edit', action }),
+      focusPage: () => window.api.offscreenPage.focus(this.browserPageId),
+      readCaret: () => window.api.offscreenPage.readCaret(this.browserPageId)
+    })
+  }
+
+  disconnectedCallback(): void {
+    this.resizeObserver?.disconnect()
+    // Why deferred: a same-task re-append is a move, not a teardown.
+    this.closeTimer = setTimeout(() => {
+      if (!this.isConnected) {
+        this.unbindInput?.()
+        this.unbindInput = null
+        window.api.offscreenPage.close(this.browserPageId)
+      }
+    }, 0)
+  }
+
+  // ── webview-compatible surface ──
+
+  get src(): string {
+    return this.state.url || this.getAttribute('src') || ''
+  }
+
+  set src(url: string) {
+    this.setAttribute('src', url)
+    if (this.webContentsId === null) {
+      this.pendingSrc = url
+      void this.createPage()
+    } else {
+      this.command({ kind: 'loadURL', url })
+    }
+  }
+
+  loadURL(url: string): Promise<void> {
+    this.src = url
+    return Promise.resolve()
+  }
+
+  getWebContentsId(): number {
+    if (this.webContentsId === null) {
+      throw new Error('The offscreen page has not been attached yet.')
+    }
+    return this.webContentsId
+  }
+
+  getURL(): string {
+    if (!this.domReady) {
+      throw new Error('The offscreen page is not ready yet.')
+    }
+    return this.state.url
+  }
+
+  getTitle(): string {
+    return this.state.title
+  }
+
+  canGoBack(): boolean {
+    return this.state.canGoBack
+  }
+
+  canGoForward(): boolean {
+    return this.state.canGoForward
+  }
+
+  isLoading(): boolean {
+    return this.state.isLoading
+  }
+
+  getZoomLevel(): number {
+    return this.state.zoomLevel
+  }
+
+  setZoomLevel(level: number): void {
+    this.state = { ...this.state, zoomLevel: level }
+    this.command({ kind: 'setZoomLevel', level })
+  }
+
+  goBack(): void {
+    this.command({ kind: 'goBack' })
+  }
+
+  goForward(): void {
+    this.command({ kind: 'goForward' })
+  }
+
+  reload(): void {
+    this.command({ kind: 'reload' })
+  }
+
+  reloadIgnoringCache(): void {
+    this.command({ kind: 'reloadIgnoringCache' })
+  }
+
+  stop(): void {
+    this.command({ kind: 'stop' })
+  }
+
+  findInPage(
+    text: string,
+    options: { forward?: boolean; findNext?: boolean; matchCase?: boolean } = {}
+  ): number {
+    this.command({ kind: 'findInPage', text, ...options })
+    return this.nextFindRequestId++
+  }
+
+  stopFindInPage(action: 'clearSelection' | 'keepSelection' | 'activateSelection'): void {
+    this.command({ kind: 'stopFindInPage', action })
+  }
+
+  /** Last painted frame; the pane only reads isEmpty, getSize and toDataURL. */
+  capturePage(): Promise<{
+    isEmpty(): boolean
+    getSize(): { width: number; height: number }
+    toDataURL(): string
+  }> {
+    const { width, height } = this.canvas
+    const dataUrl = width && height ? this.canvas.toDataURL('image/png') : ''
+    return Promise.resolve({
+      isEmpty: () => !dataUrl,
+      getSize: () => ({ width, height }),
+      toDataURL: () => dataUrl
+    })
+  }
+
+  override focus(options?: FocusOptions): void {
+    this.ime.focus({ preventScroll: options?.preventScroll ?? true })
+    window.api.offscreenPage.focus(this.browserPageId)
+  }
+
+  override blur(): void {
+    this.ime.blur()
+  }
+
+  isDestroyed(): boolean {
+    return !this.isConnected && this.webContentsId === null
+  }
+
+  // ── internals ──
+
+  private command(command: OffscreenPageCommand): void {
+    if (this.webContentsId !== null) {
+      window.api.offscreenPage.command(this.browserPageId, command)
+    }
+  }
+
+  private viewport() {
+    return {
+      width: Math.max(1, Math.round(this.clientWidth)),
+      height: Math.max(1, Math.round(this.clientHeight)),
+      visible: this.isConnected && this.clientWidth > 0 && this.clientHeight > 0
+    }
+  }
+
+  private syncViewport(): void {
+    if (this.webContentsId !== null) {
+      window.api.offscreenPage.setViewport(this.browserPageId, this.viewport())
+    }
+  }
+
+  private async createPage(): Promise<void> {
+    if (this.creating || this.pendingSrc === null) {
+      return
+    }
+    this.creating = true
+    const src = this.pendingSrc
+    window.api.offscreenPage.attach(this.browserPageId, this.canvas, {
+      onEvent: (event) => this.onGuestEvent(event),
+      onCursor: (type) => {
+        this.canvas.style.cursor = CURSOR_CSS[type] ?? 'default'
+      }
+    })
+    const webContentsId = await window.api.offscreenPage.create({
+      browserPageId: this.browserPageId,
+      partition: this.getAttribute('partition') ?? '',
+      src,
+      viewport: this.viewport()
+    })
+    this.creating = false
+    if (webContentsId === null) {
+      this.dispatchGuestEvent('did-fail-load', {
+        errorCode: -3,
+        errorDescription: 'Offscreen page was refused',
+        validatedURL: src,
+        isMainFrame: true
+      })
+      return
+    }
+    this.webContentsId = webContentsId
+    this.pendingSrc = null
+    this.dispatchGuestEvent('did-attach', {})
+  }
+
+  private onGuestEvent(event: OffscreenPageGuestEvent): void {
+    this.state = event.state
+    if (event.type === 'dom-ready') {
+      this.domReady = true
+    }
+    if (event.type === 'render-process-gone') {
+      this.domReady = false
+    }
+    this.dispatchGuestEvent(event.type, event.detail)
+  }
+
+  private dispatchGuestEvent(type: string, detail: Record<string, unknown>): void {
+    this.dispatchEvent(Object.assign(new Event(type), detail))
+  }
+}
+
+export function defineOffscreenPageElement(): void {
+  if (!customElements.get(OFFSCREEN_PAGE_TAG)) {
+    customElements.define(OFFSCREEN_PAGE_TAG, OrcaOffscreenPageElement)
+  }
+}

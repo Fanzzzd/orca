@@ -64,12 +64,11 @@ export function registerBrowserHandlers(): void {
     }
     if (repairPolicies) {
       const guest = webContents.fromId(args.webContentsId)
-      if (
-        !guest ||
-        guest.isDestroyed() ||
-        guest.getType() !== 'webview' ||
-        guest.hostWebContents?.id !== event.sender.id
-      ) {
+      const ownedBySender =
+        guest?.getType() === 'webview'
+          ? guest.hostWebContents?.id === event.sender.id
+          : browserManager.isRendererOffscreenGuestOf(args.webContentsId, event.sender.id)
+      if (!guest || guest.isDestroyed() || !ownedBySender) {
         return false
       }
       browserManager.attachGuestPolicies(guest)

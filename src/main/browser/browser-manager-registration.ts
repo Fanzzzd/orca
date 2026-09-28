@@ -34,8 +34,13 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
       return false
     }
 
-    // Why: don't trust the renderer-sent id blindly — a compromised renderer could pass the main window's id; only accept webview guests.
-    if (guest.getType() !== 'webview') {
+    // Why: don't trust the renderer-sent id blindly — a compromised renderer could pass the main window's id; only accept webview guests
+    // or offscreen pages main created for this same renderer.
+    const offscreenOwner = this.rendererOffscreenGuestRendererIds.get(webContentsId)
+    const isRendererOffscreen = offscreenOwner !== undefined
+    if (
+      isRendererOffscreen ? offscreenOwner !== rendererWebContentsId : guest.getType() !== 'webview'
+    ) {
       return false
     }
     if (!this.policyAttachedGuestIds.has(webContentsId)) {
@@ -63,8 +68,12 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
 
     this.setupContextMenu(browserTabId, guest)
     this.setupGrabShortcut(browserTabId, guest)
-    this.setupShortcutForwarding(browserTabId, guest)
-    this.setupMouseWheelZoomForwarding(browserTabId, guest)
+    // Why: keys and wheel over an offscreen page reach the renderer's own DOM first, so bouncing them
+    // back from the guest would fire every app shortcut twice.
+    if (!isRendererOffscreen) {
+      this.setupShortcutForwarding(browserTabId, guest)
+      this.setupMouseWheelZoomForwarding(browserTabId, guest)
+    }
     this.flushPendingLoadFailure(browserTabId, webContentsId)
     this.flushPendingPermissionEvents(browserTabId, webContentsId)
     this.flushPendingPopupEvents(browserTabId, webContentsId)
@@ -144,6 +153,15 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     this.annotationViewportBridgeOpsByTabId.delete(browserTabId)
   }
 
+  isRendererOffscreenGuestOf(webContentsId: number, rendererWebContentsId: number): boolean {
+    return this.rendererOffscreenGuestRendererIds.get(webContentsId) === rendererWebContentsId
+  }
+
+  /** Marks an offscreen page main created for a renderer, so that renderer may register it like a webview. */
+  admitRendererOffscreenGuest(webContentsId: number, rendererWebContentsId: number): void {
+    this.rendererOffscreenGuestRendererIds.set(webContentsId, rendererWebContentsId)
+  }
+
   // Why: headless orca serve has no <webview> window; back pages with offscreen WebContents and skip the webview-only setup.
   registerOffscreenGuest({
     browserPageId,
@@ -196,6 +214,7 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     }
     this.policyAttachedGuestIds.clear()
     this.offscreenGuestIds.clear()
+    this.rendererOffscreenGuestRendererIds.clear()
     // Why: unregisterGuest skips guests that were policy-attached but never registered; invoke their cleanup closures here.
     for (const cleanup of this.policyCleanupByGuestId.values()) {
       cleanup()

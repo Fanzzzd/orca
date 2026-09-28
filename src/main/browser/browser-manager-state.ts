@@ -145,6 +145,9 @@ export abstract class BrowserManagerState extends BrowserManagerViewportScrollSt
   protected readonly worktreeIdByTabId = new Map<string, string>()
   protected readonly policyAttachedGuestIds = new Set<number>()
   protected readonly offscreenGuestIds = new Set<number>()
+  // Why separate from offscreenGuestIds: these pages are painted into a desktop renderer that owns
+  // their lifecycle like a <webview>; the value is that renderer's id, the only one allowed to register them.
+  protected readonly rendererOffscreenGuestRendererIds = new Map<number, number>()
   protected readonly policyCleanupByGuestId = new Map<number, () => void>()
   protected readonly loadErrorsByGuestId = new Map<number, BrowserLoadError>()
   // Why: did-start-navigation hides the overlay optimistically; stash the cleared error so did-fail-load(-3) can restore an aborted nav.
