@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { StoredHostProfileSchema, type HostProfile, type StoredHostProfile } from './types'
+import { classifyLegacyHostName } from './host-name-identity'
 
 const STORAGE_KEY = 'orca:hosts'
 
@@ -24,10 +25,30 @@ export function writeStoredHostProfiles(hosts: readonly StoredHostProfile[]): Pr
 }
 
 export function toStoredHostProfile(host: HostProfile): StoredHostProfile {
-  const { id, name, endpoint, publicKeyB64, lastConnected, iroh } = host
-  // Why: iroh dial data is pairing output, not relay overlay state — it has no
-  // other durable home, so dropping it here would strand the host after restart.
-  return { id, name, endpoint, publicKeyB64, lastConnected, ...(iroh ? { iroh } : {}) }
+  const {
+    id,
+    name,
+    personalName,
+    lastKnownMachineName,
+    lastKnownHostPlatform,
+    endpoint,
+    publicKeyB64,
+    lastConnected,
+    iroh
+  } = host
+  return {
+    id,
+    name,
+    ...(personalName !== undefined ? { personalName } : {}),
+    ...(lastKnownMachineName !== undefined ? { lastKnownMachineName } : {}),
+    ...(lastKnownHostPlatform !== undefined ? { lastKnownHostPlatform } : {}),
+    endpoint,
+    publicKeyB64,
+    lastConnected,
+    // Why: iroh dial data is pairing output, not relay overlay state — it has no
+    // other durable home, so dropping it here would strand the host after restart.
+    ...(iroh ? { iroh } : {})
+  }
 }
 
 function parseStoredHostProfiles(raw: string | null): StoredHostProfile[] | null {
@@ -45,7 +66,7 @@ function parseStoredHostProfiles(raw: string | null): StoredHostProfile[] | null
         return []
       }
       const result = StoredHostProfileSchema.safeParse(item)
-      return result.success ? [result.data] : []
+      return result.success ? [classifyLegacyHostName(result.data)] : []
     })
   } catch {
     return null

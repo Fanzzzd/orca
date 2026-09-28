@@ -1,10 +1,10 @@
 import { Platform } from 'react-native'
-import type { DeviceCredentialInstalled } from '../../../src/shared/mobile-relay-credential-contract'
 import { connect, type ConnectOptions } from './rpc-client'
 import { openIrohRpcClient } from './mobile-iroh-physical-link'
-import { resolvePairingHostIdentity, saveHost } from './host-store'
-import { baseHost, relayHost } from './paired-host-profile'
+import { resolvePairingHostIdentity, savePairedHost } from './host-store'
 import type { PairingOffer } from './types'
+import { baseHost } from './paired-host-profile'
+import { openPairingDialCandidate } from './pairing-dial-candidate'
 import { isPairingRelayRpcUnavailable } from './pairing-relay-rpc-unavailable'
 import {
   relayCredentialProvision,
@@ -33,6 +33,9 @@ import { resolvePairingInviteThroughDirector } from './mobile-relay-invite-direc
 import { createRecoveringPairingRelayCandidate } from './pairing-relay-candidate'
 import { createPairingRelayLogger } from './pairing-relay-log'
 import { redactSocketEndpoint } from './socket-event-debug'
+import { assertCommittedInstall, relayHost } from './pairing-relay-host'
+import { recordHostDescriptorFromStatus } from './host-descriptor-recorder'
+import type { HostStatusReply } from './host-status-reply-schema'
 
 export type PreProfilePairingAttempt = {
   readonly result: Promise<{ hostId: string }>
@@ -46,11 +49,12 @@ type Dependencies = {
   connectRelay: typeof connectMobileRelayForPairing
   resolveInviteDirector: typeof resolvePairingInviteThroughDirector
   resolveHostIdentity: typeof resolvePairingHostIdentity
-  saveHost: typeof saveHost
+  savePairedHost: typeof savePairedHost
   saveJournal: typeof saveMobileRelayPairingJournal
   updateJournal: typeof updateMobileRelayPairingJournal
   clearJournal: typeof clearMobileRelayPairingJournal
   writeCredentialBundle: typeof writeMobileRelayCredentialBundle
+  recordDescriptorFromStatus: typeof recordHostDescriptorFromStatus
   now: () => number
   platform: string
 }
@@ -61,11 +65,12 @@ const defaultDependencies: Dependencies = {
   connectRelay: connectMobileRelayForPairing,
   resolveInviteDirector: resolvePairingInviteThroughDirector,
   resolveHostIdentity: resolvePairingHostIdentity,
-  saveHost,
+  savePairedHost,
   saveJournal: saveMobileRelayPairingJournal,
   updateJournal: updateMobileRelayPairingJournal,
   clearJournal: clearMobileRelayPairingJournal,
   writeCredentialBundle: writeMobileRelayCredentialBundle,
+  recordDescriptorFromStatus: recordHostDescriptorFromStatus,
   now: Date.now,
   platform: Platform.OS
 }
@@ -156,44 +161,16 @@ async function runPairing(
     assertActive(isDisposed)
   }
 
-  // Why: iroh offers pair over iroh itself — it reaches the desktop on LAN and
-  // cellular alike, so the ws dial (and its failure noise) is skipped entirely
-  // unless iroh is unavailable on this platform (Android stub / Expo Go).
-  let irohPairingClient: ReturnType<typeof openIrohRpcClient> = null
-  const irohLog = attributePairingLogPath('iroh', connectOptions?.onLog)
-  if (offer.iroh && !journal && dependencies.platform === 'ios') {
-    irohPairingClient = dependencies.connectIroh({
-      desktopEndpointId: offer.iroh.endpointId,
-      ...(offer.iroh.relayUrl || offer.iroh.directAddresses?.length
-        ? {
-            dialHints: {
-              ...(offer.iroh.relayUrl ? { relayUrl: offer.iroh.relayUrl } : {}),
-              ...(offer.iroh.directAddresses?.length
-                ? { directAddresses: offer.iroh.directAddresses }
-                : {})
-            }
-          }
-        : {}),
-      deviceToken: offer.deviceToken,
-      publicKeyB64: offer.publicKeyB64,
-      ...(irohLog ? { onLog: irohLog } : {})
-    })
-  }
-
-  const candidates: PairingCandidate[] = []
-  if (irohPairingClient) {
-    clients.add(irohPairingClient)
-    candidates.push({ path: 'iroh', client: irohPairingClient })
-  } else {
-    const directClient = dependencies.connectDirect(
-      offer.endpoint,
-      offer.deviceToken,
-      offer.publicKeyB64,
-      { ...connectOptions, onLog: attributePairingLogPath('direct', connectOptions?.onLog) }
-    )
-    clients.add(directClient)
-    candidates.push({ path: 'direct', client: directClient })
-  }
+  const dialCandidate = openPairingDialCandidate({
+    offer,
+    hasJournal: journal !== null,
+    platform: dependencies.platform,
+    connectDirect: dependencies.connectDirect,
+    connectIroh: dependencies.connectIroh,
+    ...(connectOptions ? { connectOptions } : {})
+  })
+  clients.add(dialCandidate.client)
+  const candidates: PairingCandidate[] = [dialCandidate]
   const log = createPairingRelayLogger(connectOptions?.onLog)
   if (journal) {
     log(
@@ -236,12 +213,12 @@ async function runPairing(
   assertActive(isDisposed)
 
   if (!journal) {
-    await dependencies.saveHost(baseHost(offer, hostId, hostName, now))
+    await dependencies.savePairedHost(baseHost(offer, hostId, hostName, now))
+    recordWinnerDescriptor(dependencies, hostId, winner.status)
     return { hostId }
   }
   if (winner.path === 'iroh') {
-    // Why: the iroh candidate is only raced for journal-less offers; a journal
-    // implies direct/relay, and the metadata schema only records those paths.
+    // Why: iroh is only dialed for journal-less offers; a journal implies direct/relay.
     throw new Error('iroh pairing path cannot carry a relay journal')
   }
 
@@ -265,8 +242,9 @@ async function runPairing(
     // Why: this commits a LAN-only host instead of failing, so the refusal code is the only
     // record of why the phone never got a relay endpoint.
     log('info', 'Relay: desktop will not serve relay pairing', provision.error.code)
-    await dependencies.saveHost(baseHost(offer, hostId, hostName, now))
+    await dependencies.savePairedHost(baseHost(offer, hostId, hostName, now))
     await dependencies.clearJournal(journal.metadata.journalId)
+    recordWinnerDescriptor(dependencies, hostId, winner.status)
     return { hostId }
   }
   const installed = relayCredentialProvision.interpret(provision)
@@ -280,24 +258,30 @@ async function runPairing(
   }
   assertActive(isDisposed)
   await dependencies.writeCredentialBundle(promotePairingJournalCredential({ journal, installed }))
-  await dependencies.saveHost(relayHost(journal, endpoints.relay))
+  await dependencies.savePairedHost(relayHost(journal, endpoints.relay))
   await dependencies.clearJournal(journal.metadata.journalId)
+  recordWinnerDescriptor(dependencies, hostId, winner.status)
   return { hostId }
 }
 
-function assertCommittedInstall(
-  status:
-    | { state: 'not-found' }
-    | { state: 'committed'; result: DeviceCredentialInstalled }
-    | undefined,
-  installed: DeviceCredentialInstalled
+/**
+ * Why after the save: the saved row starts as its existing name (or "Host N") and the descriptor
+ * writer adopt-renames it to the desktop's machine name in the same serialized store chain, so a
+ * load issued after pairing returns the desktop-reported name. A recording failure is swallowed —
+ * descriptor upkeep must never fail a pairing that already saved.
+ */
+function recordWinnerDescriptor(
+  dependencies: Dependencies,
+  hostId: string,
+  status: HostStatusReply | null
 ): void {
-  if (
-    !status ||
-    status.state !== 'committed' ||
-    JSON.stringify(status.result) !== JSON.stringify(installed)
-  ) {
-    throw new Error('relay credential install was not authoritatively reconciled')
+  if (!status) {
+    return
+  }
+  try {
+    dependencies.recordDescriptorFromStatus(hostId, status)
+  } catch {
+    // Best-effort bookkeeping; the host is already saved.
   }
 }
 

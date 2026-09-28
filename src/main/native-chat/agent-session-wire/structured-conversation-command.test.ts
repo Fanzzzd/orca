@@ -117,7 +117,7 @@ describe('host conversation commands', () => {
     })
     expect(compact).toHaveBeenCalledTimes(1)
     expect(adapter.dispatch).not.toHaveBeenCalled()
-    const history = host.history({ sessionId: HOST_TEST_SESSION, direction: 'tail' })
+    const history = await host.history({ sessionId: HOST_TEST_SESSION, direction: 'tail' })
     expect(history.page.submissions).toEqual([])
     expect(
       history.page.items.some(
@@ -163,6 +163,30 @@ describe('host conversation commands', () => {
     })
   })
 
+  // What the child reports can be a value it fell back to, such as a model whose restore write it
+  // never answered; the replacement's start replays the choice, as the source's next start would.
+  it('starts the replacement from the options the user chose, not the values the child reports', async () => {
+    await store.replaceSessionOptions({
+      sessionId: HOST_TEST_SESSION,
+      fence: store.getRecord(HOST_TEST_SESSION)!.lease.runtimeFence,
+      options: { model: 'test-model', effort: 'low' },
+      now: HOST_TEST_NOW
+    })
+    adapter.readOptions = async () => ({
+      models: [],
+      current: { model: 'fallback-model', effort: 'high' }
+    })
+    const attach = vi.spyOn(host, 'attach')
+    expect(await host.conversationCommand(caller, commandParams('clear'))).toMatchObject({
+      ok: true
+    })
+    expect(attach.mock.calls[0]?.[1].options).toEqual({ model: 'test-model', effort: 'low' })
+    expect(store.getRecord(HOST_TEST_SESSION)?.options).toEqual({
+      model: 'test-model',
+      effort: 'low'
+    })
+  })
+
   it('clears with a fresh record and effective options, retaining old history and idempotent mapping', async () => {
     const before = store.getRecord(HOST_TEST_SESSION)!
     const params = commandParams('clear')
@@ -180,7 +204,7 @@ describe('host conversation commands', () => {
     })
     expect(store.getRecord(HOST_TEST_SESSION)).not.toBeNull()
     expect(store.listVisibleSessionIds()).toEqual([nextId])
-    expect(host.history({ sessionId: nextId, direction: 'tail' }).page.items).toEqual([])
+    expect((await host.history({ sessionId: nextId, direction: 'tail' })).page.items).toEqual([])
     expect(await host.conversationCommand(caller, params)).toMatchObject({
       ok: true,
       replayed: true,
@@ -221,14 +245,11 @@ describe('host conversation commands', () => {
     })
   })
 
-  it('rejects stale fences before provider execution', async () => {
+  it('runs a command whose fence the client has not caught up to', async () => {
     const params = commandParams('compact')
     params.envelope.expectedRuntimeFence++
-    expect(await host.conversationCommand(caller, params)).toMatchObject({
-      ok: false,
-      refusal: { code: 'agent_session_checkpoint_stale' }
-    })
-    expect(compact).not.toHaveBeenCalled()
+    expect(await host.conversationCommand(caller, params)).toMatchObject({ ok: true })
+    expect(compact).toHaveBeenCalledTimes(1)
   })
   it('allows cancellation while compaction is awaiting completion and refuses a second client', async () => {
     let finish!: (value: {}) => void

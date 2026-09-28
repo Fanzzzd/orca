@@ -4,7 +4,6 @@ import type { TerminalDocumentScope } from './document-scope'
 import { scheduleDocumentFrame } from './document-frame-registry'
 import { applyFitScale, getCellHeight, MIN_FIT_COLS } from './fit-scale'
 import { getCellWidth } from './viewport-transform'
-import { emitKeyboardAvoidanceMetrics } from './keyboard-avoidance-metrics'
 
 // Why: init() flips ready false on every re-init (live width reflow included)
 // while the old surface stays visible; a document-scoped latch drives the
@@ -64,6 +63,8 @@ export function applyTextScale(scope: TerminalDocumentScope, scale: number) {
   }
   const px = fontPxForScale(scale)
   if (scope.term.options.fontSize === px) {
+    // Why: a pinch moved the drawn pitch; the fit commit is the one site that reports it.
+    applyFitScale(scope, 'text-scale')
     return
   }
   scope.term.options.fontSize = px
@@ -77,13 +78,14 @@ export function applyTextScale(scope: TerminalDocumentScope, scale: number) {
     const cellW = getCellWidth(scope)
     const cellH = getCellHeight(scope)
     if (cellW > 0 && cellH > 0) {
-      const cols = Math.floor(window.innerWidth / cellW)
+      const cols = Math.floor(scope.viewportRect().width / cellW)
       if (cols < MIN_FIT_COLS) {
+        // Why: too narrow to resize the grid, but the fit still tracks the new cell size; hidden hosts hold it.
+        applyFitScale(scope, 'text-scale')
         return
       }
-      const rows = Math.max(8, Math.floor(window.innerHeight / cellH))
+      const rows = Math.max(8, Math.floor(scope.viewportRect().height / cellH))
       scope.term.resize(cols, rows)
-      emitKeyboardAvoidanceMetrics(scope)
     }
     applyFitScale(scope, 'text-scale')
   })
