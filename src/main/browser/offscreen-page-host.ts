@@ -179,13 +179,15 @@ export class OffscreenPageHost {
       case 'setZoomLevel':
         contents.setZoomLevel(command.level)
         return
-      case 'findInPage':
-        contents.findInPage(command.text, {
-          forward: command.forward,
-          findNext: command.findNext,
-          matchCase: command.matchCase
-        })
+      case 'findInPage': {
+        // Why drop undefined keys: Electron silently ignores a find whose options carry them.
+        const { kind: _kind, text, ...options } = command
+        contents.findInPage(
+          text,
+          Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined))
+        )
         return
+      }
       case 'edit':
         contents[command.action]()
         return
