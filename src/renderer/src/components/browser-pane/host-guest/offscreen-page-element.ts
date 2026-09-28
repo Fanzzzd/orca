@@ -47,6 +47,8 @@ export class OrcaOffscreenPageElement extends HTMLElement {
   private unbindInput: (() => void) | null = null
   private resizeObserver: ResizeObserver | null = null
   private closeTimer: ReturnType<typeof setTimeout> | null = null
+  // Why 1280x800: matches the headless backend's default page size for a tab never shown yet.
+  private lastVisibleSize = { width: 1280, height: 800 }
 
   constructor() {
     super()
@@ -222,11 +224,16 @@ export class OrcaOffscreenPageElement extends HTMLElement {
   }
 
   private viewport() {
-    return {
-      width: Math.max(1, Math.round(this.clientWidth)),
-      height: Math.max(1, Math.round(this.clientHeight)),
-      visible: this.isConnected && this.clientWidth > 0 && this.clientHeight > 0
+    const visible = this.isConnected && this.clientWidth > 0 && this.clientHeight > 0
+    if (visible) {
+      this.lastVisibleSize = {
+        width: Math.round(this.clientWidth),
+        height: Math.round(this.clientHeight)
+      }
     }
+    // Why keep the last size while hidden: agents still drive background tabs, and a collapsed
+    // pane must not shrink their page to one pixel.
+    return { ...this.lastVisibleSize, visible }
   }
 
   private syncViewport(): void {
