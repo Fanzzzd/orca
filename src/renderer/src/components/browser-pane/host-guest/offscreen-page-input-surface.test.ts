@@ -102,23 +102,52 @@ describe('bindOffscreenPageInputSurface', () => {
     expect(inputs.at(-1)).toEqual({ kind: 'cancelComposition' })
   })
 
-  it('forwards a printable key as keyDown plus char and keeps it out of the textarea', () => {
+  it('forwards a key with its code and text, and keeps it out of the textarea', () => {
     const { ime, inputs } = setup()
-    const event = keydown(ime, { key: 'a', cancelable: true })
+    const event = keydown(ime, { key: 'a', code: 'KeyA', keyCode: 65, cancelable: true })
     expect(inputs).toEqual([
-      { kind: 'key', type: 'keyDown', keyCode: 'a', modifiers: [] },
-      { kind: 'key', type: 'char', keyCode: 'a', modifiers: [] }
+      {
+        kind: 'key',
+        type: 'keyDown',
+        key: 'a',
+        code: 'KeyA',
+        keyCode: 65,
+        location: 0,
+        repeat: false,
+        text: 'a',
+        modifiers: []
+      }
     ])
     expect(event.defaultPrevented).toBe(true)
   })
 
-  it('leaves a key alone when an Orca shortcut already claimed it', () => {
+  it('types Enter as a carriage return and AltGr characters as text', () => {
     const { ime, inputs } = setup()
-    const claim = (event: Event) => event.preventDefault()
-    ime.getRootNode().addEventListener('keydown', claim)
-    keydown(ime, { key: 'k', metaKey: true, cancelable: true })
-    ime.getRootNode().removeEventListener('keydown', claim)
-    expect(inputs).toEqual([])
+    keydown(ime, { key: 'Enter', code: 'Enter', keyCode: 13 })
+    keydown(ime, { key: '@', code: 'KeyQ', ctrlKey: true, altKey: true })
+    keydown(ime, { key: 'c', code: 'KeyC', ctrlKey: true })
+    keydown(ime, { key: 'ArrowLeft', code: 'ArrowLeft' })
+    expect(inputs.map((input) => (input.kind === 'key' ? input.text : null))).toEqual([
+      '\r',
+      '@',
+      '',
+      ''
+    ])
+  })
+
+  it('hides page keys from every other key listener, as a focused webview does', () => {
+    const { ime, inputs } = setup()
+    const orcaShortcut = vi.fn()
+    window.addEventListener('keydown', orcaShortcut, true)
+    document.addEventListener('keydown', orcaShortcut)
+    keydown(ime, { key: 'k', code: 'KeyK', metaKey: true, cancelable: true })
+    ime.dispatchEvent(
+      new KeyboardEvent('keyup', { key: 'k', code: 'KeyK', bubbles: true, composed: true })
+    )
+    window.removeEventListener('keydown', orcaShortcut, true)
+    document.removeEventListener('keydown', orcaShortcut)
+    expect(orcaShortcut).not.toHaveBeenCalled()
+    expect(inputs.map((input) => input.kind === 'key' && input.type)).toEqual(['keyDown', 'keyUp'])
   })
 
   it('ignores keys aimed at anything but the hidden textarea', () => {
@@ -129,27 +158,26 @@ describe('bindOffscreenPageInputSurface', () => {
     expect(inputs).toEqual([])
   })
 
-  it('turns clipboard events and select-all into page edit commands', () => {
+  it('sends edit chords to the page as keys, and clipboard events as edit commands', () => {
     const { ime, sink, inputs } = setup()
     const paste = new Event('paste', { cancelable: true })
     ime.dispatchEvent(paste)
-    const isMac = navigator.userAgent.includes('Mac')
-    keydown(ime, { key: 'a', metaKey: isMac, ctrlKey: !isMac, cancelable: true })
+    const event = keydown(ime, { key: 'c', code: 'KeyC', metaKey: true, cancelable: true })
 
     expect(paste.defaultPrevented).toBe(true)
-    expect(sink.edit.mock.calls).toEqual([['paste'], ['selectAll']])
-    expect(inputs).toEqual([])
+    expect(event.defaultPrevented).toBe(true)
+    expect(sink.edit.mock.calls).toEqual([['paste']])
+    expect(inputs).toMatchObject([{ kind: 'key', code: 'KeyC', modifiers: ['meta'], text: '' }])
   })
 
-  it('sends copy, cut and paste chords to the page instead of the empty textarea', () => {
-    const { ime, sink, inputs } = setup()
-    const isMac = navigator.userAgent.includes('Mac')
-    for (const key of ['c', 'x', 'v']) {
-      const event = keydown(ime, { key, metaKey: isMac, ctrlKey: !isMac, cancelable: true })
-      expect(event.defaultPrevented).toBe(true)
-    }
-    expect(sink.edit.mock.calls).toEqual([['copy'], ['cut'], ['paste']])
-    expect(inputs).toEqual([])
+  it('maps side buttons and reports held buttons during a drag', () => {
+    const { canvas, inputs } = setup()
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 3, buttons: 8, cancelable: true }))
+    canvas.dispatchEvent(new MouseEvent('mousemove', { buttons: 1 | 2 }))
+    expect(inputs).toMatchObject([
+      { type: 'mouseDown', button: 'back' },
+      { type: 'mouseMove', heldButtons: ['left', 'right'] }
+    ])
   })
 
   it('claims Edit menu copy, select all and paste only while the page has focus', () => {

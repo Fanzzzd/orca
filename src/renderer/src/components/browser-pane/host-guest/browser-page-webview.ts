@@ -64,7 +64,8 @@ export function ensureBrowserPageWebview({
     !isBrowserRoutePartition(webviewPartition)
   webview = offscreen
     ? createOffscreenPageGuestElement(browserTabId)
-    : (document.createElement('webview') as Electron.WebviewTag)
+    : // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Electron registers <webview>, so createElement returns a WebviewTag.
+      (document.createElement('webview') as Electron.WebviewTag)
   webview.setAttribute('partition', webviewPartition)
   webview.setAttribute('allowpopups', '')
   // Why: Electron spreads the webpreferences keys verbatim, so the shared

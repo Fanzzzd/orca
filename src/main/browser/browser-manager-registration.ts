@@ -67,10 +67,13 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     this.certificateTrustController?.onGuestRegistered(webContentsId, browserTabId)
 
     this.setupContextMenu(browserTabId, guest)
-    this.setupGrabShortcut(browserTabId, guest)
+    // Why not offscreen: its keys go to the page over CDP, which skips before-input-event; the
+    // host runs the same grab check on each key instead.
+    if (!isRendererOffscreen) {
+      this.setupGrabShortcut(browserTabId, guest)
+    }
     this.setupShortcutForwarding(browserTabId, guest, isRendererOffscreen)
-    // Why: wheel over an offscreen page reaches the renderer's own DOM first, so bouncing it back
-    // from the guest would zoom twice.
+    // Why not offscreen: its input skips before-mouse-event; the host zooms and pans it instead.
     if (!isRendererOffscreen) {
       this.setupMouseWheelZoomForwarding(browserTabId, guest)
     }

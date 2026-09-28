@@ -5,7 +5,11 @@ import type {
 } from '../../../../../shared/offscreen-page-protocol'
 import { OFFSCREEN_PAGE_TAG } from './browser-page-guest-element-kind'
 import { dispatchBrowserPageZoomEvent } from './browser-page-zoom'
-import { bindOffscreenPageInputSurface, cssCursorFor } from './offscreen-page-input-surface'
+import { bindOffscreenPageInputSurface } from './offscreen-page-input-surface'
+import {
+  OFFSCREEN_PAGE_DATALIST_STYLE,
+  renderOffscreenPageDatalist
+} from './offscreen-page-datalist-overlay'
 
 const EMPTY_STATE: OffscreenPageGuestState = {
   url: '',
@@ -24,6 +28,7 @@ const EMPTY_STATE: OffscreenPageGuestState = {
 export class OrcaOffscreenPageElement extends HTMLElement {
   private readonly canvas = document.createElement('canvas')
   private readonly ime = document.createElement('textarea')
+  private readonly datalist = document.createElement('div')
   private state: OffscreenPageGuestState = EMPTY_STATE
   private webContentsId: number | null = null
   private domReady = false
@@ -37,6 +42,7 @@ export class OrcaOffscreenPageElement extends HTMLElement {
   private closeTimer: ReturnType<typeof setTimeout> | null = null
   // Why 1280x800: matches the headless backend's default page size for a tab never shown yet.
   private lastVisibleSize = { width: 1280, height: 800 }
+  private lastPointer = { x: 0, y: 0 }
 
   constructor() {
     super()
@@ -46,10 +52,16 @@ export class OrcaOffscreenPageElement extends HTMLElement {
       :host { display: block; position: relative; overflow: hidden; }
       canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
       textarea { position: absolute; left: 0; top: 0; width: 1px; height: 16px; padding: 0;
-        border: 0; margin: 0; opacity: 0; resize: none; overflow: hidden; pointer-events: none; }`
+        border: 0; margin: 0; opacity: 0; resize: none; overflow: hidden; pointer-events: none; }
+      ${OFFSCREEN_PAGE_DATALIST_STYLE}`
     this.ime.setAttribute('aria-hidden', 'true')
     this.ime.tabIndex = -1
-    root.append(style, this.canvas, this.ime)
+    this.datalist.className = 'datalist'
+    this.datalist.hidden = true
+    root.append(style, this.canvas, this.ime, this.datalist)
+    this.canvas.addEventListener('mousemove', (event) => {
+      this.lastPointer = { x: event.clientX, y: event.clientY }
+    })
   }
 
   get browserPageId(): string {
@@ -247,9 +259,11 @@ export class OrcaOffscreenPageElement extends HTMLElement {
     const src = this.pendingSrc
     window.api.offscreenPage.attach(this.browserPageId, this.canvas, {
       onEvent: (event) => this.onGuestEvent(event),
-      onCursor: (type) => {
-        this.canvas.style.cursor = cssCursorFor(type)
+      onCursor: (cursor) => {
+        this.canvas.style.cursor = cursor
       },
+      onTooltip: (text) => this.showTooltip(text),
+      onDatalist: (datalist) => renderOffscreenPageDatalist(this.datalist, datalist),
       onSelect: (anchor) => {
         // Main needs window coordinates; only this side knows where the element sits.
         const box = this.getBoundingClientRect()
@@ -278,6 +292,19 @@ export class OrcaOffscreenPageElement extends HTMLElement {
     this.webContentsId = webContentsId
     this.pendingSrc = null
     this.dispatchGuestEvent('did-attach', {})
+  }
+
+  /** Shows the page's tooltip the way a <webview>'s shows: natively, from the element's title. */
+  private showTooltip(text: string): void {
+    if (text) {
+      this.canvas.title = text
+    } else {
+      this.canvas.removeAttribute('title')
+    }
+    // Why: Chromium reads a title only on pointer moves, and this one arrived after the last.
+    if (this.canvas.matches(':hover')) {
+      window.api.offscreenPage.refreshHover(this.browserPageId, this.lastPointer)
+    }
   }
 
   private onGuestEvent(event: OffscreenPageGuestEvent): void {

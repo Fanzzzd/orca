@@ -51,7 +51,7 @@ export function installMainWindowWebviewSecurity(mainWindow: BrowserWindow): voi
   // so register it with the window's other navigation policy.
   registerPluginPanelNavigationGuard(mainWindow.webContents)
 
-  const browserWindowClosePreload = join(__dirname, 'browser-window-close-preload.js')
+  const browserPageGuestPreload = join(__dirname, 'browser-page-guest-preload.js')
   // Why a preview gets a preload at all: it is our own editor surface, not a browsing guest. This
   // one only decides what a click on a link means, and it is pinned here so no renderer-supplied
   // value can reach a preview guest and no other attach path can acquire it.
@@ -72,7 +72,7 @@ export function installMainWindowWebviewSecurity(mainWindow: BrowserWindow): voi
     hardenBrowserPageGuestPreferences(
       webPreferences,
       partition,
-      isDocPreviewAttach ? docPreviewLinkPreload : browserWindowClosePreload
+      isDocPreviewAttach ? docPreviewLinkPreload : browserPageGuestPreload
     )
   })
 

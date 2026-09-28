@@ -10,6 +10,10 @@ import {
   OffscreenPageViewportSchema
 } from '../../shared/offscreen-page-protocol'
 import { isBrowserRoutePartition } from '../../shared/browser-route-partition'
+import {
+  OFFSCREEN_PAGE_GUEST_CHANNELS,
+  OFFSCREEN_PAGE_GUEST_KIND_CHANNEL
+} from '../../shared/offscreen-page-guest-channels'
 import { isAdmissibleBrowserPageGuest } from '../browser/browser-page-guest-admission'
 import { OffscreenPageHost } from '../browser/offscreen-page-host'
 import {
@@ -28,7 +32,11 @@ const CreateArgsSchema = z.object({
 })
 const PageIdSchema = z.string().min(1).max(256)
 
-const INVOKE_CHANNELS = ['offscreenPage:create', 'offscreenPage:caret'] as const
+const INVOKE_CHANNELS = [
+  'offscreenPage:create',
+  'offscreenPage:caret',
+  OFFSCREEN_PAGE_GUEST_KIND_CHANNEL
+] as const
 const SEND_CHANNELS = [
   'offscreenPage:viewport',
   'offscreenPage:input',
@@ -36,6 +44,7 @@ const SEND_CHANNELS = [
   'offscreenPage:focus',
   'offscreenPage:keyboardFocus',
   'offscreenPage:selectMenu',
+  'offscreenPage:refreshHover',
   'offscreenPage:dropFiles',
   'offscreenPage:close'
 ] as const
@@ -49,7 +58,7 @@ export function registerOffscreenPageHandlers(): void {
   for (const channel of SEND_CHANNELS) {
     ipcMain.removeAllListeners(channel)
   }
-  const closeWindowPreloadPath = join(__dirname, 'browser-window-close-preload.js')
+  const guestPreloadPath = join(__dirname, 'browser-page-guest-preload.js')
 
   ipcMain.handle('offscreenPage:create', (event, rawArgs: unknown) => {
     if (!isTrustedBrowserRenderer(event.sender)) {
@@ -69,10 +78,15 @@ export function registerOffscreenPageHandlers(): void {
     const contents = offscreenPageHost.create({
       ...args.data,
       rendererWebContentsId: event.sender.id,
-      closeWindowPreloadPath
+      guestPreloadPath
     })
     return contents.id
   })
+
+  // Asked by every browser page's preload; only offscreen pages install Orca's overlays.
+  ipcMain.handle(OFFSCREEN_PAGE_GUEST_KIND_CHANNEL, (event) =>
+    offscreenPageHost.hostsWebContents(event.sender.id) ? OFFSCREEN_PAGE_GUEST_CHANNELS : null
+  )
 
   ipcMain.handle('offscreenPage:caret', (event, rawPageId: unknown) => {
     const pageId = ownedPageId(event, rawPageId)
@@ -102,6 +116,7 @@ export function registerOffscreenPageHandlers(): void {
     const pageId = ownedPageId(event, rawPageId)
     if (pageId && typeof focused === 'boolean') {
       setOffscreenPageKeyboardFocus(event.sender.id, pageId, focused)
+      offscreenPageHost.setKeyboardFocus(pageId, focused)
     }
   })
   onOwnedPage('offscreenPage:dropFiles', (pageId, payload) => {
@@ -114,6 +129,18 @@ export function registerOffscreenPageHandlers(): void {
     const point = OffscreenPageSelectMenuPointSchema.safeParse(payload)
     if (point.success) {
       offscreenPageHost.showSelectMenu(pageId, point.data)
+    }
+  })
+  ipcMain.on('offscreenPage:refreshHover', (event, rawPageId: unknown, payload: unknown) => {
+    const point = OffscreenPageSelectMenuPointSchema.safeParse(payload)
+    if (ownedPageId(event, rawPageId) && point.success) {
+      // Why: a real move re-runs Chromium's hover tooltip lookup; the page sees a zero-length move.
+      const zoom = event.sender.getZoomFactor()
+      event.sender.sendInputEvent({
+        type: 'mouseMove',
+        x: Math.round(point.data.x * zoom),
+        y: Math.round(point.data.y * zoom)
+      })
     }
   })
   onOwnedPage('offscreenPage:close', (pageId) => offscreenPageHost.close(pageId))
@@ -150,6 +177,8 @@ function closePagesWithRenderer(renderer: WebContents): void {
     offscreenPageHost.closeOwnedBy(renderer.id)
   }
   renderer.once('destroyed', closeOwned)
+  // Why: a <webview> guest dies with its embedder's process, and a reload re-creates pages anyway.
+  renderer.on('render-process-gone', closeOwned)
   renderer.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) {
       closeOwned()

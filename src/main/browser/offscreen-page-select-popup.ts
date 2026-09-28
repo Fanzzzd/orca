@@ -28,7 +28,7 @@ export type OffscreenPageSelectPopup = {
 export function mayOpenOffscreenPageSelect(input: OffscreenPageUserInput): boolean {
   return (
     (input.kind === 'mouse' && input.type === 'mouseUp') ||
-    (input.kind === 'key' && input.type === 'keyDown' && SELECT_OPENING_KEYS.has(input.keyCode))
+    (input.kind === 'key' && input.type === 'keyDown' && SELECT_OPENING_KEYS.has(input.key))
   )
 }
 

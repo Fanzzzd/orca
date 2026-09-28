@@ -1,6 +1,7 @@
 import type { OffscreenPageUserInput } from '../../../../../shared/offscreen-page-protocol'
 import { APP_MENU_PASTE_EVENT } from '@/lib/app-menu-paste'
 import { APP_MENU_SELECTION_ACTION_EVENT } from '@/lib/app-menu-selection-actions'
+import { routeOffscreenPageKeys } from './offscreen-page-key-isolation'
 
 type Modifier = 'shift' | 'control' | 'alt' | 'meta'
 type EditAction = 'copy' | 'cut' | 'paste' | 'selectAll' | 'undo' | 'redo'
@@ -17,27 +18,13 @@ export type OffscreenPageInputSink = {
   readCaret(): Promise<{ x: number; y: number; height: number } | null>
 }
 
-const BUTTONS = ['left', 'middle', 'right'] as const
-
-const CURSOR_CSS: Record<string, string> = {
-  hand: 'pointer',
-  ibeam: 'text',
-  crosshair: 'crosshair',
-  move: 'move',
-  wait: 'wait',
-  progress: 'progress',
-  'not-allowed': 'not-allowed',
-  grab: 'grab',
-  grabbing: 'grabbing',
-  'col-resize': 'col-resize',
-  'row-resize': 'row-resize',
-  help: 'help'
-}
-
-/** CSS cursor for an Electron `cursor-changed` type. */
-export function cssCursorFor(cursorType: string): string {
-  return CURSOR_CSS[cursorType] ?? 'default'
-}
+const BUTTONS = ['left', 'middle', 'right', 'back', 'forward'] as const
+// MouseEvent.buttons bits, in the order Electron's held-button modifiers name them.
+const HELD_BUTTONS = [
+  [1, 'left'],
+  [4, 'middle'],
+  [2, 'right']
+] as const
 
 function modifiersOf(event: MouseEvent | KeyboardEvent): Modifier[] {
   const modifiers: Modifier[] = []
@@ -97,7 +84,8 @@ export function bindOffscreenPageInputSurface(
       y: event.offsetY,
       button: BUTTONS[event.button] ?? 'left',
       clickCount: type === 'mouseMove' ? 0 : Math.max(1, Math.min(3, event.detail)),
-      modifiers: modifiersOf(event)
+      modifiers: modifiersOf(event),
+      heldButtons: HELD_BUTTONS.filter(([bit]) => event.buttons & bit).map(([, name]) => name)
     })
   }
 
@@ -119,7 +107,8 @@ export function bindOffscreenPageInputSurface(
       y: event.offsetY,
       button: 'left',
       clickCount: 0,
-      modifiers: []
+      modifiers: [],
+      heldButtons: []
     })
   )
   on(canvas, 'contextmenu', (event) => event.preventDefault())
@@ -179,20 +168,19 @@ export function bindOffscreenPageInputSurface(
       sink.edit(action)
     })
   }
-  // Why on window, bubbling: listeners registered here run after Orca's own shortcut handlers, so
-  // a key Orca claimed (and prevented) is never also delivered to the page.
-  on(window, 'keydown', (event) => {
-    if (event.composedPath()[0] !== ime || event.defaultPrevented) {
-      return
-    }
-    if (composing || event.isComposing || event.keyCode === 229) {
-      return
-    }
-    forwardKey(event, sink)
-    // Why: the page owns the key's text and its edit chords; the empty textarea must not act too,
-    // and on macOS a handled key keeps the Edit menu from firing a second time.
-    event.preventDefault()
-  })
+  cleanups.push(
+    routeOffscreenPageKeys(ime, (event) => {
+      if (event.type === 'keypress' || composing || event.isComposing || event.keyCode === 229) {
+        return
+      }
+      sink.input(pageKey(event))
+      if (event.type === 'keydown') {
+        // Why: the page owns the key's text and edit chords; the empty textarea must not act too,
+        // and on macOS a handled key keeps the Edit menu from firing a second time.
+        event.preventDefault()
+      }
+    })
+  )
   // Why: the Edit menu asks whoever owns focus to copy, select all or paste. The textarea never
   // holds a selection, so native handling would do nothing; the page's own commands do.
   let imeFocused = false
@@ -223,12 +211,6 @@ export function bindOffscreenPageInputSurface(
     window.removeEventListener(APP_MENU_SELECTION_ACTION_EVENT, onMenuSelection)
     window.removeEventListener(APP_MENU_PASTE_EVENT, onMenuPaste)
   })
-  on(ime, 'keyup', (event) => {
-    if (!composing && !event.isComposing) {
-      sink.input({ kind: 'key', type: 'keyUp', keyCode: event.key, modifiers: modifiersOf(event) })
-    }
-  })
-
   return () => {
     for (const cleanup of cleanups) {
       cleanup()
@@ -249,24 +231,31 @@ function wheelZoomDirection(event: WheelEvent): 'in' | 'out' | null {
   return event.deltaY < 0 ? 'in' : 'out'
 }
 
-const EDIT_CHORDS: Record<string, EditAction> = {
-  a: 'selectAll',
-  c: 'copy',
-  x: 'cut',
-  v: 'paste',
-  z: 'undo'
+function pageKey(event: KeyboardEvent): OffscreenPageUserInput {
+  return {
+    kind: 'key',
+    type: event.type === 'keydown' ? 'keyDown' : 'keyUp',
+    key: event.key,
+    code: event.code,
+    keyCode: event.keyCode & 0xff,
+    location: event.location,
+    repeat: event.repeat,
+    text: event.type === 'keydown' ? keyText(event) : '',
+    modifiers: modifiersOf(event)
+  }
 }
 
-function forwardKey(event: KeyboardEvent, sink: OffscreenPageInputSink): void {
-  const primary = navigator.userAgent.includes('Mac') ? event.metaKey : event.ctrlKey
-  const chord = primary && !event.altKey ? EDIT_CHORDS[event.key.toLowerCase()] : undefined
-  if (chord) {
-    sink.edit(chord === 'undo' && event.shiftKey ? 'redo' : chord)
-    return
+/** The text a key types, as Chromium would put on its char event. */
+function keyText(event: KeyboardEvent): string {
+  if (event.metaKey) {
+    return ''
   }
-  const modifiers = modifiersOf(event)
-  sink.input({ kind: 'key', type: 'keyDown', keyCode: event.key, modifiers })
-  if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
-    sink.input({ kind: 'key', type: 'char', keyCode: event.key, modifiers })
+  if (event.key === 'Enter') {
+    return '\r'
   }
+  // Why ctrl+alt still types: that is AltGr on Windows and Linux layouts ("@" on German keyboards).
+  if ([...event.key].length !== 1 || (event.ctrlKey && !event.altKey)) {
+    return ''
+  }
+  return event.key
 }

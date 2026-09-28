@@ -51,21 +51,24 @@ describe('offscreen page select popup', () => {
       y: 0,
       button: 'left',
       clickCount: 1,
-      modifiers: []
+      modifiers: [],
+      heldButtons: []
     }
     expect(mayOpenOffscreenPageSelect(mouseUp)).toBe(true)
     expect(mayOpenOffscreenPageSelect({ ...mouseUp, type: 'mouseMove' })).toBe(false)
-    expect(
-      mayOpenOffscreenPageSelect({
-        kind: 'key',
-        type: 'keyDown',
-        keyCode: 'ArrowDown',
-        modifiers: []
-      })
-    ).toBe(true)
-    expect(
-      mayOpenOffscreenPageSelect({ kind: 'key', type: 'keyDown', keyCode: 'a', modifiers: [] })
-    ).toBe(false)
+    const key = (name: string, code: string): OffscreenPageUserInput => ({
+      kind: 'key',
+      type: 'keyDown',
+      key: name,
+      code,
+      keyCode: 0,
+      location: 0,
+      repeat: false,
+      text: '',
+      modifiers: []
+    })
+    expect(mayOpenOffscreenPageSelect(key('ArrowDown', 'ArrowDown'))).toBe(true)
+    expect(mayOpenOffscreenPageSelect(key('a', 'KeyA'))).toBe(false)
   })
 
   it('rejects a malformed page answer', async () => {

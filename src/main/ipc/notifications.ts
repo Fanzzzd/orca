@@ -25,7 +25,6 @@ import {
   recordNotificationDeliveryOutcome,
   resetNotificationPermissionEvidence
 } from './notification-permission-probe'
-import { isOffscreenPageWindow } from '../window/offscreen-page-windows'
 
 export function registerNotificationHandlers(store: Store, runtime?: OrcaRuntimeService): void {
   ipcMain.removeHandler('notifications:getDesktopAwayState')
@@ -122,9 +121,7 @@ export function registerNotificationHandlers(store: Store, runtime?: OrcaRuntime
   const deliveryService = createNotificationDeliveryService({
     readNotificationSettings: () => store.getSettings().notifications,
     findActiveWindow: () =>
-      BrowserWindow.getAllWindows().find(
-        (window) => !window.isDestroyed() && !isOffscreenPageWindow(window)
-      ) ?? null,
+      BrowserWindow.getAllWindows().find((window) => !window.isDestroyed()) ?? null,
     isWindowVisible: isMainWindowVisible,
     setTrayAttention,
     isNotificationSupported: () => Notification.isSupported(),

@@ -3,6 +3,7 @@ import { OFFSCREEN_PAGE_TAG } from '../../shared/offscreen-page-protocol'
 import type {
   OffscreenPageCaret,
   OffscreenPageCommand,
+  OffscreenPageDatalist,
   OffscreenPageGuestEvent,
   OffscreenPageSelectAnchor,
   OffscreenPageUserInput,
@@ -11,9 +12,14 @@ import type {
 
 export type OffscreenPageListeners = {
   onEvent: (event: OffscreenPageGuestEvent) => void
-  onCursor: (cursorType: string) => void
+  /** A CSS cursor value main built from the page's cursor-changed event. */
+  onCursor: (cursor: string) => void
   /** The page opened a <select>; answer with showSelectMenu to draw its menu. */
   onSelect: (anchor: OffscreenPageSelectAnchor) => void
+  /** The page's tooltip under the pointer, "" for none. */
+  onTooltip: (text: string) => void
+  /** The page's open datalist popup to draw, or null once it closes. */
+  onDatalist: (datalist: OffscreenPageDatalist | null) => void
 }
 
 export type OffscreenPageApi = {
@@ -36,6 +42,8 @@ export type OffscreenPageApi = {
   /** `point` is window-client CSS px where the open select's menu should appear. */
   showSelectMenu(browserPageId: string, point: { x: number; y: number }): void
   readCaret(browserPageId: string): Promise<OffscreenPageCaret | null>
+  /** Replays a pointer move at `point` (window-client CSS px) so Orca shows a changed tooltip. */
+  refreshHover(browserPageId: string, point: { x: number; y: number }): void
   close(browserPageId: string): void
 }
 
@@ -77,9 +85,18 @@ function installFrameReceiver(): void {
   ipcRenderer.on('offscreen-page:event', (_e, pageId: string, event: OffscreenPageGuestEvent) => {
     attachments.get(pageId)?.listeners.onEvent(event)
   })
-  ipcRenderer.on('offscreen-page:cursor', (_e, pageId: string, cursorType: string) => {
-    attachments.get(pageId)?.listeners.onCursor(cursorType)
+  ipcRenderer.on('offscreen-page:cursor', (_e, pageId: string, cursor: string) => {
+    attachments.get(pageId)?.listeners.onCursor(cursor)
   })
+  ipcRenderer.on('offscreen-page:tooltip-changed', (_e, pageId: string, text: string) => {
+    attachments.get(pageId)?.listeners.onTooltip(text)
+  })
+  ipcRenderer.on(
+    'offscreen-page:datalist',
+    (_e, pageId: string, datalist: OffscreenPageDatalist | null) => {
+      attachments.get(pageId)?.listeners.onDatalist(datalist)
+    }
+  )
   ipcRenderer.on(
     'offscreen-page:select',
     (_e, pageId: string, anchor: OffscreenPageSelectAnchor) => {
@@ -104,6 +121,7 @@ export const offscreenPageApi: OffscreenPageApi = {
   setKeyboardFocus: (id, focused) => ipcRenderer.send('offscreenPage:keyboardFocus', id, focused),
   showSelectMenu: (id, point) => ipcRenderer.send('offscreenPage:selectMenu', id, point),
   readCaret: (id) => ipcRenderer.invoke('offscreenPage:caret', id),
+  refreshHover: (id, point) => ipcRenderer.send('offscreenPage:refreshHover', id, point),
   close: (id) => {
     attachments.delete(id)
     ipcRenderer.send('offscreenPage:close', id)

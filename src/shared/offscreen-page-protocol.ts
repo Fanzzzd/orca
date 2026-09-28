@@ -2,6 +2,18 @@ import { z } from 'zod'
 
 /** Custom element that stands in for <webview> when a browser page renders offscreen. */
 export const OFFSCREEN_PAGE_TAG = 'orca-offscreen-page'
+export type { OffscreenPageDatalistItem } from './offscreen-page-guest-channels'
+import type { OffscreenPageDatalistItem } from './offscreen-page-guest-channels'
+
+/** The datalist popup Orca draws over the page, in host CSS px relative to the page element. */
+export type OffscreenPageDatalist = {
+  rect: { x: number; y: number; width: number; height: number }
+  /** Host CSS px per page DIP, so rows keep the popup's native size. */
+  scale: number
+  items: OffscreenPageDatalistItem[]
+  selected: number | null
+  dark: boolean
+}
 
 // Why a closed schema: the renderer is the only sender, but it is still a separate process — main
 // validates every event before it reaches sendInputEvent or the page's debugger.
@@ -15,9 +27,14 @@ export const OffscreenPageUserInputSchema = z.discriminatedUnion('kind', [
     type: z.enum(['mouseDown', 'mouseUp', 'mouseMove', 'mouseEnter', 'mouseLeave']),
     x: coordinate,
     y: coordinate,
-    button: z.enum(['left', 'middle', 'right']).default('left'),
+    button: z.enum(['left', 'middle', 'right', 'back', 'forward']).default('left'),
     clickCount: z.number().int().min(0).max(3).default(1),
-    modifiers: modifiers.default([])
+    modifiers: modifiers.default([]),
+    // Why: pages read MouseEvent.buttons during moves (sliders, drawing, panning).
+    heldButtons: z
+      .array(z.enum(['left', 'middle', 'right']))
+      .max(3)
+      .default([])
   }),
   z.object({
     kind: z.literal('wheel'),
@@ -27,10 +44,16 @@ export const OffscreenPageUserInputSchema = z.discriminatedUnion('kind', [
     deltaY: coordinate,
     modifiers: modifiers.default([])
   }),
+  // A DOM KeyboardEvent as Orca's window saw it; `text` is what the key types, '' for none.
   z.object({
     kind: z.literal('key'),
-    type: z.enum(['keyDown', 'keyUp', 'char']),
-    keyCode: z.string().min(1).max(32),
+    type: z.enum(['keyDown', 'keyUp']),
+    key: z.string().min(1).max(32),
+    code: z.string().max(32),
+    keyCode: z.number().int().min(0).max(255),
+    location: z.number().int().min(0).max(3),
+    repeat: z.boolean(),
+    text: z.string().max(8),
     modifiers: modifiers.default([])
   }),
   // IME composition in progress: shown underlined in the page, not yet committed.

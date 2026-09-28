@@ -49,7 +49,17 @@ const createArgs = {
   src: 'https://example.com',
   viewport: { width: 800, height: 600, visible: true }
 }
-const keyInput = { kind: 'key', type: 'keyDown', keyCode: 'a', modifiers: [] }
+const keyInput = {
+  kind: 'key',
+  type: 'keyDown',
+  key: 'a',
+  code: 'KeyA',
+  keyCode: 65,
+  location: 0,
+  repeat: false,
+  text: 'a',
+  modifiers: []
+}
 
 describe('offscreen page IPC', () => {
   beforeEach(() => {

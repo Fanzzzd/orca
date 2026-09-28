@@ -30,11 +30,13 @@ const PROBE_HTML = `<!doctype html>
       #drag-source { position: absolute; left: 420px; top: 110px; width: 80px; height: 30px; background: #c33; }
       #drop-zone { position: absolute; left: 420px; top: 230px; width: 200px; height: 160px; background: #36c; }
       #scroller .filler { height: 4000px; }
+      #fruit { position: absolute; left: 560px; top: 40px; width: 160px; }
+      #frame { position: absolute; left: 40px; top: 420px; width: 200px; height: 80px; border: 0; }
     </style>
   </head>
   <body>
     <input id="field" aria-label="field" />
-    <button id="button">button</button>
+    <button id="button" title="Press me">button</button>
     <select id="choice" aria-label="choice">
       <option>alpha</option>
       <optgroup label="Later">
@@ -47,8 +49,21 @@ const PROBE_HTML = `<!doctype html>
     <div id="scroller"><div class="filler">needle</div></div>
     <div id="drag-source" role="button" draggable="true" aria-label="drag source">drag</div>
     <div id="drop-zone" role="button" aria-label="drop zone"></div>
+    <iframe id="frame" title="frame"></iframe>
+    <input id="fruit" list="fruits" aria-label="fruit" />
+    <datalist id="fruits">
+      <option>apple</option>
+      <option value="apricot">Apricot fruit</option>
+      <option>banana</option>
+    </datalist>
     <script>
+      // Why localhost: a different site from 127.0.0.1, so the frame is out-of-process.
+      if (location.search !== '?solo') {
+        document.getElementById('frame').src = location.origin.replace('127.0.0.1', 'localhost') + '/frame'
+      }
       window.__events = []
+      window.__frame = null
+      addEventListener('message', (event) => (window.__frame = event.data))
       const record = (event) => window.__events.push(event.type + ':' + event.isTrusted)
       document.getElementById('choice').addEventListener('change', record)
       document.getElementById('field').addEventListener('keydown', record)
@@ -67,14 +82,33 @@ const PROBE_HTML = `<!doctype html>
   </body>
 </html>`
 
+// Why postMessage: the frame is cross-site, so the page reads its state only from messages.
+const FRAME_HTML = `<!doctype html>
+<body style="margin:0">
+  <div title="Inside frame" style="height:80px; width:90px">f</div>
+  <input id="inner" style="position:absolute; left:100px; top:25px; width:90px" />
+  <script>
+    const inner = document.getElementById('inner')
+    const tell = () => parent.postMessage(document.activeElement.id + ':' + inner.value, '*')
+    inner.addEventListener('focus', tell)
+    inner.addEventListener('input', tell)
+    tell()
+  </script>
+</body>`
+
 async function startProbeServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const server: Server = createServer((request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     response.end(
-      request.url === '/popup' ? '<!doctype html><title>Offscreen popup</title>' : PROBE_HTML
+      request.url === '/popup'
+        ? '<!doctype html><title>Offscreen popup</title>'
+        : request.url === '/frame'
+          ? FRAME_HTML
+          : PROBE_HTML
     )
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  // Why no host: dual-stack, so the localhost frame loads whether it resolves to ::1 or 127.0.0.1.
+  await new Promise<void>((resolve) => server.listen(0, resolve))
   const address = server.address()
   if (address === null || typeof address === 'string') {
     throw new Error('Probe server did not bind a TCP port')
@@ -547,7 +581,9 @@ test.describe('offscreen browser pages', () => {
   })
 
   test('a page that dies under a live tab recovers', async ({ orcaPage, electronApp }) => {
-    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    // Why solo: Playwright drops its whole connection when a page with an out-of-process frame
+    // crashes; the app itself survives that (checked without Playwright).
+    const { pageId } = await openOffscreenTab(orcaPage, `${server.url}?solo`)
     const guestId = () =>
       pageElement(orcaPage, pageId).evaluate((element) => {
         try {
@@ -570,10 +606,14 @@ test.describe('offscreen browser pages', () => {
 
     // WebContents destroyed outright: the pane rebuilds the page.
     const beforeDestroy = await guestId()
-    await electronApp.evaluate(({ BrowserWindow, webContents }, id) => {
-      const contents = webContents.fromId(id)
-      const owner = contents ? BrowserWindow.fromWebContents(contents) : null
-      owner?.destroy()
+    // The page's hidden host window closing takes the page with it.
+    await electronApp.evaluate(({ BaseWindow, WebContentsView }, id) => {
+      const host = BaseWindow.getAllWindows().find((window) =>
+        window.contentView.children.some(
+          (view) => view instanceof WebContentsView && view.webContents.id === id
+        )
+      )
+      host?.destroy()
     }, beforeDestroy!)
     await expect
       .poll(
@@ -590,6 +630,90 @@ test.describe('offscreen browser pages', () => {
       })
       .toBe('Offscreen probe')
   })
+  test('page tooltips show on the page, from any frame', async ({ orcaPage }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    const title = () =>
+      pageElement(orcaPage, pageId).evaluate(
+        (element) => element.shadowRoot?.querySelector('canvas')?.getAttribute('title') ?? null
+      )
+    const hover = async (selector: string) => {
+      const point = await pointOf(orcaPage, pageId, selector)
+      await orcaPage.mouse.move(point.x, point.y)
+      await orcaPage.mouse.move(point.x + 1, point.y)
+    }
+    await hover('#button')
+    await expect.poll(title).toBe('Press me')
+    // The frame reports once it has loaded.
+    await expect.poll(() => evalInPage(orcaPage, pageId, 'window.__frame')).toBe(':')
+    await hover('#frame')
+    await expect.poll(title).toBe('Inside frame')
+    await hover('#field')
+    await expect.poll(title).toBeNull()
+  })
+
+  test('clicks and keys reach a cross-site frame, from the user and an agent', async ({
+    orcaPage
+  }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    const frameState = () => evalInPage(orcaPage, pageId, 'window.__frame')
+    // The frame reports once it has loaded, with nothing focused.
+    await expect.poll(frameState).toBe(':')
+    const rect = await evalInPage(
+      orcaPage,
+      pageId,
+      'JSON.stringify(document.getElementById("frame").getBoundingClientRect())'
+    )
+    const left = Number(Reflect.get(Object(rect), 'left'))
+    const top = Number(Reflect.get(Object(rect), 'top'))
+    await rpc(orcaPage, 'browser.mouseClick', { page: pageId, x: left + 145, y: top + 35 })
+    await expect.poll(frameState).toBe('inner:')
+
+    const field = await pointOf(orcaPage, pageId, '#field')
+    await orcaPage.mouse.click(field.x, field.y)
+    await expect.poll(() => evalInPage(orcaPage, pageId, 'document.activeElement.id')).toBe('field')
+    const frame = await rectOf(orcaPage, pageId, '#frame')
+    // The frame's input spans x 100 to 190 from y 25, in the frame's own px.
+    await orcaPage.mouse.click(frame.left + 145, frame.top + 35)
+    await orcaPage.keyboard.type('hi')
+    await expect.poll(frameState).toBe('inner:hi')
+  })
+
+  test('datalist suggestions show over the page and take keys', async ({ orcaPage }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    const popup = pageElement(orcaPage, pageId).locator('.datalist')
+    const rows = popup.locator('.datalist-row')
+    const selectedRow = () =>
+      rows.evaluateAll((elements) =>
+        elements.findIndex((row) => getComputedStyle(row).backgroundColor !== 'rgba(0, 0, 0, 0)')
+      )
+    const fruit = await pointOf(orcaPage, pageId, '#fruit')
+    await orcaPage.mouse.click(fruit.x, fruit.y)
+    await orcaPage.mouse.click(fruit.x, fruit.y)
+    await expect(rows).toHaveCount(3)
+    await expect(rows.nth(1)).toContainText('Apricot fruit')
+    // Drawn where the page put its popup: just under the field.
+    const box = await popup.boundingBox()
+    expect(Math.abs((box?.y ?? 0) - (fruit.y + 10))).toBeLessThan(20)
+
+    await orcaPage.keyboard.press('ArrowDown')
+    await orcaPage.keyboard.press('ArrowDown')
+    await expect.poll(selectedRow).toBe(1)
+    await orcaPage.keyboard.press('Enter')
+    await expect
+      .poll(() => evalInPage(orcaPage, pageId, 'document.getElementById("fruit").value'))
+      .toBe('apricot')
+    await expect(popup).toBeHidden()
+
+    // Typing narrows the list; Escape closes it and keeps the text.
+    await evalInPage(orcaPage, pageId, 'document.getElementById("fruit").value = ""; true')
+    await orcaPage.keyboard.type('ban')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('banana')
+    await orcaPage.keyboard.press('Escape')
+    await expect(popup).toBeHidden()
+    expect(await evalInPage(orcaPage, pageId, 'document.getElementById("fruit").value')).toBe('ban')
+  })
+
   test('browser shortcuts typed inside the page act on the page', async ({
     orcaPage,
     electronApp
@@ -663,26 +787,6 @@ test.describe('offscreen browser pages', () => {
       await electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), savedClipboard)
     }
 
-    // Focus address bar.
-    await orcaPage.keyboard.press(`${mod}+l`)
-    await expect(addressBar).toBeFocused()
-
-    // Find in page.
-    await focusField()
-    await orcaPage.keyboard.press(`${mod}+f`)
-    const findInput = orcaPage.getByPlaceholder('Find in page...')
-    await expect(findInput).toBeFocused()
-    await orcaPage.keyboard.press('Escape')
-    await expect(findInput).toBeHidden()
-
-    // Reload.
-    await evalInPage(orcaPage, pageId, 'window.__marker = "before-reload"')
-    await focusField()
-    await orcaPage.keyboard.press(`${mod}+r`)
-    await expect
-      .poll(() => evalInPage(orcaPage, pageId, 'String(window.__marker)'))
-      .toBe('undefined')
-
     // Why sendInputEvent: Playwright's CDP keys skip before-input-event, where real keys meet
     // Orca's window shortcut routing.
     const chord = (keyCode: string) =>
@@ -698,6 +802,26 @@ test.describe('offscreen browser pages', () => {
         },
         { key: keyCode, darwin: process.platform === 'darwin' }
       )
+    // Focus address bar.
+    await chord('l')
+    await expect(addressBar).toBeFocused()
+
+    // Find in page.
+    await focusField()
+    await chord('f')
+    const findInput = orcaPage.getByPlaceholder('Find in page...')
+    await expect(findInput).toBeFocused()
+    await orcaPage.keyboard.press('Escape')
+    await expect(findInput).toBeHidden()
+
+    // Reload.
+    await evalInPage(orcaPage, pageId, 'window.__marker = "before-reload"')
+    await focusField()
+    await chord('r')
+    await expect
+      .poll(() => evalInPage(orcaPage, pageId, 'String(window.__marker)'))
+      .toBe('undefined')
+
     // Zoom in and back to 100%, by chord and by ctrl+wheel; Orca's own zoom stays put.
     const pageZoom = () =>
       pageElement(orcaPage, pageId).evaluate((element) =>

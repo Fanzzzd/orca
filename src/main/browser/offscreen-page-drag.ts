@@ -1,7 +1,7 @@
 import type { WebContents } from 'electron'
 import type { OffscreenPageFileDrop } from '../../shared/offscreen-page-protocol'
-import { sendDebuggerCommand } from './browser-screencast-debugger-command'
-import { acquireElectronDebugger, type ElectronDebuggerLease } from './electron-debugger-lease'
+import type { OffscreenPageCdpSession } from './offscreen-page-cdp-session'
+import type { OffscreenPageFrames } from './offscreen-page-frames'
 
 type DragData = Record<string, unknown>
 
@@ -21,99 +21,104 @@ export type OffscreenPageDragBridge = {
  * user or an agent alike, is replayed as drag events until the button comes up.
  */
 export function createOffscreenPageDragBridge(
-  contents: WebContents,
-  acquireDebugger: typeof acquireElectronDebugger = acquireElectronDebugger
+  session: OffscreenPageCdpSession,
+  frames: OffscreenPageFrames,
+  contents: WebContents
 ): OffscreenPageDragBridge {
-  let lease: ElectronDebuggerLease | null = null
   let drag: { data: DragData; entered: boolean } | null = null
-  let disposed = false
+  // The frame target the drag is over, so leaving it can be told apart from moving within it.
+  let over: string | undefined
 
-  const dispatch = (params: Record<string, unknown>): Promise<unknown> =>
-    lease && !contents.isDestroyed()
-      ? sendDebuggerCommand(contents.debugger, 'Input.dispatchDragEvent', params).catch(() => {})
-      : Promise.resolve()
-  const send = (params: Record<string, unknown>): void => void dispatch(params)
-  const onMessage = (_event: unknown, method: string, params: unknown): void => {
-    if (method === 'Input.dragIntercepted' && isRecord(params) && isRecord(params.data)) {
-      drag = { data: params.data, entered: false }
-    }
-  }
-  const onDetach = (): void => {
-    lease?.release()
-    lease = null
-    drag = null
-  }
-  const onInput = (_event: unknown, input: unknown): void => {
-    // Why: interception lives on the debugger session; re-arm on the next input after a detach.
-    arm()
-    if (!drag || !isRecord(input) || typeof input.type !== 'string') {
+  /** Sends a drag event, at a main-frame CSS px point, to the frame under that point. */
+  const dispatch = (type: string, x: number, y: number, data: DragData): Promise<unknown> =>
+    frames
+      .inOrder(async () => {
+        const point = await frames.locate(x, y)
+        const send = (eventType: string, at: { x: number; y: number }, sessionId?: string) =>
+          session.send(
+            'Input.dispatchDragEvent',
+            { type: eventType, x: at.x, y: at.y, data },
+            sessionId
+          )
+        if (type !== 'dragEnter' && point.sessionId !== over) {
+          // Why: Blink hears a drag leave its frame only as a drag over a point outside it.
+          void send('dragOver', { x: -1, y: -1 }, over).catch(() => {})
+          if (type === 'dragOver') {
+            void send('dragEnter', point, point.sessionId).catch(() => {})
+          }
+        }
+        over = point.sessionId
+        return { reply: send(type, point, point.sessionId) }
+      })
+      .catch(() => {})
+  const onPointer = (type: 'move' | 'up' | 'cancel', x: number, y: number): void => {
+    if (!drag) {
       return
     }
-    const x = typeof input.x === 'number' ? input.x : 0
-    const y = typeof input.y === 'number' ? input.y : 0
     const { data } = drag
-    if (input.type === 'mouseMove') {
+    if (type === 'move') {
       if (!drag.entered) {
         drag.entered = true
-        send({ type: 'dragEnter', x, y, data })
+        void dispatch('dragEnter', x, y, data)
       }
-      send({ type: 'dragOver', x, y, data })
-    } else if (input.type === 'mouseUp') {
-      drag = null
-      send({ type: 'drop', x, y, data })
+      void dispatch('dragOver', x, y, data)
+      return
+    }
+    drag = null
+    void dispatch(type === 'up' ? 'drop' : 'dragCancel', x, y, data)
+  }
+  const stopMessages = session.onMessage((method, params) => {
+    if (method === 'Input.dragIntercepted' && isRecord(params.data)) {
+      drag = { data: params.data, entered: false }
+    }
+  })
+  // Input to the page's own widget, from the user or an agent; its points are DIPs.
+  const onInput = (_event: unknown, input: unknown): void => {
+    if (!isRecord(input) || typeof input.type !== 'string') {
+      return
+    }
+    const zoom = contents.getZoomFactor()
+    const x = (typeof input.x === 'number' ? input.x : 0) / zoom
+    const y = (typeof input.y === 'number' ? input.y : 0) / zoom
+    if (input.type === 'mouseMove' || input.type === 'mouseUp') {
+      onPointer(input.type === 'mouseMove' ? 'move' : 'up', x, y)
     } else if (
       input.type === 'mouseLeave' ||
       (input.type === 'rawKeyDown' && input.key === 'Escape')
     ) {
-      drag = null
-      send({ type: 'dragCancel', x, y, data })
+      onPointer('cancel', x, y)
     }
   }
-
-  function arm(): void {
-    if (disposed || lease || contents.isDestroyed()) {
-      return
-    }
-    try {
-      lease = acquireDebugger(contents)
-    } catch {
-      // DevTools owns the session; drags stay native-only until it lets go.
-      return
-    }
-    void sendDebuggerCommand(contents.debugger, 'Input.setInterceptDrags', { enabled: true }).catch(
-      () => {}
-    )
-  }
-
-  contents.debugger.on('message', onMessage)
-  contents.debugger.on('detach', onDetach)
   contents.on('input-event', onInput)
-  arm()
+  // Input Orca sent into an out-of-process iframe, which that widget alone sees.
+  const stopChildMouse = frames.onChildMouse((params) => {
+    if (params.type === 'mouseMoved' || params.type === 'mouseReleased') {
+      onPointer(params.type === 'mouseMoved' ? 'move' : 'up', params.x, params.y)
+    }
+  })
 
   return {
     async dropFiles(drop) {
-      arm()
-      const x = Math.round(drop.x)
-      const y = Math.round(drop.y)
+      const zoom = contents.getZoomFactor()
+      const [x, y] = [drop.x / zoom, drop.y / zoom]
       // Why mask 1 (copy): that is what an OS file drop offers a page.
       const data = { items: [], files: drop.files, dragOperationsMask: 1 }
       for (const type of ['dragEnter', 'dragOver', 'drop']) {
-        await dispatch({ type, x, y, data })
+        await dispatch(type, x, y, data)
       }
     },
     dispose() {
-      disposed = true
       drag = null
+      stopMessages()
+      stopChildMouse()
       if (!contents.isDestroyed()) {
-        contents.debugger.off('message', onMessage)
-        contents.debugger.off('detach', onDetach)
         contents.off('input-event', onInput)
       }
-      lease?.release()
-      lease = null
     }
   }
 }
+
+export const OFFSCREEN_PAGE_DRAG_SETUP = [['Input.setInterceptDrags', { enabled: true }]] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
