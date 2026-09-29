@@ -9,6 +9,7 @@ import { BrowserChromeToolbar } from './browser-chrome-toolbar'
 import { BrowserImportHintButton } from './BrowserImportHintButton'
 import { BrowserReloadControl } from './browser-reload-control'
 import { BrowserToolbarMenu } from './BrowserToolbarMenu'
+import { BrowserExtensionActions } from './browser-extension-actions'
 import { SshEgressIndicator } from './browser-egress-indicator'
 import { destroyPersistentWebview } from '../host-guest/webview-registry'
 import {
@@ -240,6 +241,7 @@ export function BrowserPageToolbar({
         ),
         disabled: !externalUrl
       }}
+      extensionActions={<BrowserExtensionActions browserPageId={browserPageId} loading={loading} />}
       // oxlint-disable-next-line react-doctor/no-unstable-nested-components -- BrowserChromeToolbar calls this as a function, so BrowserToolbarMenu stays one stable component.
       overflowMenu={(overflow) => (
         <BrowserToolbarMenu

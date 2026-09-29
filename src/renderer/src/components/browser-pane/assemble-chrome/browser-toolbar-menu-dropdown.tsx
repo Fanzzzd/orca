@@ -1,4 +1,4 @@
-import { Check, Ellipsis, FileCode2, Import, Monitor, Plus, Settings } from 'lucide-react'
+import { Check, Ellipsis, FileCode2, Import, Monitor, Plus, Puzzle, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -47,6 +47,8 @@ type BrowserToolbarMenuDropdownProps = {
   browserSessionImportState: { profileId: string; status: string } | null | undefined
   onImportFromBrowser: (browserFamily: string, browserProfile?: string) => void
   onImportFromFile: () => void
+  /** Opens the Chrome Web Store beside the page, in its profile; absent where extensions can't run. */
+  onGetExtensions?: () => void
   viewportPresetId: BrowserViewportPresetId | null
   onApplyViewportPreset: (nextId: BrowserViewportPresetId | null) => void
   onOpenSourceFile?: (() => void) | null
@@ -65,6 +67,7 @@ export function BrowserToolbarMenuDropdown({
   browserSessionImportState,
   onImportFromBrowser,
   onImportFromFile,
+  onGetExtensions,
   viewportPresetId,
   onApplyViewportPreset,
   onOpenSourceFile = null,
@@ -252,6 +255,15 @@ export function BrowserToolbarMenuDropdown({
 
         <DropdownMenuSeparator />
 
+        {onGetExtensions ? (
+          <DropdownMenuItem onSelect={onGetExtensions}>
+            <Puzzle className="mr-2 size-3.5" />
+            {translate(
+              'auto.components.browser.pane.BrowserToolbarMenu.getExtensions',
+              'Get Extensions…'
+            )}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           onSelect={() => {
             useAppStore.getState().openSettingsTarget({ pane: 'browser', repoId: null })
