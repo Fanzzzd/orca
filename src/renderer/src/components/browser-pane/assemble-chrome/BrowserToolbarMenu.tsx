@@ -12,6 +12,9 @@ import {
 import { BrowserToolbarMenuDropdown } from './browser-toolbar-menu-dropdown'
 import { BrowserToolbarProfileDialogs } from './browser-toolbar-profile-dialogs'
 import { translate } from '@/i18n/i18n'
+import { openLinkBesideBrowserPage } from '@/hooks/ipc-events/browser-state-ipc-bridge'
+
+const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/category/extensions'
 import type { BrowserChromeOverflowMenuProps } from './browser-chrome-folded-tools'
 
 type BrowserToolbarMenuProps = {
@@ -241,6 +244,7 @@ export function BrowserToolbarMenu({
         onImportFromBrowser={(browserFamily, browserProfile) =>
           void handleImportFromBrowser(browserFamily, browserProfile)
         }
+        onGetExtensions={() => openLinkBesideBrowserPage(browserPageId, CHROME_WEB_STORE_URL)}
         onImportFromFile={() => void handleImportFromFile()}
         viewportPresetId={viewportPresetId}
         onApplyViewportPreset={applyViewportPreset}

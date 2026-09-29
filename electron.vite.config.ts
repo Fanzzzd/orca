@@ -222,6 +222,9 @@ export const electronViteConfig: UserConfig = {
           index: resolve('src/main/index.ts'),
           // Why: sandboxed webview preloads cannot load Rollup helper chunks.
           'browser-window-close-preload': resolve('src/preload/browser-window-close.ts'),
+          'browser-extension-namespace-preload': resolve(
+            'src/preload/browser-extension-namespace.ts'
+          ),
           'doc-preview-link-preload': resolve('src/preload/doc-preview-link.ts'),
           'daemon-entry': resolve('src/main/daemon/daemon-entry.ts'),
           'plugin-host-entry': resolve('src/main/plugins/plugin-host-entry.ts'),
@@ -299,7 +302,8 @@ export const electronViteConfig: UserConfig = {
   preload: {
     build: {
       externalizeDeps: {
-        exclude: ['zod']
+        // Why bundle: the main window's preload is sandboxed and cannot require npm packages.
+        exclude: ['zod', 'electron-chrome-extensions']
       }
     }
   },

@@ -1,8 +1,17 @@
 import { ORCA_BROWSER_BLANK_URL } from '../../shared/constants'
 import { normalizeBrowserNavigationUrl } from '../../shared/browser-url'
+import { setBrowserExtensionTabOpener } from './browser-extension-tabs'
 import { BrowserManagerEventForwarding } from './browser-manager-event-forwarding'
 
 export abstract class BrowserManagerFinal extends BrowserManagerEventForwarding {
+  constructor() {
+    super()
+    setBrowserExtensionTabOpener((nextTo, url) => {
+      const pageId = this.tabIdByWebContentsId.get(nextTo.id)
+      return pageId !== undefined && this.openLinkInOrcaTab(pageId, url)
+    })
+  }
+
   protected openLinkInOrcaTab(browserTabId: string, rawUrl: string, activate?: boolean): boolean {
     const renderer = this.resolveRendererForBrowserTab(browserTabId)
     if (!renderer) {
