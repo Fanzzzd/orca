@@ -41,12 +41,8 @@ export function browserExtensionSessions(): Session[] {
 
 async function load(sess: Session, path: string): Promise<void> {
   try {
-    const extension = await sess.extensions.loadExtension(path)
-    const background: unknown = extension.manifest.background
-    // Why start it: an MV3 worker only runs when woken, and extensions expect theirs to be up.
-    if (Reflect.get(Object(background), 'service_worker')) {
-      await sess.serviceWorkers.startWorkerForScope(extension.url).catch(() => {})
-    }
+    // The API host starts its service worker once it is ready.
+    await sess.extensions.loadExtension(path)
   } catch (error) {
     console.error(`[browser-extensions] could not load ${path}:`, error)
   }
