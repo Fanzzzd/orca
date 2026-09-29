@@ -37,7 +37,13 @@ function enableBrowserExtensions(sess: Session): void {
       return window
     }
   })
-  registerBrowserExtensionTabs(sess, extensions)
+  registerBrowserExtensionTabs(sess, {
+    addTab: (tab, window) => extensions.addTab(tab, window),
+    selectTab: (tab) => extensions.selectTab(tab),
+    removeTab: (tab) => extensions.removeTab(tab),
+    getContextMenuItems: (tab, params) => extensions.getContextMenuItems(tab, params),
+    sendCommand: (extensionId, name, tab) => sendCommand(extensions, extensionId, name, tab)
+  })
   // Why after the library's preload: Electron gives extensions a native `browser` namespace
   // without the APIs the library adds to `chrome`, and extensions like 1Password use `browser`.
   for (const type of ['frame', 'service-worker'] as const) {
@@ -55,6 +61,21 @@ function enableBrowserExtensions(sess: Session): void {
     beforeInstall: confirmInstall
   }).catch((error: unknown) => console.error('[browser-extensions] setup failed:', error))
   autoUpdateStarted = true
+}
+
+/**
+ * chrome.commands.onCommand. Why the library's internals: it reads manifest commands but never
+ * dispatches them, and its event router is the only way into an extension's worker.
+ */
+function sendCommand(
+  extensions: ElectronChromeExtensions,
+  extensionId: string,
+  name: string,
+  tab: Electron.WebContents
+): void {
+  const router = Reflect.get(Reflect.get(extensions, 'ctx'), 'router')
+  const tabs = Reflect.get(Reflect.get(extensions, 'api'), 'tabs')
+  router.sendEvent(extensionId, 'commands.onCommand', name, tabs.getTabDetails(tab))
 }
 
 /** Asks before an "Add to Chrome" click installs, as Chrome does. */

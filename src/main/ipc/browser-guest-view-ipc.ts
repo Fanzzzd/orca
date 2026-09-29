@@ -1,5 +1,6 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { browserManager } from '../browser/browser-manager'
+import { runBrowserExtensionMenuItem } from '../browser/browser-extension-tabs'
 import { publishBrowserClientPageMetadata } from '../browser/browser-client-page-metadata-transport'
 import {
   BrowserClientPageMetadataParams,
@@ -22,6 +23,7 @@ export function registerBrowserGuestViewHandlers(): void {
   ipcMain.removeHandler('browser:acceptDownload')
   ipcMain.removeHandler('browser:cancelDownload')
   ipcMain.removeHandler('browser:publishClientPageMetadata')
+  ipcMain.removeAllListeners?.('browser:runExtensionMenuItem')
 
   ipcMain.handle('browser:openDevTools', (event, args: { browserPageId: string }) => {
     if (!isTrustedBrowserRenderer(event.sender)) {
@@ -98,6 +100,27 @@ export function registerBrowserGuestViewHandlers(): void {
         maxScrollLeft: Number(state.maxScrollLeft),
         maxScrollTop: Number(state.maxScrollTop)
       })
+    }
+  )
+
+  ipcMain.on?.(
+    'browser:runExtensionMenuItem',
+    (event, args: { browserPageId?: unknown; index?: unknown }) => {
+      if (
+        !isTrustedBrowserRenderer(event.sender) ||
+        typeof args?.browserPageId !== 'string' ||
+        !Number.isInteger(args.index)
+      ) {
+        return
+      }
+      const guest = browserManager.getAuthorizedGuest(args.browserPageId, event.sender.id)
+      if (guest) {
+        runBrowserExtensionMenuItem(
+          guest,
+          Number(args.index),
+          BrowserWindow.fromWebContents(event.sender)
+        )
+      }
     }
   )
 

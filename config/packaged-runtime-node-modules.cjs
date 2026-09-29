@@ -19,6 +19,9 @@ const PACKAGED_RUNTIME_PACKAGE_ROOTS = [
   '@electron-toolkit/utils',
   '@linear/sdk',
   '@parcel/watcher',
+  // Browser extensions: each resolves its own preload file from its package directory.
+  'electron-chrome-extensions',
+  'electron-chrome-web-store',
   'electron-updater',
   'i18next',
   'jsonc-parser',

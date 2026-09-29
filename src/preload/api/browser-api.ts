@@ -29,6 +29,7 @@ import type {
   BrowserDownloadFinishedEvent,
   BrowserDownloadProgressEvent,
   BrowserDownloadRequestedEvent,
+  BrowserExtensionActionRequestedEvent,
   BrowserPermissionDeniedEvent,
   BrowserPopupEvent
 } from '../../shared/browser-guest-events'
@@ -112,6 +113,10 @@ export type BrowserApi = {
   ) => () => void
   onContextMenuDismissed: (
     callback: (event: BrowserContextMenuDismissedEvent) => void
+  ) => () => void
+  runExtensionMenuItem: (args: { browserPageId: string; index: number }) => void
+  onExtensionActionRequested: (
+    callback: (event: BrowserExtensionActionRequestedEvent) => void
   ) => () => void
   onNavigationUpdate: (
     callback: (event: { browserPageId: string; url: string; title: string }) => void

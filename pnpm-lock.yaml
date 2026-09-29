@@ -116,6 +116,7 @@ patchedDependencies:
   '@xterm/addon-serialize@0.15.0-beta.300': b35533fe252e7e45433150170348889f4e08a6c17f7017ac34ea694d831fec7f
   '@xterm/addon-webgl@0.20.0-beta.299': 94687e89a0115e6e6aa102837f986debdc029c091527ee5eb4a4e17ceaf9473e
   '@xterm/xterm@6.1.0-beta.303': dd0ccc59cd1ccf99f4d76e5aa2456da165fa0804dce19a833d7638bd07ffa393
+  electron-chrome-extensions@4.9.0: f90df4ac6101e8fc269dd13b5aaa02c087130bba38c61f0cfdfe084f9c66c6db
   lint-staged@16.4.0: 7333b3837f80a7fbd045964db6d76ba4fc118e49134bdbabb00585b6b7b60673
   node-pty@1.1.0: 92c95cffab383d86b3b13a460c75a08074468ebf1f3911db8e874e083201f192
 
@@ -152,7 +153,7 @@ importers:
         version: 0.27.0
       electron-chrome-extensions:
         specifier: 4.9.0
-        version: 4.9.0(supports-color@7.2.0)
+        version: 4.9.0(patch_hash=f90df4ac6101e8fc269dd13b5aaa02c087130bba38c61f0cfdfe084f9c66c6db)(supports-color@7.2.0)
       electron-chrome-web-store:
         specifier: 0.13.0
         version: 0.13.0(supports-color@7.2.0)
@@ -11559,7 +11560,7 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-chrome-extensions@4.9.0(supports-color@7.2.0):
+  electron-chrome-extensions@4.9.0(patch_hash=f90df4ac6101e8fc269dd13b5aaa02c087130bba38c61f0cfdfe084f9c66c6db)(supports-color@7.2.0):
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:

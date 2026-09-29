@@ -63,13 +63,14 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     this.certificateTrustController?.onGuestRegistered(webContentsId, browserTabId)
 
     this.setupContextMenu(browserTabId, guest)
-    const renderer = webContents.fromId(rendererWebContentsId)
-    if (renderer) {
-      trackBrowserExtensionTab(guest, renderer)
-    }
     this.setupGrabShortcut(browserTabId, guest)
     this.setupShortcutForwarding(browserTabId, guest)
     this.setupMouseWheelZoomForwarding(browserTabId, guest)
+    const renderer = webContents.fromId(rendererWebContentsId)
+    if (renderer) {
+      // After Orca's shortcut listeners, so an Orca shortcut wins over an extension's.
+      trackBrowserExtensionTab(guest, renderer)
+    }
     this.flushPendingLoadFailure(browserTabId, webContentsId)
     this.flushPendingPermissionEvents(browserTabId, webContentsId)
     this.flushPendingPopupEvents(browserTabId, webContentsId)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { webviewRegistry } from '../host-guest/webview-registry'
 
 type ExtensionTab = { partition: string; tabId: number }
@@ -13,6 +13,7 @@ declare module 'react' {
         tab: number
         alignment: string
         className?: string
+        ref?: React.Ref<HTMLElement>
       }
     }
   }
@@ -28,6 +29,7 @@ export function BrowserExtensionActions({
   loading: boolean
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<ExtensionTab | null>(null)
+  const listRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const webview = webviewRegistry.get(browserPageId)
@@ -48,11 +50,22 @@ export function BrowserExtensionActions({
     }
   }, [browserPageId, loading])
 
+  const tabId = tab?.tabId
+  useEffect(() => {
+    return window.api.browser.onExtensionActionRequested((event) => {
+      if (event.tabId === tabId) {
+        // Clicking the button opens the popup anchored under it, as Chrome does.
+        listRef.current?.shadowRoot?.getElementById(event.extensionId)?.click()
+      }
+    })
+  }, [tabId])
+
   if (!tab) {
     return null
   }
   return (
     <browser-action-list
+      ref={listRef}
       className="flex h-7 items-center"
       partition={tab.partition}
       tab={tab.tabId}

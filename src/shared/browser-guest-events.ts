@@ -56,6 +56,23 @@ export type BrowserContextMenuRequestedEvent = {
   selectionText: string
   canGoBack: boolean
   canGoForward: boolean
+  /** Entries the page's Chrome extensions add; absent from hosts without extension support. */
+  extensionMenuItems?: BrowserExtensionMenuItem[]
+}
+
+/** A chrome.contextMenus entry; `index` names it when the renderer asks main to run it. */
+export type BrowserExtensionMenuItem = {
+  index: number
+  label: string
+  enabled: boolean
+  hasSubmenu: boolean
+  iconDataUrl: string | null
+}
+
+/** An extension's popup shortcut was pressed in the page whose guest WebContents id is tabId. */
+export type BrowserExtensionActionRequestedEvent = {
+  tabId: number
+  extensionId: string
 }
 
 export type BrowserContextMenuDismissedEvent = {
