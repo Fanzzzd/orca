@@ -143,6 +143,13 @@ export function installExtensionApiHost(session: Session, preloadPath: string): 
       filePath: preloadPath
     })
   }
+  // Why start it: a worker registers its event listeners as its script first runs, and events
+  // reach only contexts that registered; Chrome instead remembers listeners across restarts.
+  session.extensions.on('extension-ready', (_event, extension) => {
+    if (Reflect.get(Object(extension.manifest.background), 'service_worker')) {
+      session.serviceWorkers.startWorkerForScope(extension.url).catch(() => {})
+    }
+  })
   // Why at "starting": the worker registers listeners as its script first runs, before "running".
   session.serviceWorkers.on('running-status-changed', ({ versionId }) => {
     const worker = session.serviceWorkers.getWorkerFromVersionID(versionId)
