@@ -12,10 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@renderer': resolve('src/renderer/src'),
-      '@': resolve('src/renderer/src'),
-      'electron-chrome-extensions/browser-action': resolve(
-        'config/scripts/vitest-browser-action-stub.ts'
-      )
+      '@': resolve('src/renderer/src')
     }
   },
   test: {

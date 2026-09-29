@@ -4,7 +4,7 @@ import {
   normalizeExternalBrowserUrl,
   redactKagiSessionToken
 } from '../../shared/browser-url'
-import { getBrowserExtensionMenuItems } from './browser-extension-tabs'
+import { getBrowserExtensionMenuItems } from './extensions/extension-context-menus'
 import { readGuestNavigationState } from './browser-guest-navigation-state'
 import type { ResolveRenderer } from './browser-guest-renderer-target'
 

@@ -207,6 +207,20 @@
         "optionNativeTooltip": "Keeps Electron's built-in identity for sites that reject the cleaned identity. Google sign-in is unavailable in Native mode.",
         "restartRequired": "Restart required",
         "unavailable": "Browser identity is unavailable."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Chrome extensions installed in Orca's browser from the Chrome Web Store.",
+        "keyword": {
+          "extension": "extension",
+          "chrome": "chrome",
+          "password": "password manager"
+        },
+        "options": "Options",
+        "remove": "Remove",
+        "confirmRemove": "Confirm remove",
+        "help": "Open chromewebstore.google.com in an Orca browser tab and choose \"Add to Chrome\" to install one. Extensions run in browser tabs on this computer.",
+        "empty": "No extensions installed."
       }
     }
   },
@@ -17428,7 +17442,11 @@
           "installTitle": "Add \"{{name}}\"?",
           "installDetail": "It can read and change your data on the sites you visit in Orca's browser.",
           "installConfirm": "Add extension",
-          "installCancel": "Cancel"
+          "installCancel": "Cancel",
+          "removeTitle": "Remove \"{{name}}\"?",
+          "removeConfirm": "Remove",
+          "remove": "Remove from Orca…",
+          "options": "Options"
         }
       },
       "window": {

@@ -1,7 +1,7 @@
 /**
  * Chrome extensions in Orca's browser: an extension's service worker gets the chrome.* APIs
  * Electron lacks, under both `chrome` and `browser`, its content scripts reach it, and its
- * toolbar button shows beside the page.
+ * toolbar button shows beside the page with its badge and opens its popup.
  */
 import { test, expect } from './helpers/orca-app'
 import {
@@ -13,12 +13,17 @@ import {
 
 // Why `browser` and module type: 1Password's worker is a module and uses the `browser` namespace.
 const SERVICE_WORKER = `
-browser.runtime.onMessage.addListener((_message, _sender, reply) => {
-  reply({
-    windows: typeof browser.windows?.getAll,
-    contextMenus: typeof browser.contextMenus?.create,
-    sameNamespace: browser === chrome
-  })
+browser.runtime.onMessage.addListener((_message, sender, reply) => {
+  browser.tabs.query({ active: true, currentWindow: true }).then((tabs) =>
+    reply({
+      windows: typeof browser.windows?.getAll,
+      contextMenus: typeof browser.contextMenus?.create,
+      sameNamespace: browser === chrome,
+      activeTabIsSender: tabs.length === 1 && tabs[0].id === sender.tab?.id
+    })
+  )
+  browser.action.setBadgeText({ text: '7' })
+  return true
 })
 `
 
@@ -60,8 +65,27 @@ test('an installed extension runs with the full chrome API and shows a toolbar b
       .poll(() =>
         evalInPage(orcaPage, pageId, 'document.documentElement.dataset.extension ?? null')
       )
-      .toBe(JSON.stringify({ windows: 'function', contextMenus: 'function', sameNamespace: true }))
-    await expect(orcaPage.locator('browser-action-list button').first()).toBeVisible()
+      .toBe(
+        JSON.stringify({
+          windows: 'function',
+          contextMenus: 'function',
+          sameNamespace: true,
+          activeTabIsSender: true
+        })
+      )
+    const button = orcaPage.locator('[data-testid="browser-extension-actions"] button').first()
+    await expect(button).toHaveAttribute('title', 'Orca e2e extension')
+    await expect(button).toHaveText('7')
+
+    // Clicking the button opens the extension's popup page in its own window under the button.
+    await button.click()
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ webContents }) =>
+          webContents.getAllWebContents().some((wc) => wc.getURL().endsWith('/popup.html'))
+        )
+      )
+      .toBe(true)
   } finally {
     await server.close()
   }

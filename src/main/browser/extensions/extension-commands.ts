@@ -94,3 +94,43 @@ function matchesShortcut(
   }
   return input.key === (NAMED_KEYS[key] ?? key)
 }
+
+const MAC_MODIFIER_SYMBOLS: [string, string][] = [
+  ['MacCtrl', '⌃'],
+  ['Alt', '⌥'],
+  ['Shift', '⇧'],
+  ['Command', '⌘'],
+  ['Ctrl', '⌘']
+]
+
+/** chrome.commands.getAll: the manifest's commands with shortcuts written as Chrome shows them. */
+export function listBrowserExtensionCommands(
+  extension: Pick<Electron.Extension, 'manifest'>,
+  platform: NodeJS.Platform
+): { name: string; description: string; shortcut: string }[] {
+  const commands: unknown = extension.manifest.commands
+  if (typeof commands !== 'object' || commands === null) {
+    return []
+  }
+  return Object.entries(commands).map(([name, command]) => {
+    const shortcut = readSuggestedKey(command, platform) ?? ''
+    const description: unknown = Reflect.get(Object(command), 'description')
+    return {
+      name,
+      description: typeof description === 'string' ? description : '',
+      shortcut: platform === 'darwin' ? macShortcutLabel(shortcut) : shortcut
+    }
+  })
+}
+
+function macShortcutLabel(shortcut: string): string {
+  if (!shortcut) {
+    return ''
+  }
+  const parts = shortcut.split('+').map((part) => part.trim())
+  const key = parts.pop() ?? ''
+  const symbols = MAC_MODIFIER_SYMBOLS.filter(([name]) => parts.includes(name)).map(
+    ([, symbol]) => symbol
+  )
+  return [...new Set(symbols)].join('') + key
+}

@@ -90,6 +90,20 @@
         "optionNativeTooltip": "对于拒绝清理身份的站点，保留 Electron 的内置身份。 Google 登录在本机模式下不可用。",
         "restartRequired": "需要重新启动",
         "unavailable": "浏览器身份不可用。"
+      },
+      "extensions": {
+        "title": "扩展程序",
+        "description": "从 Chrome 应用商店安装到 Orca 浏览器的 Chrome 扩展程序。",
+        "keyword": {
+          "extension": "扩展",
+          "chrome": "chrome",
+          "password": "密码管理器"
+        },
+        "options": "选项",
+        "remove": "移除",
+        "confirmRemove": "确认移除",
+        "help": "在 Orca 浏览器标签页中打开 chromewebstore.google.com，点“添加至 Chrome”即可安装。扩展程序在本机的浏览器标签页中运行。",
+        "empty": "还没有安装扩展程序。"
       }
     }
   },
@@ -17302,7 +17316,11 @@
           "installTitle": "添加“{{name}}”？",
           "installDetail": "它可以读取和更改你在 Orca 浏览器中访问的网站上的数据。",
           "installConfirm": "添加扩展程序",
-          "installCancel": "取消"
+          "installCancel": "取消",
+          "removeTitle": "移除“{{name}}”？",
+          "removeConfirm": "移除",
+          "remove": "从 Orca 中移除…",
+          "options": "选项"
         }
       },
       "window": {

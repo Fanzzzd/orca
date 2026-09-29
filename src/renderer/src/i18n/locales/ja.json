@@ -90,6 +90,20 @@
         "optionNativeTooltip": "クリーンアップされた ID を拒否するサイトのために Electron の組み込み ID を保持します。 Google サインインはネイティブモードでは利用できません。",
         "restartRequired": "再起動が必要です",
         "unavailable": "ブラウザ ID が利用できません。"
+      },
+      "extensions": {
+        "title": "拡張機能",
+        "description": "Chrome ウェブストアから Orca のブラウザにインストールした Chrome 拡張機能。",
+        "keyword": {
+          "extension": "拡張機能",
+          "chrome": "chrome",
+          "password": "パスワードマネージャー"
+        },
+        "options": "オプション",
+        "remove": "削除",
+        "confirmRemove": "削除を確認",
+        "help": "Orca のブラウザタブで chromewebstore.google.com を開き、「Chrome に追加」を選ぶとインストールできます。拡張機能はこのコンピューター上のブラウザタブで動作します。",
+        "empty": "インストール済みの拡張機能はありません。"
       }
     }
   },
@@ -17302,7 +17316,11 @@
           "installTitle": "「{{name}}」を追加しますか？",
           "installDetail": "Orca のブラウザでアクセスするサイト上のデータを読み取り、変更できます。",
           "installConfirm": "拡張機能を追加",
-          "installCancel": "キャンセル"
+          "installCancel": "キャンセル",
+          "removeTitle": "「{{name}}」を削除しますか？",
+          "removeConfirm": "削除",
+          "remove": "Orca から削除…",
+          "options": "オプション"
         }
       },
       "window": {

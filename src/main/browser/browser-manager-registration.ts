@@ -1,5 +1,5 @@
 import { webContents } from 'electron'
-import { trackBrowserExtensionTab, untrackBrowserExtensionTab } from './browser-extension-tabs'
+import { trackExtensionTab, untrackExtensionTab } from './extensions/extension-tab-registry'
 import { browserDownloadDestinationReservations } from './browser-download-destination'
 import { isWorkspaceDocPageId } from './doc-preview-guest-policy'
 import type { BrowserGuestRegistration } from './browser-manager-types'
@@ -69,7 +69,7 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     const renderer = webContents.fromId(rendererWebContentsId)
     if (renderer) {
       // After Orca's shortcut listeners, so an Orca shortcut wins over an extension's.
-      trackBrowserExtensionTab(guest, renderer)
+      trackExtensionTab(guest, renderer)
     }
     this.flushPendingLoadFailure(browserTabId, webContentsId)
     this.flushPendingPermissionEvents(browserTabId, webContentsId)
@@ -96,7 +96,7 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     const guestWebContents =
       guestWebContentsId === undefined ? undefined : webContents.fromId(guestWebContentsId)
     if (guestWebContents) {
-      untrackBrowserExtensionTab(guestWebContents)
+      untrackExtensionTab(guestWebContents)
     }
     if (guestWebContentsId !== undefined) {
       this.cleanupGuestPolicyAttachment(guestWebContentsId)

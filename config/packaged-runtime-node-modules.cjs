@@ -19,8 +19,7 @@ const PACKAGED_RUNTIME_PACKAGE_ROOTS = [
   '@electron-toolkit/utils',
   '@linear/sdk',
   '@parcel/watcher',
-  // Browser extensions: each resolves its own preload file from its package directory.
-  'electron-chrome-extensions',
+  // The Chrome Web Store installer resolves its preload file from its package directory.
   'electron-chrome-web-store',
   'electron-updater',
   'i18next',

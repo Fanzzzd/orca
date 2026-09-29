@@ -1,3 +1,4 @@
+import type { BrowserExtensionsApi } from './browser-extensions-api'
 import type { BrowserSetAnnotationViewportBridgeArgs } from '../../shared/browser-annotation-viewport-bridge'
 import type {
   BrowserIdentityModeSetResult,
@@ -29,7 +30,6 @@ import type {
   BrowserDownloadFinishedEvent,
   BrowserDownloadProgressEvent,
   BrowserDownloadRequestedEvent,
-  BrowserExtensionActionRequestedEvent,
   BrowserPermissionDeniedEvent,
   BrowserPopupEvent
 } from '../../shared/browser-guest-events'
@@ -49,7 +49,7 @@ import type {
   BrowserClientPageRendererRequest
 } from '../../shared/browser-client-page-renderer-protocol'
 
-export type BrowserApi = {
+export type BrowserApi = BrowserExtensionsApi & {
   /** Absent wherever this client hosts no guests of its own, which is how the web client reads. */
   readClientHostId?: () => string | null
   onClientPageRendererRequest?: (
@@ -113,10 +113,6 @@ export type BrowserApi = {
   ) => () => void
   onContextMenuDismissed: (
     callback: (event: BrowserContextMenuDismissedEvent) => void
-  ) => () => void
-  runExtensionMenuItem: (args: { browserPageId: string; index: number }) => void
-  onExtensionActionRequested: (
-    callback: (event: BrowserExtensionActionRequestedEvent) => void
   ) => () => void
   onNavigationUpdate: (
     callback: (event: { browserPageId: string; url: string; title: string }) => void

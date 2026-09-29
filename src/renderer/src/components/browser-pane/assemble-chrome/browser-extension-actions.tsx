@@ -1,36 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Puzzle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import type { BrowserExtensionAction } from '../../../../../shared/browser-guest-events'
 import { webviewRegistry } from '../host-guest/webview-registry'
 
-type ExtensionTab = { partition: string; tabId: number }
-
-declare module 'react' {
-  namespace JSX {
-    // oxlint-disable-next-line typescript/consistent-type-definitions -- augmenting React's JSX types needs interface merging.
-    interface IntrinsicElements {
-      /** electron-chrome-extensions' toolbar buttons, defined by the main window's preload. */
-      'browser-action-list': {
-        partition: string
-        tab: number
-        alignment: string
-        className?: string
-        ref?: React.Ref<HTMLElement>
-      }
-    }
-  }
-}
-
-/** The page's extension buttons; each opens its extension's popup against this tab. */
-export function BrowserExtensionActions({
-  browserPageId,
-  loading
-}: {
-  browserPageId: string
-  /** Why a dependency: each load is when a new or replaced guest has become readable. */
-  loading: boolean
-}): React.JSX.Element | null {
-  const [tab, setTab] = useState<ExtensionTab | null>(null)
-  const listRef = useRef<HTMLElement>(null)
-
+/** The guest WebContents id, which main names the page by in extension events. */
+function useGuestWebContentsId(browserPageId: string, loading: boolean): number | null {
+  const [id, setId] = useState<number | null>(null)
   useEffect(() => {
     const webview = webviewRegistry.get(browserPageId)
     if (!webview) {
@@ -38,10 +14,7 @@ export function BrowserExtensionActions({
     }
     const read = (): void => {
       try {
-        const next = { partition: webview.partition, tabId: webview.getWebContentsId() }
-        setTab((prev) =>
-          prev?.partition === next.partition && prev.tabId === next.tabId ? prev : next
-        )
+        setId(webview.getWebContentsId())
       } catch {
         // Not attached yet; dom-ready reads it again.
       }
@@ -52,27 +25,109 @@ export function BrowserExtensionActions({
       webview.removeEventListener('dom-ready', read)
     }
   }, [browserPageId, loading])
+  return id
+}
 
-  const tabId = tab?.tabId
+/** The page's extension buttons; each opens its extension's popup against this page. */
+export function BrowserExtensionActions({
+  browserPageId,
+  loading
+}: {
+  browserPageId: string
+  /** Why a dependency: each load is when a new or replaced guest has become readable. */
+  loading: boolean
+}): React.JSX.Element | null {
+  const [actions, setActions] = useState<BrowserExtensionAction[]>([])
+  const buttons = useRef(new Map<string, HTMLButtonElement>())
+  const guestId = useGuestWebContentsId(browserPageId, loading)
+
   useEffect(() => {
-    return window.api.browser.onExtensionActionRequested((event) => {
-      if (event.tabId === tabId) {
-        // Clicking the button opens the popup anchored under it, as Chrome does.
-        listRef.current?.shadowRoot?.getElementById(event.extensionId)?.click()
-      }
-    })
-  }, [tabId])
+    let current = true
+    const refresh = (): void =>
+      void window.api.browser.extensionActions({ browserPageId }).then((next) => {
+        if (current) {
+          setActions(next)
+        }
+      })
+    refresh()
+    const unsubscribe = window.api.browser.onExtensionActionsChanged(refresh)
+    return () => {
+      current = false
+      unsubscribe()
+    }
+  }, [browserPageId, guestId])
 
-  if (!tab) {
+  const activate = useCallback(
+    (extensionId: string) => {
+      const rect = buttons.current.get(extensionId)?.getBoundingClientRect()
+      if (rect) {
+        const anchor = { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        window.api.browser.activateExtensionAction({ browserPageId, extensionId, anchor })
+      }
+    },
+    [browserPageId]
+  )
+
+  useEffect(
+    () =>
+      window.api.browser.onExtensionActionRequested((event) => {
+        if (event.tabId === guestId) {
+          activate(event.extensionId)
+        }
+      }),
+    [guestId, activate]
+  )
+
+  if (actions.length === 0) {
     return null
   }
   return (
-    <browser-action-list
-      ref={listRef}
-      className="flex h-7 items-center"
-      partition={tab.partition}
-      tab={tab.tabId}
-      alignment="bottom right"
-    />
+    <div className="flex items-center" data-testid="browser-extension-actions">
+      {actions.map((action) => (
+        <Button
+          key={action.extensionId}
+          ref={(node) => {
+            if (node) {
+              buttons.current.set(action.extensionId, node)
+            } else {
+              buttons.current.delete(action.extensionId)
+            }
+          }}
+          size="icon"
+          variant="ghost"
+          className="relative h-7 w-7"
+          title={action.title}
+          aria-label={action.title}
+          data-extension-id={action.extensionId}
+          disabled={!action.enabled}
+          onClick={() => activate(action.extensionId)}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            window.api.browser.showExtensionActionMenu({
+              browserPageId,
+              extensionId: action.extensionId
+            })
+          }}
+        >
+          {action.iconDataUrl ? (
+            <img src={action.iconDataUrl} alt="" className="size-4" draggable={false} />
+          ) : (
+            <Puzzle className="size-4" />
+          )}
+          {action.badgeText ? (
+            <span
+              className="pointer-events-none absolute right-0 bottom-0 max-w-full truncate rounded-sm bg-muted-foreground px-0.5 text-[9px] leading-3 text-background"
+              // Extensions pick their badge colors; unset ones keep the toolbar's.
+              style={{
+                backgroundColor: action.badgeBackgroundColor ?? undefined,
+                color: action.badgeTextColor ?? undefined
+              }}
+            >
+              {action.badgeText}
+            </span>
+          ) : null}
+        </Button>
+      ))}
+    </div>
   )
 }

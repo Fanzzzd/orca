@@ -41,6 +41,22 @@
         "title": "Mostrar icono en la barra de menús",
         "description": "Mantén un acceso directo de Orca e indicador de actividad en la barra de menús de macOS."
       }
+    },
+    "browser": {
+      "extensions": {
+        "title": "Extensiones",
+        "description": "Extensiones de Chrome instaladas en el navegador de Orca desde Chrome Web Store.",
+        "keyword": {
+          "extension": "extensión",
+          "chrome": "chrome",
+          "password": "gestor de contraseñas"
+        },
+        "options": "Opciones",
+        "remove": "Quitar",
+        "confirmRemove": "Confirmar",
+        "help": "Abre chromewebstore.google.com en una pestaña del navegador de Orca y elige \"Añadir a Chrome\" para instalar una. Las extensiones se ejecutan en las pestañas de este equipo.",
+        "empty": "No hay extensiones instaladas."
+      }
     }
   },
   "menu": {
@@ -14918,7 +14934,11 @@
           "installTitle": "¿Añadir \"{{name}}\"?",
           "installDetail": "Puede leer y cambiar tus datos en los sitios que visitas en el navegador de Orca.",
           "installConfirm": "Añadir extensión",
-          "installCancel": "Cancelar"
+          "installCancel": "Cancelar",
+          "removeTitle": "¿Quitar \"{{name}}\"?",
+          "removeConfirm": "Quitar",
+          "remove": "Quitar de Orca…",
+          "options": "Opciones"
         }
       },
       "window": {

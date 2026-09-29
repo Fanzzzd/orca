@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { injectBrowserAction } from 'electron-chrome-extensions/browser-action'
 import type { PreloadApi } from './api-types'
 import {
   installBrowserFindListener,
@@ -187,9 +186,6 @@ const api = {
   agentStatus: agentStatusApi,
   speech: speechApi
 } satisfies PreloadApi
-
-// Defines <browser-action-list>, the browser toolbar's extension buttons.
-injectBrowserAction()
 
 if (process.contextIsolated) {
   try {
