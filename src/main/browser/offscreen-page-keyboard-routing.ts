@@ -17,6 +17,21 @@ import {
 const contextByPageId = new Map<string, GuestShortcutForwardContext>()
 const focusedPageByRenderer = new Map<number, string>()
 const ctrlTabSwitchingRenderers = new Set<number>()
+// Keys the page itself claims after Orca's shortcuts, e.g. its Chrome extensions' shortcuts.
+type PageKeyHandler = (
+  event: Electron.Event,
+  input: GuestShortcutInput & { type: string }
+) => boolean
+const pageKeyHandlerByPageId = new Map<string, PageKeyHandler>()
+
+/** Runs after Orca's own shortcuts for keys typed into the page; null removes it. */
+export function setOffscreenPageKeyHandler(pageId: string, handler: PageKeyHandler | null): void {
+  if (handler) {
+    pageKeyHandlerByPageId.set(pageId, handler)
+  } else {
+    pageKeyHandlerByPageId.delete(pageId)
+  }
+}
 
 export function setOffscreenPageShortcutContext(
   browserPageId: string,
@@ -90,7 +105,13 @@ export function routeOffscreenPageShortcut(
     renderer?.send('ui:ctrlTabKeyUp')
     return true
   }
-  return input.type === 'keyDown' ? forwardGuestShortcutInput(context, event, input) : false
+  if (input.type !== 'keyDown') {
+    return false
+  }
+  return (
+    forwardGuestShortcutInput(context, event, input) ||
+    (pageKeyHandlerByPageId.get(context.browserTabId)?.(event, input) ?? false)
+  )
 }
 
 /** Native zoom commands (menu or layout-specific chords) zoom the focused page, not Orca. */

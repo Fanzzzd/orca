@@ -13,7 +13,11 @@ import {
   setupGuestShortcutForwarding,
   type GuestShortcutForwardingArgs
 } from './browser-guest-shortcut-forwarding'
-import { setOffscreenPageShortcutContext } from './offscreen-page-keyboard-routing'
+import {
+  setOffscreenPageKeyHandler,
+  setOffscreenPageShortcutContext
+} from './offscreen-page-keyboard-routing'
+import { runExtensionShortcut } from './extensions/extension-tab-registry'
 import { BrowserManagerGrab } from './browser-manager-grab'
 
 export abstract class BrowserManagerBindings extends BrowserManagerGrab {
@@ -112,9 +116,14 @@ export abstract class BrowserManagerBindings extends BrowserManagerGrab {
     const args = this.shortcutForwardingArgs(browserTabId)
     if (isOffscreen) {
       setOffscreenPageShortcutContext(browserTabId, createGuestShortcutForwardContext(args))
-      this.shortcutForwardingCleanupByTabId.set(browserTabId, () =>
-        setOffscreenPageShortcutContext(browserTabId, null)
+      // Why here: CDP-delivered keys skip before-input-event, where webview pages run these.
+      setOffscreenPageKeyHandler(browserTabId, (event, input) =>
+        runExtensionShortcut(guest, event, input)
       )
+      this.shortcutForwardingCleanupByTabId.set(browserTabId, () => {
+        setOffscreenPageShortcutContext(browserTabId, null)
+        setOffscreenPageKeyHandler(browserTabId, null)
+      })
       return
     }
     this.shortcutForwardingCleanupByTabId.set(
