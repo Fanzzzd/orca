@@ -17297,6 +17297,14 @@
       }
     },
     "main": {
+      "browser": {
+        "browserExtensions": {
+          "installTitle": "添加“{{name}}”？",
+          "installDetail": "它可以读取和更改你在 Orca 浏览器中访问的网站上的数据。",
+          "installConfirm": "添加扩展程序",
+          "installCancel": "取消"
+        }
+      },
       "window": {
         "editableContextMenu": {
           "table": "表格",

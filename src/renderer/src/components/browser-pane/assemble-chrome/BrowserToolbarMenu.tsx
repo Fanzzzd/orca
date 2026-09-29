@@ -12,10 +12,13 @@ import {
 import { BrowserToolbarMenuDropdown } from './browser-toolbar-menu-dropdown'
 import { BrowserToolbarProfileDialogs } from './browser-toolbar-profile-dialogs'
 import { translate } from '@/i18n/i18n'
-import { openLinkBesideBrowserPage } from '@/hooks/ipc-events/browser-state-ipc-bridge'
+import {
+  canOpenLinkBesideBrowserPage,
+  openLinkBesideBrowserPage
+} from '@/lib/browser-open-link-beside-page'
+import type { BrowserChromeOverflowMenuProps } from './browser-chrome-folded-tools'
 
 const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/category/extensions'
-import type { BrowserChromeOverflowMenuProps } from './browser-chrome-folded-tools'
 
 type BrowserToolbarMenuProps = {
   currentProfileId: string | null
@@ -50,6 +53,8 @@ export function BrowserToolbarMenu({
   )
   const browserImportHintHidden = useAppStore((s) => s.browserImportHintHidden)
   const persistedUIReady = useAppStore((s) => s.persistedUIReady)
+  // Extensions run in this desktop's browser sessions, so a remote runtime's page has no store to open.
+  const canGetExtensions = useAppStore((s) => canOpenLinkBesideBrowserPage(s, browserPageId))
   // The tour prefers the always-visible Import button; only force this overflow
   // menu open to expose Import Cookies once that hint button is dismissed.
   const importHintVisible = shouldShowBrowserImportHint({
@@ -244,7 +249,11 @@ export function BrowserToolbarMenu({
         onImportFromBrowser={(browserFamily, browserProfile) =>
           void handleImportFromBrowser(browserFamily, browserProfile)
         }
-        onGetExtensions={() => openLinkBesideBrowserPage(browserPageId, CHROME_WEB_STORE_URL)}
+        onGetExtensions={
+          canGetExtensions
+            ? () => openLinkBesideBrowserPage(browserPageId, CHROME_WEB_STORE_URL)
+            : undefined
+        }
         onImportFromFile={() => void handleImportFromFile()}
         viewportPresetId={viewportPresetId}
         onApplyViewportPreset={applyViewportPreset}

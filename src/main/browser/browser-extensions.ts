@@ -2,13 +2,14 @@ import { join } from 'node:path'
 import { app, BrowserWindow, dialog, session, webContents, type Session } from 'electron'
 import { ElectronChromeExtensions } from 'electron-chrome-extensions'
 import { installChromeWebStore } from 'electron-chrome-web-store'
+import { translateMain } from '../i18n/main-i18n'
 import {
   openBrowserExtensionTab,
   registerBrowserExtensionTabs,
   setBrowserExtensionSessionEnabler
 } from './browser-extension-tabs'
 
-let autoUpdateStarted = false
+let firstSession = true
 
 /**
  * Gives a browser session Chrome extensions: the chrome.* APIs Electron lacks, installs from the
@@ -18,8 +19,10 @@ function enableBrowserExtensions(sess: Session): void {
   if (ElectronChromeExtensions.fromSession(sess)) {
     return
   }
-  // The toolbar's extension icons load over crx:// in Orca's own window.
-  ElectronChromeExtensions.handleCRXProtocol(session.defaultSession)
+  if (firstSession) {
+    // The toolbar's extension icons load over crx:// in Orca's own window.
+    ElectronChromeExtensions.handleCRXProtocol(session.defaultSession)
+  }
   const extensions = new ElectronChromeExtensions({
     license: 'GPL-3.0',
     session: sess,
@@ -57,10 +60,10 @@ function enableBrowserExtensions(sess: Session): void {
     session: sess,
     extensionsPath: join(app.getPath('userData'), 'browser-extensions'),
     // Why once: every session shares one extensions folder, so only one updater may write it.
-    autoUpdate: !autoUpdateStarted,
+    autoUpdate: firstSession,
     beforeInstall: confirmInstall
   }).catch((error: unknown) => console.error('[browser-extensions] setup failed:', error))
-  autoUpdateStarted = true
+  firstSession = false
 }
 
 /**
@@ -89,9 +92,17 @@ async function confirmInstall(details: {
   const options: Electron.MessageBoxOptions = {
     type: 'question',
     icon: details.icon,
-    message: `Add "${details.localizedName}"?`,
-    detail: "It can read and change your data on the sites you visit in Orca's browser.",
-    buttons: ['Add extension', 'Cancel'],
+    message: translateMain('auto.main.browser.browserExtensions.installTitle', 'Add "{{name}}"?', {
+      name: details.localizedName
+    }),
+    detail: translateMain(
+      'auto.main.browser.browserExtensions.installDetail',
+      "It can read and change your data on the sites you visit in Orca's browser."
+    ),
+    buttons: [
+      translateMain('auto.main.browser.browserExtensions.installConfirm', 'Add extension'),
+      translateMain('auto.main.browser.browserExtensions.installCancel', 'Cancel')
+    ],
     defaultId: 0,
     cancelId: 1
   }

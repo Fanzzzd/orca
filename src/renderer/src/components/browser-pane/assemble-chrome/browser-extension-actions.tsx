@@ -38,7 +38,10 @@ export function BrowserExtensionActions({
     }
     const read = (): void => {
       try {
-        setTab({ partition: webview.partition, tabId: webview.getWebContentsId() })
+        const next = { partition: webview.partition, tabId: webview.getWebContentsId() }
+        setTab((prev) =>
+          prev?.partition === next.partition && prev.tabId === next.tabId ? prev : next
+        )
       } catch {
         // Not attached yet; dom-ready reads it again.
       }

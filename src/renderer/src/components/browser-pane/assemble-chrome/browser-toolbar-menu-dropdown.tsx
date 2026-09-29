@@ -47,8 +47,8 @@ type BrowserToolbarMenuDropdownProps = {
   browserSessionImportState: { profileId: string; status: string } | null | undefined
   onImportFromBrowser: (browserFamily: string, browserProfile?: string) => void
   onImportFromFile: () => void
-  /** Opens the Chrome Web Store beside the page, in its profile, where extensions install. */
-  onGetExtensions: () => void
+  /** Opens the Chrome Web Store beside the page, in its profile; absent where extensions can't run. */
+  onGetExtensions?: () => void
   viewportPresetId: BrowserViewportPresetId | null
   onApplyViewportPreset: (nextId: BrowserViewportPresetId | null) => void
   overflow: BrowserChromeOverflowMenuProps
@@ -241,13 +241,15 @@ export function BrowserToolbarMenuDropdown({
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem onSelect={onGetExtensions}>
-          <Puzzle className="mr-2 size-3.5" />
-          {translate(
-            'auto.components.browser.pane.BrowserToolbarMenu.getExtensions',
-            'Get Extensions…'
-          )}
-        </DropdownMenuItem>
+        {onGetExtensions ? (
+          <DropdownMenuItem onSelect={onGetExtensions}>
+            <Puzzle className="mr-2 size-3.5" />
+            {translate(
+              'auto.components.browser.pane.BrowserToolbarMenu.getExtensions',
+              'Get Extensions…'
+            )}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           onSelect={() => {
             useAppStore.getState().openSettingsTarget({ pane: 'browser', repoId: null })

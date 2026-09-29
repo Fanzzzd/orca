@@ -14913,6 +14913,14 @@
       }
     },
     "main": {
+      "browser": {
+        "browserExtensions": {
+          "installTitle": "¿Añadir \"{{name}}\"?",
+          "installDetail": "Puede leer y cambiar tus datos en los sitios que visitas en el navegador de Orca.",
+          "installConfirm": "Añadir extensión",
+          "installCancel": "Cancelar"
+        }
+      },
       "window": {
         "editableContextMenu": {
           "table": "Tabla",

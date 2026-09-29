@@ -17297,6 +17297,14 @@
       }
     },
     "main": {
+      "browser": {
+        "browserExtensions": {
+          "installTitle": "\"{{name}}\"을(를) 추가하시겠습니까?",
+          "installDetail": "Orca 브라우저에서 방문하는 사이트의 데이터를 읽고 변경할 수 있습니다.",
+          "installConfirm": "확장 프로그램 추가",
+          "installCancel": "취소"
+        }
+      },
       "window": {
         "editableContextMenu": {
           "table": "표",
