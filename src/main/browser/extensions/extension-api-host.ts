@@ -20,7 +20,12 @@ type Listening = {
   frames: Map<WebFrameMain, Set<string>>
 }
 
+type PendingEvent = { key: string; args: unknown[]; at: number }
+
 const handlers = new Map<string, Handler>()
+// Events for extensions whose worker has not run yet, by session then extension id.
+const pendingBySession = new WeakMap<Session, Map<string, PendingEvent[]>>()
+const PENDING_EVENT_TTL_MS = 10_000
 const listeningBySession = new WeakMap<Session, Map<string, Listening>>()
 const attachedWorkers = new WeakSet<ServiceWorkerMain>()
 let frameCallsHandled = false
@@ -48,6 +53,30 @@ export function emitExtensionEvent(
       deliver(session, id, contexts, key, args)
     }
   }
+  // Why: a worker that has never run has told us none of its listeners; Chrome remembers them
+  // across restarts, so hold the event until the worker registers and see if it wants it.
+  const waiting =
+    extensionId === undefined
+      ? session.extensions.getAllExtensions()
+      : [session.extensions.getExtension(extensionId)]
+  for (const extension of waiting) {
+    if (extension && !listening?.has(extension.id) && hasServiceWorker(extension)) {
+      let pending = pendingBySession.get(session)
+      if (!pending) {
+        pending = new Map()
+        pendingBySession.set(session, pending)
+      }
+      const now = Date.now()
+      const kept = (pending.get(extension.id) ?? []).filter(
+        (each) => now - each.at < PENDING_EVENT_TTL_MS
+      )
+      pending.set(extension.id, [...kept, { key, args, at: now }])
+    }
+  }
+}
+
+function hasServiceWorker(extension: Electron.Extension): boolean {
+  return Boolean(Reflect.get(Object(extension.manifest.background), 'service_worker'))
 }
 
 /** Fires `key` in the one context that made `caller`'s call, e.g. for its native port. */
@@ -89,6 +118,18 @@ function sendToWorker(session: Session, extensionId: string, key: string, args: 
     })
 }
 
+// Why retry: at "extension-ready" the worker's registration may not exist yet.
+const WORKER_START_ATTEMPTS = 5
+const WORKER_START_RETRY_MS = 200
+
+function startWorker(session: Session, extension: Electron.Extension, attempts: number): void {
+  session.serviceWorkers.startWorkerForScope(extension.url).catch(() => {
+    if (attempts > 1 && session.extensions.getExtension(extension.id)) {
+      setTimeout(() => startWorker(session, extension, attempts - 1), WORKER_START_RETRY_MS)
+    }
+  })
+}
+
 function listen(caller: ExtensionCaller, key: string): void {
   let listening = listeningBySession.get(caller.session)
   if (!listening) {
@@ -103,8 +144,21 @@ function listen(caller: ExtensionCaller, key: string): void {
   if (caller.frame) {
     const keys = contexts.frames.get(caller.frame) ?? new Set()
     contexts.frames.set(caller.frame, keys.add(key))
-  } else {
-    contexts.worker.add(key)
+    return
+  }
+  contexts.worker.add(key)
+  const pending = pendingBySession.get(caller.session)
+  const held = pending?.get(caller.extension.id)
+  if (held) {
+    const now = Date.now()
+    const due = held.filter((each) => each.key === key && now - each.at < PENDING_EVENT_TTL_MS)
+    pending?.set(
+      caller.extension.id,
+      held.filter((each) => each.key !== key)
+    )
+    for (const each of due) {
+      sendToWorker(caller.session, caller.extension.id, each.key, each.args)
+    }
   }
 }
 
@@ -143,6 +197,13 @@ export function installExtensionApiHost(session: Session, preloadPath: string): 
       filePath: preloadPath
     })
   }
+  // Why start it: a worker registers its event listeners as its script first runs, and events
+  // reach only contexts that registered; Chrome instead remembers listeners across restarts.
+  session.extensions.on('extension-ready', (_event, extension) => {
+    if (hasServiceWorker(extension)) {
+      startWorker(session, extension, WORKER_START_ATTEMPTS)
+    }
+  })
   // Why at "starting": the worker registers listeners as its script first runs, before "running".
   session.serviceWorkers.on('running-status-changed', ({ versionId }) => {
     const worker = session.serviceWorkers.getWorkerFromVersionID(versionId)
