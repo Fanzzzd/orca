@@ -1,5 +1,5 @@
 import type { RuntimeClient } from '../../runtime-client'
-import { getOptionalPresentStringFlag } from '../../flags'
+import { getOptionalPresentStringFlag, getOptionalStringFlag } from '../../flags'
 import { RuntimeClientError } from '../../runtime-client'
 import { getTerminalHandle } from '../../selectors'
 import { hasStructuredSessionMarker } from '../../../shared/structured-session-marker'
