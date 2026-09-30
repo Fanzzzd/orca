@@ -50,7 +50,8 @@ test('an installed extension runs with the full chrome API and shows a toolbar b
       {
         'worker.js': SERVICE_WORKER,
         'content.js': CONTENT_SCRIPT,
-        'popup.html': '<!doctype html><title>popup</title>'
+        'popup.html':
+          '<!doctype html><title>popup</title><body style="margin:0;width:240px;height:120px">'
       }
     )
     const { pageId } = await openPageWithExtension(
@@ -77,15 +78,19 @@ test('an installed extension runs with the full chrome API and shows a toolbar b
     await expect(button).toHaveAttribute('title', 'Orca e2e extension')
     await expect(button).toHaveText('7')
 
-    // Clicking the button opens the extension's popup page in its own window under the button.
+    // Clicking the button opens the extension's popup in its own window, sized to its page.
     await button.click()
     await expect
       .poll(() =>
-        electronApp.evaluate(({ webContents }) =>
-          webContents.getAllWebContents().some((wc) => wc.getURL().endsWith('/popup.html'))
-        )
+        electronApp.evaluate(({ webContents, BrowserWindow }) => {
+          const popup = webContents
+            .getAllWebContents()
+            .find((wc) => wc.getURL().endsWith('/popup.html'))
+          const bounds = popup && BrowserWindow.fromWebContents(popup)?.getBounds()
+          return bounds ? [bounds.width, bounds.height] : null
+        })
       )
-      .toBe(true)
+      .toEqual([240, 120])
   } finally {
     await server.close()
   }

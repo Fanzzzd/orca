@@ -165,8 +165,13 @@ test('a password-manager style extension works inside pages', async ({ orcaPage,
           )
         )
         .toBe(true)
-      await click(100, 50, 'left')
-      await expect.poll(userValue).toBe('from-inline-menu')
+      // Why retry: the frame exists before it paints, and a click before then hits nothing.
+      await expect
+        .poll(async () => {
+          await click(100, 50, 'left')
+          return userValue()
+        })
+        .toBe('from-inline-menu')
     })
 
     await test.step("the extension answers the page's passkey request", async () => {

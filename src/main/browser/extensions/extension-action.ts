@@ -165,14 +165,27 @@ function showPopup(
   const content = window.getContentBounds()
   const right = content.x + anchor.x + anchor.width
   const top = content.y + anchor.y + anchor.height
-  // Why preferred size: a popup sizes itself to its page, as Chrome's does, within Chrome's bounds.
-  popup.webContents.on('preferred-size-changed', (_event, size) => {
+  // A popup sizes itself to its page, as Chrome's does, within Chrome's bounds.
+  const fit = (size: { width: number; height: number }): void => {
+    if (popup.isDestroyed()) {
+      return
+    }
     const width = Math.min(Math.max(size.width, POPUP_MIN.width), POPUP_MAX.width)
     const height = Math.min(Math.max(size.height, POPUP_MIN.height), POPUP_MAX.height)
     popup.setBounds(placePopup(window, right, top, width, height))
     if (!popup.isVisible() && !isWindowlessLaunch()) {
       popup.show()
     }
+  }
+  popup.webContents.on('preferred-size-changed', (_event, size) => fit(size))
+  // Why measure too: a hidden window may never report a preferred size, and it shows only once sized.
+  popup.webContents.once('did-finish-load', () => {
+    popup.webContents
+      .executeJavaScript(
+        '({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })'
+      )
+      .then((size: { width: number; height: number }) => fit(size))
+      .catch(() => fit(POPUP_MAX))
   })
   popup.on('blur', () => popup.close())
   popup.once('closed', () => {
