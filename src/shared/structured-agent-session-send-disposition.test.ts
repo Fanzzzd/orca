@@ -55,12 +55,12 @@ function rejectedWith(
   }
 }
 
-function notice(reason: string | null): string | undefined {
+function notice(reason: string | null, rejection?: AgentSessionFailureFact): string | undefined {
   const disposition = disposeStructuredAgentSessionSendResult({
     entries: [entry],
     entry,
     blockedClientMessageId: null,
-    result: rejectedWith(reason),
+    result: rejectedWith(reason, rejection ? { rejection } : {}),
     createOperationId: () => 'unused'
   })
   // The reason travels with the message it explains, never as a separate error.
@@ -71,10 +71,54 @@ function notice(reason: string | null): string | undefined {
   )
 }
 
+describe('a queued draft answer', () => {
+  it('retires the outbox entry: the host-held draft carries any later refusal', () => {
+    const disposition = disposeStructuredAgentSessionSendResult({
+      entries: [entry],
+      entry,
+      blockedClientMessageId: null,
+      result: {
+        ok: true,
+        replayed: false,
+        fence: 1,
+        cursor: { epoch: 'epoch-1', sequence: 10 },
+        value: {
+          clientMessageId: 'client-1',
+          queued: { messageId: 'client-1', position: 1, state: 'waiting' }
+        }
+      },
+      createOperationId: () => 'unused'
+    })
+    expect(disposition.entries).toEqual([])
+    expect(disposition.error).toBeNull()
+  })
+
+  it('a withdrawn replay is spent, not unknown', () => {
+    const disposition = disposeStructuredAgentSessionSendResult({
+      entries: [entry],
+      entry,
+      blockedClientMessageId: null,
+      result: {
+        ok: true,
+        replayed: true,
+        fence: 1,
+        cursor: { epoch: 'epoch-1', sequence: 10 },
+        value: {
+          clientMessageId: 'client-1',
+          queued: { messageId: 'client-1', position: 1, state: 'withdrawn' }
+        }
+      },
+      createOperationId: () => 'unused'
+    })
+    expect(disposition.entries).toEqual([])
+    expect(disposition.error).toBeNull()
+  })
+})
+
 describe('what a rejection shows the user', () => {
   it('removes a queued message the provider confirms Stop cancelled', () => {
     const result = rejectedWith(DISPATCH_REJECTED_CANCELLED)
-    if (!result.ok) {
+    if (!result.ok || !('submission' in result.value)) {
       throw new Error('expected rejected submission fixture')
     }
 
@@ -121,15 +165,14 @@ describe('what a rejection shows the user', () => {
       expect(disposition).toEqual({
         entries: [],
         error: null,
-        blockedClientMessageId: null,
-        retryWithFreshClientMessageId: null
+        blockedClientMessageId: null
       })
     }
   })
 
   it('reads a withdrawal off the typed fact whatever the reason says', () => {
     const result = rejectedWith('Withdrawn.', { rejection: { kind: 'cancelled' } })
-    if (!result.ok) {
+    if (!result.ok || !('submission' in result.value)) {
       throw new Error('expected rejected submission fixture')
     }
     expect(reconcileStructuredAgentSessionOutbox([entry], [result.value.submission])).toEqual([])
@@ -154,6 +197,64 @@ describe('what a rejection shows the user', () => {
     const shown = notice(DISPATCH_REJECTED_QUEUE_FULL)
     expect(shown).not.toContain('queue is full')
     expect(shown).toBe('Your message was not sent.')
+  })
+})
+
+// A row that carries the host's fact is worded from it; the reason is not read.
+describe('what a rejection with a typed fact shows the user', () => {
+  it('says Orca could not hand the message over, whatever the reason holds', () => {
+    expect(notice('provider_write_failed', { kind: 'writeFailed' })).toBe(
+      "Orca couldn't reach the agent. Your message was not sent."
+    )
+    expect(notice('Something unrelated.', { kind: 'writeFailed' })).toBe(
+      "Orca couldn't reach the agent. Your message was not sent."
+    )
+  })
+
+  it("rebuilds the fact's sentence where a marker stands in for it", () => {
+    expect(notice(DISPATCH_REJECTED_QUEUE_FULL, { kind: 'queueFull' })).toBe(
+      'Too many messages were waiting for the agent, so this one was not sent.'
+    )
+  })
+
+  // The surface names the agent; the host's own sentence is never compared or shown.
+  it('words the fact itself, never the sentence the host wrote beside it', () => {
+    expect(
+      notice('Claude never finished starting, so Orca stopped it.', { kind: 'hostStopped' })
+    ).toBe('The agent never finished starting, so Orca stopped it.')
+  })
+
+  // The message keeps no fact it cannot place, so the host's sentence stands, as on an older host.
+  it("shows a newer host's sentence when its fact cannot be placed", () => {
+    expect(notice('A sentence a newer host wrote.', JSON.parse('{"kind":"fromTheFuture"}'))).toBe(
+      'A sentence a newer host wrote.'
+    )
+  })
+
+  // The message's copy drops the detail and the refusal these kinds are worded from, so the
+  // sentence the host wrote for the person stands in for them; with none, the table's words.
+  it("shows the host's sentence for a kind whose words its copy cannot rebuild", () => {
+    expect(
+      notice('The provider did not accept this message: Image type .bmp.', {
+        kind: 'providerRejected',
+        detail: { text: 'Image type .bmp', audience: 'person' }
+      })
+    ).toBe('The provider did not accept this message: Image type .bmp.')
+    expect(
+      notice("Claude couldn't start. Start a new chat to continue.", {
+        kind: 'startFailed',
+        refusal: { code: 'agent_session_identity_required' }
+      })
+    ).toBe("Claude couldn't start. Start a new chat to continue.")
+    expect(notice(null, { kind: 'providerRejected' })).toBe(
+      'The provider did not accept this message.'
+    )
+  })
+
+  it('says only that the message was not sent for a fact no message can carry', () => {
+    expect(notice('Compaction failed.', { kind: 'compactionFailed' })).toBe(
+      'Your message was not sent.'
+    )
   })
 })
 
@@ -259,7 +360,7 @@ describe('what a refusal shows the user', () => {
       lastFailure: { kind: 'refused', code: 'agent_session_checkpoint_stale' }
     }
     const result = rejectedWith(null)
-    if (!result.ok) {
+    if (!result.ok || !('submission' in result.value)) {
       throw new Error('expected a send result')
     }
     result.value.submission = { ...result.value.submission, dispatchState: 'accepted' }
@@ -303,7 +404,7 @@ describe('ambiguous operation refusals', () => {
 
   it('parks a recovered missing submission without polling forever', () => {
     const result = rejectedWith(null)
-    if (!result.ok) {
+    if (!result.ok || !('submission' in result.value)) {
       throw new Error('expected a send result')
     }
     result.value.submission = {

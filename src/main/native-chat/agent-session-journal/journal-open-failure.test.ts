@@ -1,11 +1,19 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { agentSessionRefusalError } from '../../../shared/agent-session-wire-refusals'
 import { openJournalDatabase } from './journal-database'
-import { classifyJournalOpenFailure } from './journal-open-failure'
-import { loadJournal } from './journal-open'
-import { journalDatabaseFile } from './journal-paths'
+import {
+  classifyJournalOpenFailure,
+  createJournalOpenReadRefusals,
+  journalOpenReadRefusal,
+  journalOpenRefusal,
+  journalOpenRefusalError
+} from './journal-open-failure'
+import { AgentSessionJournalError } from './journal-write-guards'
+import { journalDatabasePath } from './journal-host-database'
+import { replayJournal } from './journal-open'
 
 let root: string
 
@@ -17,10 +25,15 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-/** What the journal's own open throws for the file as it stands. */
+/** What the journal's own open, then a chat's replay, throws for the file as it stands. */
 function openFailure(): unknown {
   try {
-    loadJournal(root, 'session-1')
+    const db = openJournalDatabase(journalDatabasePath(root)).db
+    try {
+      replayJournal(db, 'session-1')
+    } finally {
+      db.close()
+    }
   } catch (error) {
     return error
   }
@@ -38,17 +51,17 @@ function systemError(code: string, errno: number): Error {
 
 describe('classifyJournalOpenFailure', () => {
   it('calls a journal that is not a database corrupt', async () => {
-    await writeFile(journalDatabaseFile(root), 'not a database '.repeat(64))
+    await writeFile(journalDatabasePath(root), 'not a database '.repeat(64))
     const error = openFailure()
     expect(error).toMatchObject({ errcode: 26 })
     expect(classifyJournalOpenFailure(error)).toBe('journalCorrupt')
   })
 
   it('calls a journal whose pages are damaged corrupt', async () => {
-    const path = journalDatabaseFile(root)
-    const opened = openJournalDatabase(path)
-    opened.db.exec('PRAGMA journal_mode = DELETE')
-    opened.db.close()
+    const path = journalDatabasePath(root)
+    const opened = openJournalDatabase(path).db
+    opened.exec('PRAGMA journal_mode = DELETE')
+    opened.close()
     const bytes = await readFile(path)
     // Page 1 holds the header and schema; every table's root page follows it.
     bytes.fill(0xab, 4096)
@@ -102,5 +115,83 @@ describe('classifyJournalOpenFailure', () => {
     const second = new Error('second', { cause: first })
     Object.assign(first, { cause: second })
     expect(classifyJournalOpenFailure(first)).toBe('journalUnavailable')
+  })
+})
+
+describe('journalOpenReadRefusal', () => {
+  it('names the reason, keeps the message the code and the storage text only as the cause', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const storage = nodeSqliteError(26)
+    const refusal = journalOpenReadRefusal(storage)
+    expect(refusal.message).toBe('agent_session_journal_unreadable')
+    expect(refusal.refusal).toMatchObject({
+      code: 'agent_session_journal_unreadable',
+      details: { reason: 'journalCorrupt' }
+    })
+    expect(refusal.cause).toBe(storage)
+    vi.restoreAllMocks()
+  })
+
+  it('passes a refusal the open already raised through unchanged', () => {
+    const raised = agentSessionRefusalError('agent_session_identity_required', {
+      reason: 'recordMissing'
+    })
+    expect(journalOpenReadRefusal(raised)).toBe(raised)
+  })
+})
+
+describe('createJournalOpenReadRefusals', () => {
+  it('logs a session once per failure until it opens, and each session on its own', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const refusals = createJournalOpenReadRefusals()
+    const denied = systemError('EACCES', -13)
+    const corrupt = nodeSqliteError(26)
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const refusal = refusals.refusal('session-1', denied)
+      expect(refusal.refusal).toMatchObject({ details: { reason: 'journalUnavailable' } })
+      expect(refusal.cause).toBe(denied)
+    }
+    expect(warn).toHaveBeenCalledTimes(1)
+    refusals.refusal('session-2', denied)
+    expect(warn).toHaveBeenCalledTimes(2)
+    expect(refusals.refusal('session-1', corrupt).refusal).toMatchObject({
+      details: { reason: 'journalCorrupt' }
+    })
+    expect(warn).toHaveBeenCalledTimes(3)
+    refusals.forget('session-1')
+    refusals.refusal('session-1', corrupt)
+    expect(warn).toHaveBeenCalledTimes(4)
+    vi.restoreAllMocks()
+  })
+})
+
+// Only an update gets past a journal a newer Orca wrote, so it has a reason of its own: a client
+// that chose words by `journalUnavailable` said to try again, and retrying never cleared it.
+describe('a journal a newer Orca wrote', () => {
+  const readOnly = () =>
+    new AgentSessionJournalError('journal_read_only', 'the journal uses a newer schema')
+
+  it('refuses a write with its own reason, and the words released clients print', () => {
+    // As the wire carries it (the mobile and older-client tests read this shape).
+    expect(JSON.parse(JSON.stringify(journalOpenRefusal(readOnly())))).toEqual({
+      code: 'agent_session_journal_unreadable',
+      message: 'Chats were saved by a newer Orca. Update Orca to keep using them.',
+      details: { reason: 'journalWrittenByNewerOrca' }
+    })
+    expect(journalOpenRefusalError(readOnly()).refusal).toMatchObject({
+      details: { reason: 'journalWrittenByNewerOrca' }
+    })
+  })
+
+  it('refuses a read with the same reason', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    expect(journalOpenReadRefusal(readOnly()).refusal).toMatchObject({
+      details: { reason: 'journalWrittenByNewerOrca' }
+    })
+    expect(createJournalOpenReadRefusals().refusal('session-1', readOnly()).refusal).toMatchObject({
+      details: { reason: 'journalWrittenByNewerOrca' }
+    })
+    vi.restoreAllMocks()
   })
 })
