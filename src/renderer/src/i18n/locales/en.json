@@ -207,6 +207,20 @@
         "optionNativeTooltip": "Keeps Electron's built-in identity for sites that reject the cleaned identity. Google sign-in is unavailable in Native mode.",
         "restartRequired": "Restart required",
         "unavailable": "Browser identity is unavailable."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Chrome extensions installed in Orca's browser from the Chrome Web Store.",
+        "keyword": {
+          "extension": "extension",
+          "chrome": "chrome",
+          "password": "password manager"
+        },
+        "options": "Options",
+        "remove": "Remove",
+        "confirmRemove": "Confirm remove",
+        "help": "Open chromewebstore.google.com in an Orca browser tab and choose \"Add to Chrome\" to install one. Extensions run in browser tabs on this computer.",
+        "empty": "No extensions installed."
       }
     }
   },
@@ -586,6 +600,7 @@
           "9e2a9bb87b": "Continue",
           "6f8056a565": "Command Code",
           "4238b771b5": "Codebuff",
+          "freebuff_label": "Freebuff",
           "cbaf0c2e0b": "Cline",
           "1f8a19e9ad": "Autohand Code",
           "5e8eff11b3": "Auggie",
@@ -3825,6 +3840,7 @@
             "codexSignInSuccess": "Signed in to Codex",
             "codexSignInError": "Codex sign-in failed. Please try again.",
             "cursorUsageMenu": "Cursor Usage",
+            "hiddenUsageProviders": "Also: {{value0}}",
             "zcodeUsageMenu": "ZCode Usage"
           },
           "StatusBarUsageEmptyCta": {
@@ -12221,6 +12237,16 @@
           "usageLabel": "Usage",
           "noAllowance": "Cursor reported no usage allowance for this account.",
           "staleUsage": "Last known usage — the latest refresh failed: {{reason}}"
+        },
+        "offscreenBrowserPages": {
+          "detail": "Browser tabs render offscreen and paint into the pane, so an agent clicking or typing in a page never moves focus or interrupts IME composition in your terminal. Applies to tabs opened after the change.",
+          "search": {
+            "title": "Focus-safe browser pages",
+            "description": "Render browser tabs offscreen so agent clicks and typing never take focus from your terminal.",
+            "keywordBrowser": "browser",
+            "keywordFocus": "focus",
+            "keywordIme": "ime"
+          }
         }
       },
       "right": {
@@ -15995,6 +16021,7 @@
             "a38f217b46": "Switching profiles will reload this page. Any unsaved form data will be lost.",
             "fe683eb3b4": "Switch Profile",
             "a771c2b6c8": "Browser Settings…",
+            "getExtensions": "Get Extensions…",
             "ed8f54509d": "Default",
             "e5d31de1a9": "Viewport Size",
             "56f94f4ffa": "From File…",
@@ -17423,6 +17450,18 @@
       }
     },
     "main": {
+      "browser": {
+        "browserExtensions": {
+          "installTitle": "Add \"{{name}}\"?",
+          "installDetail": "It can read and change your data on the sites you visit in Orca's browser.",
+          "installConfirm": "Add extension",
+          "installCancel": "Cancel",
+          "removeTitle": "Remove \"{{name}}\"?",
+          "removeConfirm": "Remove",
+          "remove": "Remove from Orca…",
+          "options": "Options"
+        }
+      },
       "window": {
         "editableContextMenu": {
           "table": "Table",
@@ -17480,6 +17519,7 @@
     },
     "native-chat": {
       "writeNotice": {
+        "notDoneReadHistory": "This chat's history couldn't be loaded.",
         "notDoneSend": "Your message was not sent.",
         "tryAgainComposerSend": "Send it again.",
         "notDoneStop": "The agent wasn't stopped.",
@@ -17494,8 +17534,39 @@
         "outcomeUnknown": "Orca couldn't confirm what happened. Check the chat.",
         "questionChanged": "This question was already answered or has changed.",
         "historyUnreadable": "Orca couldn't read this chat's saved history.",
+        "historyUnusable": "Unable to load this chat.",
+        "historyUnavailable": "Orca couldn't open this chat's history right now.",
         "unsupported": "The Orca running this chat doesn't support this. Update Orca, then try again.",
-        "unreachable": "Orca couldn't reach the agent."
+        "unreachable": "Orca couldn't reach the agent.",
+        "recordFailed": "Orca couldn't record it in this chat's history.",
+        "conversationCleared": "This conversation has been cleared.",
+        "openCurrentConversation": "Open the current conversation to continue.",
+        "clearUnfinished": "The last /clear didn't finish.",
+        "commandRunning": "A /compact or /clear is still running.",
+        "waitForCommand": "Wait for the /compact or /clear to finish.",
+        "agentStarting": "The agent is still starting.",
+        "waitForStart": "Wait for the agent to finish starting.",
+        "turnActive": "The agent is still responding.",
+        "waitForTurn": "Wait for the agent to finish responding, or stop it.",
+        "promptPending": "The agent is waiting for an answer to a question or approval.",
+        "answerFirst": "Answer the question or approval first.",
+        "backgroundTasksRunning": "Background tasks are still running.",
+        "waitForBackgroundTasks": "Wait for the background tasks to finish.",
+        "messagesUnsettled": "A message you sent earlier hasn't been confirmed yet.",
+        "settleEarlierMessage": "Wait for your earlier message to go through, or retry it.",
+        "optionRejected": "The agent didn't accept this setting.",
+        "goalsUnsupported": "This agent doesn't support goals.",
+        "agentRefused": "The agent turned this down.",
+        "ownerUnproven": "Orca hasn't confirmed that this chat's previous agent stopped.",
+        "reopenChat": "Reopen the chat to check again.",
+        "terminalAgentHoldsChat": "This chat is still open in a terminal agent.",
+        "quitTerminalAgent": "Quit that agent to continue the chat here.",
+        "hostReconciling": "Orca is still checking on this chat after restarting.",
+        "waitMoment": "Wait a moment.",
+        "recordUnreadable": "Orca couldn't read this chat's saved state.",
+        "chatNotFound": "The Orca running this chat has no record of it.",
+        "startNewChat": "Start a new chat to continue.",
+        "tryAgain": "Try again."
       },
       "taskList": {
         "title": "Tasks",

@@ -4,6 +4,7 @@ import type { CdpTabState } from './cdp-auxiliary-commands'
 import type { CdpCommandSender } from './snapshot-engine'
 import type { CdpBridgeState } from './cdp-bridge-state'
 import { createCdpDebuggerMessageListener } from './cdp-debugger-events'
+import { sendPageMouseEvent } from './offscreen-page-frames'
 
 export class CdpDebuggerLifecycle {
   constructor(private readonly bridgeState: CdpBridgeState) {}
@@ -83,7 +84,10 @@ export class CdpDebuggerLifecycle {
 
   makeCdpSender(guest: WebContents, sessionId?: string): CdpCommandSender {
     return (method: string, params?: Record<string, unknown>) => {
-      const command = guest.debugger.sendCommand(method, params, sessionId) as Promise<unknown>
+      const command =
+        method === 'Input.dispatchMouseEvent' && sessionId === undefined
+          ? sendPageMouseEvent(guest, params ?? {})
+          : guest.debugger.sendCommand(method, params, sessionId)
       // Why: Electron's CDP sendCommand can hang on a stale debugger session, so a 10s timeout bounds the RPC.
       let timer: ReturnType<typeof setTimeout>
       return Promise.race([

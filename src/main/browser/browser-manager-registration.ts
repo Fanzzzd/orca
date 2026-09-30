@@ -1,4 +1,5 @@
 import { webContents } from 'electron'
+import { trackExtensionTab, untrackExtensionTab } from './extensions/extension-tab-registry'
 import { browserDownloadDestinationReservations } from './browser-download-destination'
 import { isWorkspaceDocPageId } from './doc-preview-guest-policy'
 import type { BrowserGuestRegistration } from './browser-manager-types'
@@ -34,8 +35,13 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
       return false
     }
 
-    // Why: don't trust the renderer-sent id blindly — a compromised renderer could pass the main window's id; only accept webview guests.
-    if (guest.getType() !== 'webview') {
+    // Why: don't trust the renderer-sent id blindly — a compromised renderer could pass the main window's id; only accept webview guests
+    // or offscreen pages main created for this same renderer.
+    const offscreenOwner = this.rendererOffscreenGuestRendererIds.get(webContentsId)
+    const isRendererOffscreen = offscreenOwner !== undefined
+    if (
+      isRendererOffscreen ? offscreenOwner !== rendererWebContentsId : guest.getType() !== 'webview'
+    ) {
       return false
     }
     if (!this.policyAttachedGuestIds.has(webContentsId)) {
@@ -62,9 +68,21 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     this.certificateTrustController?.onGuestRegistered(webContentsId, browserTabId)
 
     this.setupContextMenu(browserTabId, guest)
-    this.setupGrabShortcut(browserTabId, guest)
-    this.setupShortcutForwarding(browserTabId, guest)
-    this.setupMouseWheelZoomForwarding(browserTabId, guest)
+    // Why not offscreen: its keys go to the page over CDP, which skips before-input-event; the
+    // host runs the same grab check on each key instead.
+    if (!isRendererOffscreen) {
+      this.setupGrabShortcut(browserTabId, guest)
+    }
+    this.setupShortcutForwarding(browserTabId, guest, isRendererOffscreen)
+    // Why not offscreen: its input skips before-mouse-event; the host zooms and pans it instead.
+    if (!isRendererOffscreen) {
+      this.setupMouseWheelZoomForwarding(browserTabId, guest)
+    }
+    const renderer = webContents.fromId(rendererWebContentsId)
+    if (renderer) {
+      // After Orca's shortcut listeners, so an Orca shortcut wins over an extension's.
+      trackExtensionTab(guest, renderer)
+    }
     this.flushPendingLoadFailure(browserTabId, webContentsId)
     this.flushPendingPermissionEvents(browserTabId, webContentsId)
     this.flushPendingPopupEvents(browserTabId, webContentsId)
@@ -87,6 +105,11 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
 
     // Why: remove attachGuestPolicies listeners so their guest-WebContents closures don't block GC.
     const guestWebContentsId = this.webContentsIdByTabId.get(browserTabId)
+    const guestWebContents =
+      guestWebContentsId === undefined ? undefined : webContents.fromId(guestWebContentsId)
+    if (guestWebContents) {
+      untrackExtensionTab(guestWebContents)
+    }
     if (guestWebContentsId !== undefined) {
       this.cleanupGuestPolicyAttachment(guestWebContentsId)
     }
@@ -144,6 +167,15 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     this.annotationViewportBridgeOpsByTabId.delete(browserTabId)
   }
 
+  isRendererOffscreenGuestOf(webContentsId: number, rendererWebContentsId: number): boolean {
+    return this.rendererOffscreenGuestRendererIds.get(webContentsId) === rendererWebContentsId
+  }
+
+  /** Marks an offscreen page main created for a renderer, so that renderer may register it like a webview. */
+  admitRendererOffscreenGuest(webContentsId: number, rendererWebContentsId: number): void {
+    this.rendererOffscreenGuestRendererIds.set(webContentsId, rendererWebContentsId)
+  }
+
   // Why: headless orca serve has no <webview> window; back pages with offscreen WebContents and skip the webview-only setup.
   registerOffscreenGuest({
     browserPageId,
@@ -196,6 +228,7 @@ export abstract class BrowserManagerRegistration extends BrowserManagerGuestPoli
     }
     this.policyAttachedGuestIds.clear()
     this.offscreenGuestIds.clear()
+    this.rendererOffscreenGuestRendererIds.clear()
     // Why: unregisterGuest skips guests that were policy-attached but never registered; invoke their cleanup closures here.
     for (const cleanup of this.policyCleanupByGuestId.values()) {
       cleanup()

@@ -90,6 +90,20 @@
         "optionNativeTooltip": "정리된 ID를 거부하는 사이트에 대해 Electron의 내장 ID를 유지합니다. 기본 모드에서는 Google 로그인을 사용할 수 없습니다.",
         "restartRequired": "다시 시작해야 함",
         "unavailable": "브라우저 ID를 사용할 수 없습니다."
+      },
+      "extensions": {
+        "title": "확장 프로그램",
+        "description": "Chrome 웹 스토어에서 Orca 브라우저에 설치한 Chrome 확장 프로그램입니다.",
+        "keyword": {
+          "extension": "확장",
+          "chrome": "chrome",
+          "password": "비밀번호 관리자"
+        },
+        "options": "옵션",
+        "remove": "삭제",
+        "confirmRemove": "삭제 확인",
+        "help": "Orca 브라우저 탭에서 chromewebstore.google.com을 열고 \"Chrome에 추가\"를 선택하면 설치됩니다. 확장 프로그램은 이 컴퓨터의 브라우저 탭에서 실행됩니다.",
+        "empty": "설치된 확장 프로그램이 없습니다."
       }
     }
   },
@@ -3674,7 +3688,8 @@
             "floatingTerminalNewActivity": "{{label}}, 새 활동",
             "codexSignInSuccess": "Codex에 로그인했습니다",
             "codexSignInError": "Codex 로그인에 실패했습니다. 다시 시도해 주세요.",
-            "cursorUsageMenu": "Cursor 사용량"
+            "cursorUsageMenu": "Cursor 사용량",
+            "hiddenUsageProviders": "그 외: {{value0}}"
           },
           "StatusBarUsageEmptyCta": {
             "828c764a79": "계정 연결",
@@ -12056,6 +12071,16 @@
           "usageDescription": "Cursor는 요금 주기에 따라 초기화되는 두 가지 풀과, 소진 후에 발생하는 주문형 지출로 과금합니다.",
           "usageLabel": "사용량",
           "usageTitle": "월간 플랜 사용량"
+        },
+        "offscreenBrowserPages": {
+          "detail": "Browser tabs render offscreen and paint into the pane, so an agent clicking or typing in a page never moves focus or interrupts IME composition in your terminal. Applies to tabs opened after the change.",
+          "search": {
+            "title": "Focus-safe browser pages",
+            "description": "Render browser tabs offscreen so agent clicks and typing never take focus from your terminal.",
+            "keywordBrowser": "browser",
+            "keywordFocus": "focus",
+            "keywordIme": "ime"
+          }
         }
       },
       "right": {
@@ -15830,6 +15855,7 @@
             "a38f217b46": "프로필을 전환하면 이 페이지가 다시 로드됩니다. 저장하지 않은 양식 데이터는 모두 손실됩니다.",
             "fe683eb3b4": "프로필 전환",
             "a771c2b6c8": "브라우저 설정…",
+            "getExtensions": "확장 프로그램 추가…",
             "ed8f54509d": "기본",
             "e5d31de1a9": "뷰포트 크기",
             "56f94f4ffa": "파일에서…",
@@ -17298,6 +17324,18 @@
       }
     },
     "main": {
+      "browser": {
+        "browserExtensions": {
+          "installTitle": "\"{{name}}\"을(를) 추가하시겠습니까?",
+          "installDetail": "Orca 브라우저에서 방문하는 사이트의 데이터를 읽고 변경할 수 있습니다.",
+          "installConfirm": "확장 프로그램 추가",
+          "installCancel": "취소",
+          "removeTitle": "\"{{name}}\"을(를) 삭제할까요?",
+          "removeConfirm": "삭제",
+          "remove": "Orca에서 삭제…",
+          "options": "옵션"
+        }
+      },
       "window": {
         "editableContextMenu": {
           "table": "표",
@@ -17350,6 +17388,7 @@
     },
     "native-chat": {
       "writeNotice": {
+        "notDoneReadHistory": "이 채팅의 기록을 불러오지 못했습니다.",
         "notDoneSend": "메시지가 전송되지 않았습니다.",
         "tryAgainComposerSend": "다시 보내세요.",
         "notDoneStop": "에이전트가 중지되지 않았습니다.",
@@ -17364,8 +17403,39 @@
         "outcomeUnknown": "Orca가 무슨 일이 있었는지 확인하지 못했습니다. 채팅을 확인하세요.",
         "questionChanged": "이 질문은 이미 답변되었거나 변경되었습니다.",
         "historyUnreadable": "Orca가 이 채팅의 저장된 기록을 읽지 못했습니다.",
+        "historyUnusable": "이 채팅을 불러올 수 없습니다.",
+        "historyUnavailable": "Orca가 지금 이 채팅의 기록을 열지 못했습니다.",
         "unsupported": "이 채팅을 실행 중인 Orca가 이 기능을 지원하지 않습니다. Orca를 업데이트한 후 다시 시도하세요.",
-        "unreachable": "Orca가 에이전트에 연결하지 못했습니다."
+        "unreachable": "Orca가 에이전트에 연결하지 못했습니다.",
+        "recordFailed": "Orca가 이 채팅의 기록에 저장하지 못했습니다.",
+        "conversationCleared": "이 대화는 지워졌습니다.",
+        "openCurrentConversation": "계속하려면 현재 대화를 여세요.",
+        "clearUnfinished": "마지막 /clear가 완료되지 않았습니다.",
+        "commandRunning": "/compact 또는 /clear가 아직 실행 중입니다.",
+        "waitForCommand": "/compact 또는 /clear가 끝날 때까지 기다리세요.",
+        "agentStarting": "에이전트가 아직 시작 중입니다.",
+        "waitForStart": "에이전트가 시작을 마칠 때까지 기다리세요.",
+        "turnActive": "에이전트가 아직 응답 중입니다.",
+        "waitForTurn": "에이전트가 응답을 마칠 때까지 기다리거나 에이전트를 중지하세요.",
+        "promptPending": "에이전트가 질문 또는 승인에 대한 응답을 기다리고 있습니다.",
+        "answerFirst": "먼저 질문 또는 승인에 응답하세요.",
+        "backgroundTasksRunning": "백그라운드 작업이 아직 실행 중입니다.",
+        "waitForBackgroundTasks": "백그라운드 작업이 끝날 때까지 기다리세요.",
+        "messagesUnsettled": "앞서 보낸 메시지가 아직 확인되지 않았습니다.",
+        "settleEarlierMessage": "앞서 보낸 메시지가 전달될 때까지 기다리거나 다시 시도하세요.",
+        "optionRejected": "에이전트가 이 설정을 받아들이지 않았습니다.",
+        "goalsUnsupported": "이 에이전트는 목표를 지원하지 않습니다.",
+        "agentRefused": "에이전트가 이를 거부했습니다.",
+        "ownerUnproven": "Orca가 이 채팅의 이전 에이전트가 중지되었는지 아직 확인하지 못했습니다.",
+        "reopenChat": "다시 확인하려면 채팅을 다시 여세요.",
+        "terminalAgentHoldsChat": "이 채팅은 아직 터미널 에이전트에서 열려 있습니다.",
+        "quitTerminalAgent": "여기에서 채팅을 계속하려면 해당 에이전트를 종료하세요.",
+        "hostReconciling": "Orca가 다시 시작된 후 이 채팅을 아직 확인하고 있습니다.",
+        "waitMoment": "잠시 기다리세요.",
+        "recordUnreadable": "Orca가 이 채팅의 저장된 상태를 읽지 못했습니다.",
+        "chatNotFound": "이 채팅을 실행하는 Orca에 이 채팅의 기록이 없습니다.",
+        "startNewChat": "계속하려면 새 채팅을 시작하세요.",
+        "tryAgain": "다시 시도하세요."
       },
       "composer": {
         "imageUnsupported": "이 에이전트는 이미지 붙여넣기를 지원하지 않습니다.",

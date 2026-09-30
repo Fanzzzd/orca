@@ -90,6 +90,20 @@
         "optionNativeTooltip": "对于拒绝清理身份的站点，保留 Electron 的内置身份。 Google 登录在本机模式下不可用。",
         "restartRequired": "需要重新启动",
         "unavailable": "浏览器身份不可用。"
+      },
+      "extensions": {
+        "title": "扩展程序",
+        "description": "从 Chrome 应用商店安装到 Orca 浏览器的 Chrome 扩展程序。",
+        "keyword": {
+          "extension": "扩展",
+          "chrome": "chrome",
+          "password": "密码管理器"
+        },
+        "options": "选项",
+        "remove": "移除",
+        "confirmRemove": "确认移除",
+        "help": "在 Orca 浏览器标签页中打开 chromewebstore.google.com，点“添加至 Chrome”即可安装。扩展程序在本机的浏览器标签页中运行。",
+        "empty": "还没有安装扩展程序。"
       }
     }
   },
@@ -3674,7 +3688,8 @@
             "floatingTerminalNewActivity": "{{label}}，有新活动",
             "codexSignInSuccess": "已登录 Codex",
             "codexSignInError": "Codex 登录失败，请重试。",
-            "cursorUsageMenu": "Cursor 用量"
+            "cursorUsageMenu": "Cursor 用量",
+            "hiddenUsageProviders": "另有：{{value0}}"
           },
           "StatusBarUsageEmptyCta": {
             "828c764a79": "连接账户",
@@ -12056,6 +12071,16 @@
           "usageDescription": "Cursor 按两个随账单周期重置的额度池计费，用完后按需计费。",
           "usageLabel": "用量",
           "usageTitle": "每月套餐用量"
+        },
+        "offscreenBrowserPages": {
+          "detail": "浏览器标签页在后台离屏渲染，再把画面绘制到面板里。agent 在网页里点击或输入时，不会移动焦点，也不会打断你在终端里的输入法拼字。对切换之后新打开的标签页生效。",
+          "search": {
+            "title": "不抢焦点的浏览器页面",
+            "description": "浏览器标签页改为离屏渲染，agent 点击和输入网页时不会抢走终端的焦点。",
+            "keywordBrowser": "浏览器",
+            "keywordFocus": "焦点",
+            "keywordIme": "输入法"
+          }
         }
       },
       "right": {
@@ -15830,6 +15855,7 @@
             "a38f217b46": "切换配置文件将重新加载此页面。任何未保存的表单数据都将丢失。",
             "fe683eb3b4": "开关配置文件",
             "a771c2b6c8": "浏览器设置...",
+            "getExtensions": "获取扩展程序…",
             "ed8f54509d": "默认",
             "e5d31de1a9": "视口尺寸",
             "56f94f4ffa": "从文件...",
@@ -17298,6 +17324,18 @@
       }
     },
     "main": {
+      "browser": {
+        "browserExtensions": {
+          "installTitle": "添加“{{name}}”？",
+          "installDetail": "它可以读取和更改你在 Orca 浏览器中访问的网站上的数据。",
+          "installConfirm": "添加扩展程序",
+          "installCancel": "取消",
+          "removeTitle": "移除“{{name}}”？",
+          "removeConfirm": "移除",
+          "remove": "从 Orca 中移除…",
+          "options": "选项"
+        }
+      },
       "window": {
         "editableContextMenu": {
           "table": "表格",
@@ -17315,6 +17353,7 @@
   "components": {
     "native-chat": {
       "writeNotice": {
+        "notDoneReadHistory": "无法加载此聊天的历史记录。",
         "notDoneSend": "您的消息未发送。",
         "tryAgainComposerSend": "请重新发送。",
         "notDoneStop": "智能体未停止。",
@@ -17329,8 +17368,39 @@
         "outcomeUnknown": "Orca 无法确认发生了什么。请查看聊天。",
         "questionChanged": "此问题已被回答或已更改。",
         "historyUnreadable": "Orca 无法读取此聊天的已保存历史记录。",
+        "historyUnusable": "无法加载此聊天。",
+        "historyUnavailable": "Orca 目前无法打开此聊天的历史记录。",
         "unsupported": "运行此聊天的 Orca 不支持此操作。请更新 Orca 后重试。",
-        "unreachable": "Orca 无法连接到智能体。"
+        "unreachable": "Orca 无法连接到智能体。",
+        "recordFailed": "Orca 无法将其记录到此聊天的历史记录中。",
+        "conversationCleared": "此对话已被清除。",
+        "openCurrentConversation": "请打开当前对话以继续。",
+        "clearUnfinished": "上一次 /clear 未完成。",
+        "commandRunning": "/compact 或 /clear 仍在运行。",
+        "waitForCommand": "请等待 /compact 或 /clear 完成。",
+        "agentStarting": "智能体仍在启动。",
+        "waitForStart": "请等待智能体完成启动。",
+        "turnActive": "智能体仍在回复。",
+        "waitForTurn": "请等待智能体完成回复，或将其停止。",
+        "promptPending": "智能体正在等待您回答问题或审批。",
+        "answerFirst": "请先回答问题或审批。",
+        "backgroundTasksRunning": "后台任务仍在运行。",
+        "waitForBackgroundTasks": "请等待后台任务完成。",
+        "messagesUnsettled": "您之前发送的一条消息尚未确认。",
+        "settleEarlierMessage": "请等待之前的消息送达，或重试该消息。",
+        "optionRejected": "智能体未接受此设置。",
+        "goalsUnsupported": "此智能体不支持目标。",
+        "agentRefused": "智能体拒绝了此请求。",
+        "ownerUnproven": "Orca 尚未确认此聊天之前的智能体已停止。",
+        "reopenChat": "请重新打开聊天以再次检查。",
+        "terminalAgentHoldsChat": "此聊天仍在终端智能体中打开。",
+        "quitTerminalAgent": "请退出该智能体，以便在此处继续聊天。",
+        "hostReconciling": "Orca 重启后仍在检查此聊天。",
+        "waitMoment": "请稍候。",
+        "recordUnreadable": "Orca 无法读取此聊天的已保存状态。",
+        "chatNotFound": "运行此聊天的 Orca 没有此聊天的记录。",
+        "startNewChat": "请开始新的聊天以继续。",
+        "tryAgain": "请重试。"
       },
       "composer": {
         "imageUnsupported": "此智能体不支持粘贴图片。",

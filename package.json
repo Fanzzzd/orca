@@ -170,7 +170,7 @@
     "test:e2e:ssh-docker-bulk-open-freeze": "node config/scripts/run-ssh-docker-bulk-open-freeze-e2e.mjs",
     "repro:live-remote-bulk-open-freeze": "node config/scripts/live-remote-bulk-open-freeze-repro.mjs",
     "repro:live-remote-realistic-freeze": "node config/scripts/live-remote-realistic-freeze-repro.mjs",
-    "audit:anti-slop": "node config/scripts/sync-anti-slop-plugin.mjs && node config/scripts/run-anti-slop-shards.mjs",
+    "audit:anti-slop": "node config/scripts/sync-anti-slop-plugin.mjs && oxlint --config config/oxlint-anti-slop.json src config tests mobile --deny-warnings",
     "sync:anti-slop-plugin": "node config/scripts/sync-anti-slop-plugin.mjs"
   },
   "dependencies": {
@@ -184,6 +184,7 @@
     "@xterm/addon-serialize": "0.15.0-beta.300",
     "@xterm/headless": "6.1.0-beta.302",
     "agent-browser": "~0.27.0",
+    "electron-chrome-web-store": "0.13.0",
     "electron-updater": "^6.8.9",
     "i18next": "^26.3.1",
     "jsonc-parser": "^3.3.1",
