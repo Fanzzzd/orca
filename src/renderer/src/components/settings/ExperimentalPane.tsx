@@ -13,6 +13,7 @@ import { AgentDashboardExperimentalSetting } from './AgentDashboardExperimentalS
 import { EphemeralVmsExperimentalSetting } from './EphemeralVmsExperimentalSetting'
 import { WslHostsExperimentalSetting } from './WslHostsExperimentalSetting'
 import { wslHostsAvailable } from '../sidebar/use-wsl-hosts-enabled'
+import { OffscreenBrowserPagesExperimentalSetting } from './OffscreenBrowserPagesExperimentalSetting'
 import {
   MAX_AGENT_HIBERNATION_IDLE_MS,
   MIN_AGENT_HIBERNATION_IDLE_MS,
@@ -52,6 +53,9 @@ export function ExperimentalPane({
   ])
   const showNewWorktreeCardStyle = matchesSettingsSearch(searchQuery, [
     getExperimentalSearchEntry().newWorktreeCardStyle
+  ])
+  const showOffscreenBrowserPages = matchesSettingsSearch(searchQuery, [
+    getExperimentalSearchEntry().offscreenBrowserPages
   ])
   const agentHibernationEnabled = settings.experimentalAgentHibernation === true
   const newWorktreeCardStyleEnabled = settings.experimentalNewWorktreeCardStyle === true
@@ -272,6 +276,13 @@ export function ExperimentalPane({
 
       {wslHostsAvailable() ? (
         <WslHostsExperimentalSetting settings={settings} updateSettings={updateSettings} />
+      ) : null}
+
+      {showOffscreenBrowserPages ? (
+        <OffscreenBrowserPagesExperimentalSetting
+          settings={settings}
+          updateSettings={updateSettings}
+        />
       ) : null}
 
       {hiddenExperimentalUnlocked ? <HiddenExperimentalGroup /> : null}

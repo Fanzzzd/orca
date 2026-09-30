@@ -21,10 +21,8 @@ import {
   type ShouldForwardDictationShortcut
 } from './browser-guest-shortcut-dispatch'
 
-// Why: a focused webview guest is its own Chromium process whose key events never reach the renderer; forward shortcuts from here.
-export function setupGuestShortcutForwarding(args: {
+export type GuestShortcutForwardingArgs = {
   browserTabId: string
-  guest: Electron.WebContents
   resolveRenderer: ResolveRenderer
   shouldForwardDictationShortcut?: ShouldForwardDictationShortcut
   isMobileEmulatorEnabled?: IsMobileEmulatorEnabled
@@ -32,40 +30,32 @@ export function setupGuestShortcutForwarding(args: {
   // Why: a floating-panel guest owns a distinct workspace; its close/index chords must route to the panel, not the main tab strip.
   resolveWorktreeId?: (browserTabId: string) => string | null
   resolveWorkspaceId?: (browserTabId: string) => string | null
-}): () => void {
-  const {
-    browserTabId,
-    guest,
-    resolveRenderer,
-    shouldForwardDictationShortcut,
-    isMobileEmulatorEnabled,
-    getKeybindings,
-    resolveWorktreeId,
-    resolveWorkspaceId
-  } = args
+}
+
+export function createGuestShortcutForwardContext(
+  args: GuestShortcutForwardingArgs
+): GuestShortcutForwardContext {
+  const { browserTabId, resolveRenderer } = args
+  return {
+    ...args,
+    forwardBrowserPageZoom: (event: Electron.Event, direction: BrowserPageZoomDirection): void => {
+      event.preventDefault()
+      const renderer = resolveRenderer(browserTabId)
+      renderer?.send('ui:zoomBrowserPage', { browserPageId: browserTabId, direction })
+    }
+  }
+}
+
+// Why: a focused webview guest is its own Chromium process whose key events never reach the renderer; forward shortcuts from here.
+export function setupGuestShortcutForwarding(
+  args: GuestShortcutForwardingArgs & { guest: Electron.WebContents }
+): () => void {
+  const { browserTabId, guest, resolveRenderer, getKeybindings } = args
   let ctrlTabSwitching = false
   const doubleTapDetector = new ModifierDoubleTapDetector()
   const resetDoubleTapDetector = (): void => doubleTapDetector.reset()
-
-  const forwardBrowserPageZoom = (
-    event: Electron.Event,
-    direction: BrowserPageZoomDirection
-  ): void => {
-    event.preventDefault()
-    const renderer = resolveRenderer(browserTabId)
-    renderer?.send('ui:zoomBrowserPage', { browserPageId: browserTabId, direction })
-  }
-
-  const forwardContext: GuestShortcutForwardContext = {
-    browserTabId,
-    resolveRenderer,
-    shouldForwardDictationShortcut,
-    isMobileEmulatorEnabled,
-    getKeybindings,
-    resolveWorktreeId,
-    resolveWorkspaceId,
-    forwardBrowserPageZoom
-  }
+  const forwardContext = createGuestShortcutForwardContext(args)
+  const { forwardBrowserPageZoom } = forwardContext
 
   const handler = (event: Electron.Event, input: Electron.Input): void => {
     // Why: agent-injected keys must not run Orca shortcuts or grab actions (#20595).

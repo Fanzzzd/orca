@@ -10,6 +10,7 @@ import {
   type CdpPointerState
 } from './cdp-pointer-input'
 import { acquireElectronDebugger } from './electron-debugger-lease'
+import { sendPageMouseEvent } from './offscreen-page-frames'
 import { AgentBrowserBridgeInputCommands } from './agent-browser-bridge-input-commands'
 import { isEmbeddedGuest } from './guest-direct-key-input'
 import { enablePageFocusEmulation } from './agent-input-focus-guard'
@@ -64,7 +65,7 @@ export abstract class AgentBrowserBridgePointerCommands extends AgentBrowserBrid
       if (press) {
         releaseFocusGuard = await this.focusPageForPress(wc, target.webContentsId)
       }
-      await wc.debugger.sendCommand('Input.dispatchMouseEvent', params)
+      await sendPageMouseEvent(wc, params)
       return result
     } catch (error) {
       Object.assign(state, preDispatch)

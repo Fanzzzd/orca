@@ -6,6 +6,7 @@ import { getNewWorktreeCardStyleSearchEntry } from './new-worktree-card-style-se
 import { getNativeChatExperimentalSearchEntry } from './native-chat-experimental-search-entry'
 import { getEphemeralVmsSearchEntry } from './ephemeral-vms-search'
 import { getWslHostsExperimentalSearchEntry } from './wsl-hosts-experimental-search'
+import { getOffscreenBrowserPagesSearchEntry } from './offscreen-browser-pages-search'
 
 export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
   (): SettingsSearchEntry[] => [
@@ -182,6 +183,7 @@ export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
     },
     getNewWorktreeCardStyleSearchEntry(),
     getEphemeralVmsSearchEntry(),
+    getOffscreenBrowserPagesSearchEntry(),
     // Why: only a Windows desktop shows this toggle, so only there may search find it.
     ...(typeof window !== 'undefined' && window.api?.runtimeEnvironments?.wslHosts
       ? [getWslHostsExperimentalSearchEntry()]
@@ -229,6 +231,12 @@ export function getExperimentalSearchEntry() {
     ),
     ephemeralVms: findEntry(
       translate('auto.components.settings.ephemeralVms.search.cloudVmTitle', 'Cloud VM')
+    ),
+    offscreenBrowserPages: findEntry(
+      translate(
+        'auto.components.settings.offscreenBrowserPages.search.title',
+        'Focus-safe browser pages'
+      )
     )
   } as const
 }
