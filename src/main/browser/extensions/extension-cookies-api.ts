@@ -1,8 +1,8 @@
 import type { Session } from 'electron'
-import { handleExtensionApi, type ExtensionCaller } from './extension-api-host'
+import { emitPerExtension, handleExtensionApi, type ExtensionCaller } from './extension-api-host'
 import { objectArg, optionalString, stringArg } from './extension-api-args'
 import { extensionCanSeeUrl } from './extension-match-pattern'
-import { emitPerExtension, extensionTabs } from './extension-tab-registry'
+import { extensionTabs } from './extension-tab-registry'
 
 // Orca's browser sessions have no incognito twin, so each has one store.
 const STORE_ID = '0'
