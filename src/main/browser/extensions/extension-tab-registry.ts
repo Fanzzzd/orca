@@ -1,5 +1,5 @@
 import { BrowserWindow, type Session, type WebContents } from 'electron'
-import { emitExtensionEvent } from './extension-api-host'
+import { emitExtensionEvent, emitPerExtension } from './extension-api-host'
 import {
   BROWSER_EXTENSION_ACTION_COMMANDS,
   findBrowserExtensionCommand,
@@ -40,20 +40,6 @@ let lastFocusedWindow: BrowserWindow | null = null
 
 export function setExtensionTabHost(next: ExtensionTabHost): void {
   host = next
-}
-
-/** Fires an event whose arguments depend on what each extension may see; null skips one. */
-export function emitPerExtension(
-  session: Session,
-  key: string,
-  args: (extension: Electron.Extension) => unknown[] | null
-): void {
-  for (const extension of session.extensions.getAllExtensions()) {
-    const each = args(extension)
-    if (each) {
-      emitExtensionEvent(session, key, each, extension.id)
-    }
-  }
 }
 
 /**
