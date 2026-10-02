@@ -18,7 +18,15 @@ export type ExtensionTabHost = {
   activate(tab: WebContents): void
 }
 
-type Tracked = { window: BrowserWindow; renderer: WebContents; untrack: () => void }
+type Tracked = {
+  window: BrowserWindow
+  renderer: WebContents
+  // Why copies: untracking runs on 'destroyed', when reading the tab or window throws.
+  session: Session
+  tabId: number
+  windowId: number
+  untrack: () => void
+}
 
 const NEW_TAB_TIMEOUT_MS = 15_000
 const tracked = new Map<WebContents, Tracked>()
@@ -91,6 +99,9 @@ export function trackExtensionTab(tab: WebContents, renderer: WebContents): void
   tracked.set(tab, {
     window,
     renderer,
+    session,
+    tabId: tab.id,
+    windowId: window.id,
     untrack: () => {
       for (const [name, listener] of Object.entries(listeners)) {
         emitter.off(name, listener)
@@ -121,9 +132,9 @@ export function untrackExtensionTab(tab: WebContents): void {
   if (activeByWindow.get(entry.window) === tab) {
     activeByWindow.delete(entry.window)
   }
-  emitExtensionEventToAll(tab.session, 'tabs.onRemoved', [
-    tab.id,
-    { windowId: entry.window.id, isWindowClosing: entry.window.isDestroyed() }
+  emitExtensionEventToAll(entry.session, 'tabs.onRemoved', [
+    entry.tabId,
+    { windowId: entry.windowId, isWindowClosing: entry.window.isDestroyed() }
   ])
 }
 
@@ -152,7 +163,7 @@ export function markExtensionTabActive(tab: WebContents): void {
     return
   }
   activeByWindow.set(entry.window, tab)
-  const windowId = entry.window.id
+  const windowId = entry.windowId
   emitExtensionEventToAll(tab.session, 'tabs.onActivated', [{ tabId: tab.id, windowId }])
   emitExtensionEventToAll(tab.session, 'tabs.onHighlighted', [{ tabIds: [tab.id], windowId }])
 }
