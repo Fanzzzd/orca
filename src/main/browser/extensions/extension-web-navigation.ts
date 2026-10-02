@@ -1,5 +1,5 @@
 import { webFrameMain, type WebContents, type WebFrameMain } from 'electron'
-import { emitExtensionEvent, handleExtensionApi, type ExtensionCaller } from './extension-api-host'
+import { emitPerExtension, handleExtensionApi, type ExtensionCaller } from './extension-api-host'
 import { numberArg, objectArg } from './extension-api-args'
 import { extensionTabs } from './extension-tab-registry'
 
@@ -25,13 +25,11 @@ function emit(tab: WebContents, event: string, frame: WebFrameMain | null | unde
     return
   }
   const details = { tabId: tab.id, timeStamp: Date.now(), ...frameInfo(frame), ...extra }
-  for (const extension of tab.session.extensions.getAllExtensions()) {
-    // Why only these: chrome.webNavigation exists only for extensions that asked for it.
+  // Why only these: chrome.webNavigation exists only for extensions that asked for it.
+  emitPerExtension(tab.session, `webNavigation.${event}`, (extension) => {
     const permissions: unknown = extension.manifest.permissions
-    if (Array.isArray(permissions) && permissions.includes('webNavigation')) {
-      emitExtensionEvent(tab.session, `webNavigation.${event}`, [details], extension.id)
-    }
-  }
+    return Array.isArray(permissions) && permissions.includes('webNavigation') ? [details] : null
+  })
 }
 
 /** Fires chrome.webNavigation events for a tab's frames. */

@@ -75,6 +75,20 @@ export function emitExtensionEvent(
   }
 }
 
+/** Fires an event whose arguments depend on what each extension may see; null skips one. */
+export function emitPerExtension(
+  session: Session,
+  key: string,
+  args: (extension: Electron.Extension) => unknown[] | null
+): void {
+  for (const extension of session.extensions.getAllExtensions()) {
+    const each = args(extension)
+    if (each) {
+      emitExtensionEvent(session, key, each, extension.id)
+    }
+  }
+}
+
 function hasServiceWorker(extension: Electron.Extension): boolean {
   return Boolean(Reflect.get(Object(extension.manifest.background), 'service_worker'))
 }
