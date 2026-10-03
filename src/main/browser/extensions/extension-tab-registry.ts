@@ -32,7 +32,7 @@ const tracked = new Map<WebContents, Tracked>()
 const activeByWindow = new Map<BrowserWindow, WebContents>()
 const sessionsByWindow = new Map<BrowserWindow, Set<Session>>()
 const popupWindows = new WeakSet<BrowserWindow>()
-const waitingForTab: ((tab: WebContents) => void)[] = []
+let waitingForTab: ((tab: WebContents) => void)[] = []
 let host: ExtensionTabHost | null = null
 let lastTab: WebContents | null = null
 let lastFocusedWindow: BrowserWindow | null = null
@@ -324,7 +324,7 @@ export function openExtensionTab(url: string, active: boolean): Promise<WebConte
   return new Promise((resolve, reject) => {
     const stopWaiting = (): void => {
       clearTimeout(timer)
-      waitingForTab.splice(waitingForTab.indexOf(onTab), 1)
+      waitingForTab = waitingForTab.filter((waiter) => waiter !== onTab)
     }
     const timer = setTimeout(() => {
       stopWaiting()
