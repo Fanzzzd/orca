@@ -74,7 +74,10 @@ export async function initializeReadyFoundation(): Promise<void> {
     recordDurableCrashBreadcrumb('main_thread_hang_detected', {
       unresponsiveMs: state.hangDetection.unresponsiveMs,
       previousPid: state.hangDetection.parentPid,
-      selfRecovered: state.hangDetection.selfRecovered
+      selfRecovered: state.hangDetection.selfRecovered,
+      ...(state.hangDetection.mainThreadStack
+        ? { mainThreadStack: state.hangDetection.mainThreadStack.join('\n') }
+        : {})
     })
   }
   // Why: install certificate decisions before any webview or headless window issues its first TLS request.

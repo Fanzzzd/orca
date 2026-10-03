@@ -6,16 +6,26 @@ const CHECK_INTERVAL_MS = 5_000
 
 function loopWithClock(startAt = 0) {
   let now = startAt
+  let wallNow = startAt
   const onHangDetected = vi.fn()
   const onHangResolved = vi.fn()
   const loop = createHangWatchdogDetectionLoop({
     timeoutMs: TIMEOUT_MS,
     checkIntervalMs: CHECK_INTERVAL_MS,
     now: () => now,
+    wallNow: () => wallNow,
     onHangDetected,
     onHangResolved
   })
-  return { loop, onHangDetected, onHangResolved, advance: (ms: number) => (now += ms) }
+  const advance = (ms: number): void => {
+    now += ms
+    wallNow += ms
+  }
+  // System sleep: only the wall clock moves.
+  const sleep = (ms: number): void => {
+    wallNow += ms
+  }
+  return { loop, onHangDetected, onHangResolved, advance, sleep }
 }
 
 describe('createHangWatchdogDetectionLoop', () => {
@@ -64,11 +74,13 @@ describe('createHangWatchdogDetectionLoop', () => {
     expect(onHangDetected).not.toHaveBeenCalled()
   })
 
-  it('treats a large tick gap as system sleep and restarts the wait', () => {
-    const { loop, onHangDetected, advance } = loopWithClock()
+  it('treats wall-clock time the monotonic clock missed as system sleep and restarts the wait', () => {
+    const { loop, onHangDetected, advance, sleep } = loopWithClock()
     loop.recordHeartbeat()
-    // Simulate suspension: the check timer did not run for far longer than the timeout.
-    advance(TIMEOUT_MS * 4)
+    advance(CHECK_INTERVAL_MS)
+    loop.tick()
+    sleep(TIMEOUT_MS * 4)
+    advance(CHECK_INTERVAL_MS)
     loop.tick()
     expect(onHangDetected).not.toHaveBeenCalled()
     // A responsive parent resumes heartbeats after wake; the loop must fire only after a fresh full timeout of silence.
@@ -82,6 +94,15 @@ describe('createHangWatchdogDetectionLoop', () => {
       loop.tick()
     }
     expect(onHangDetected).toHaveBeenCalledTimes(1)
+  })
+
+  // Why: App Nap stretches a background app's timers; the stall under them is still a stall.
+  it('still fires when the check timer itself runs late while awake', () => {
+    const { loop, onHangDetected, advance } = loopWithClock()
+    loop.recordHeartbeat()
+    advance(TIMEOUT_MS + CHECK_INTERVAL_MS)
+    loop.tick()
+    expect(onHangDetected).toHaveBeenCalledWith(TIMEOUT_MS + CHECK_INTERVAL_MS)
   })
 
   // Why: this is the measurement the whole PR exists for — a stall that clears would have been a
@@ -120,8 +141,6 @@ describe('createHangWatchdogDetectionLoop', () => {
     advance(CHECK_INTERVAL_MS)
     loop.recordHeartbeat()
     expect(onHangResolved).toHaveBeenCalledTimes(1)
-    // Why: the tick clock must keep advancing during the first hang, or this first tick reads as a
-    // sleep gap and silently restarts the wait instead of arming it.
     for (let i = 0; i < 12; i++) {
       advance(CHECK_INTERVAL_MS)
       loop.tick()

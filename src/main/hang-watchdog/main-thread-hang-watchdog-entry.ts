@@ -1,6 +1,7 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads'
 import { createHangWatchdogDetectionLoop } from './hang-watchdog-detection-loop'
 import { writeHangDetectionMarker } from './hang-detection-marker'
+import { captureMainThreadStack } from './main-thread-stack-capture'
 import type {
   HangWatchdogWorkerData,
   MainToHangWatchdogWorkerMessage
@@ -11,12 +12,15 @@ type HangWatchdogPort = {
   close: () => void
 }
 
+type Stall = { unresponsiveMs: number; selfRecovered: boolean; mainThreadStack: string[] | null }
+
 // Observation only: a false positive must never kill a live main thread mid-write.
 export function recordHangObservation(options: {
   parentPid: number
   markerPath: string
   unresponsiveMs: number
   selfRecovered: boolean
+  mainThreadStack?: string[] | null
 }): void {
   if (!options.markerPath) {
     return
@@ -26,7 +30,8 @@ export function recordHangObservation(options: {
       detectedAt: Date.now(),
       parentPid: options.parentPid,
       unresponsiveMs: options.unresponsiveMs,
-      selfRecovered: options.selfRecovered
+      selfRecovered: options.selfRecovered,
+      ...(options.mainThreadStack ? { mainThreadStack: options.mainThreadStack } : {})
     })
   } catch {
     // Why: telemetry is best-effort; a marker that cannot be written must not take down the watchdog.
@@ -35,30 +40,44 @@ export function recordHangObservation(options: {
 
 export function runWatchdog(
   config: HangWatchdogWorkerData,
-  port: HangWatchdogPort | null = parentPort
+  port: HangWatchdogPort | null = parentPort,
+  captureStack: () => Promise<string[] | null> = captureMainThreadStack
 ): void {
   if (!port) {
     return
   }
+  let stall: Stall | null = null
+  const record = (observed: Stall): void =>
+    recordHangObservation({
+      parentPid: config.parentPid,
+      markerPath: config.markerPath,
+      ...observed
+    })
   const loop = createHangWatchdogDetectionLoop({
     timeoutMs: config.timeoutMs,
     checkIntervalMs: config.checkIntervalMs,
-    now: () => Date.now(),
-    onHangDetected: (unresponsiveMs) =>
-      recordHangObservation({
-        parentPid: config.parentPid,
-        markerPath: config.markerPath,
-        unresponsiveMs,
-        selfRecovered: false
-      }),
-    // Why: rewriting the marker keeps one observation per stall rather than two rows to reconcile.
-    onHangResolved: (unresponsiveMs) =>
-      recordHangObservation({
-        parentPid: config.parentPid,
-        markerPath: config.markerPath,
-        unresponsiveMs,
-        selfRecovered: true
+    now: () => performance.now(),
+    wallNow: () => Date.now(),
+    onHangDetected: (unresponsiveMs) => {
+      const current: Stall = { unresponsiveMs, selfRecovered: false, mainThreadStack: null }
+      stall = current
+      record(current)
+      // Why: the duration says a stall happened; only the stack says where.
+      void captureStack().then((mainThreadStack) => {
+        if (stall === current && mainThreadStack) {
+          current.mainThreadStack = mainThreadStack
+          record(current)
+        }
       })
+    },
+    // Why: rewriting the marker keeps one observation per stall rather than two rows to reconcile.
+    onHangResolved: (unresponsiveMs) => {
+      if (stall) {
+        stall.unresponsiveMs = unresponsiveMs
+        stall.selfRecovered = true
+        record(stall)
+      }
+    }
   })
 
   let checkTimer: ReturnType<typeof setInterval> | null = setInterval(

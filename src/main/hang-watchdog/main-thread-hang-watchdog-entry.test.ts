@@ -157,7 +157,8 @@ describe('watchdog worker entry', () => {
           timeoutMs: 100,
           checkIntervalMs: 25
         },
-        port
+        port,
+        async () => null
       )
       vi.advanceTimersByTime(75)
       onMessage?.({ type: 'heartbeat' })
@@ -173,6 +174,35 @@ describe('watchdog worker entry', () => {
       vi.advanceTimersByTime(1_000)
       expect(port.close).toHaveBeenCalledOnce()
       expect(consumeHangDetectionMarker(markerPath)).toBeNull()
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  it('adds the stuck main thread stack to the marker and keeps it once the stall clears', async () => {
+    const markerPath = join(tmpdir(), `hang-watchdog-stack-${process.pid}.json`)
+    let onMessage: ((message: { type: 'heartbeat' | 'shutdown' }) => void) | undefined
+    const port = {
+      on: vi.fn(
+        (_event: 'message', listener: (message: { type: 'heartbeat' | 'shutdown' }) => void) => {
+          onMessage = listener
+        }
+      ),
+      close: vi.fn()
+    }
+    try {
+      runWatchdog(
+        { parentPid: process.pid, markerPath, timeoutMs: 100, checkIntervalMs: 25 },
+        port,
+        async () => ['spin out/main/index.js:1:42 | while(true){await x}']
+      )
+      await vi.advanceTimersByTimeAsync(150)
+      onMessage?.({ type: 'heartbeat' })
+      expect(consumeHangDetectionMarker(markerPath)).toMatchObject({
+        selfRecovered: true,
+        mainThreadStack: ['spin out/main/index.js:1:42 | while(true){await x}']
+      })
+      onMessage?.({ type: 'shutdown' })
     } finally {
       rmSync(markerPath, { force: true })
     }
