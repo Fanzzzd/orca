@@ -12,7 +12,10 @@ import {
   resyncTerminalFocusForWindowFocus,
   setRegularTerminalInputFocusAttribute
 } from './regular-terminal-focus-ownership'
-import { refreshTerminalImeInputContext } from './terminal-ime-input-context-refresh'
+import {
+  isTextEntryElement,
+  refreshTerminalImeInputContext
+} from './terminal-ime-input-context-refresh'
 import type { TerminalPaneCloseController } from './use-terminal-pane-close-actions'
 
 export function useTerminalPaneGlobalListeners(controller: TerminalPaneCloseController): void {
@@ -180,7 +183,9 @@ export function useTerminalPaneGlobalListeners(controller: TerminalPaneCloseCont
         return
       }
       syncFocused(true)
-      if (isXtermHelperTextarea(event.relatedTarget) && event.relatedTarget !== event.target) {
+      // Why any text field: macOS keeps the input context of the field focus came from (an address
+      // bar, a browser page's IME field, another terminal), so composed text never arrives (#23864).
+      if (isTextEntryElement(event.relatedTarget) && event.relatedTarget !== event.target) {
         refreshingImeInputContext = true
         try {
           refreshTerminalImeInputContext(event.target, {})

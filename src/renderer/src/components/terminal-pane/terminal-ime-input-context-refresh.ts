@@ -10,6 +10,32 @@ export type TerminalImeInputContextRefreshOptions = {
 }
 
 const refreshingHelpers = new WeakSet<HTMLElement>()
+// Why: overlapping refreshes drop the first typed character (#9233); one per frame is enough.
+const pendingRefocus = new WeakSet<HTMLElement>()
+
+/** A field the OS input method composes into, whose input context can outlive its focus. */
+export function isTextEntryElement(target: EventTarget | null): boolean {
+  if (target instanceof HTMLTextAreaElement) {
+    return true
+  }
+  if (target instanceof HTMLInputElement) {
+    return !NON_TEXT_INPUT_TYPES.has(target.type)
+  }
+  return target instanceof HTMLElement && target.isContentEditable
+}
+
+const NON_TEXT_INPUT_TYPES = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit'
+])
 
 export function isTerminalImeInputContextRefreshing(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && refreshingHelpers.has(target)
@@ -43,6 +69,9 @@ export function refreshTerminalImeInputContext(
     return false
   }
 
+  if (pendingRefocus.has(helper)) {
+    return true
+  }
   const ownerDocument = helper.ownerDocument
   // Why: Electron/Chromium can keep a stale NSTextInputContext on the xterm
   // helper after focus handoffs; blur/refocus rebuilds it so CJK IMEs work.
@@ -54,7 +83,9 @@ export function refreshTerminalImeInputContext(
   }
 
   const schedule = options.scheduleRefocus ?? scheduleNextFrame
+  pendingRefocus.add(helper)
   schedule(() => {
+    pendingRefocus.delete(helper)
     if (!helper.isConnected) {
       options.onRefocusSkipped?.(ownerDocument.activeElement)
       return
