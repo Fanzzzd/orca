@@ -9,6 +9,7 @@ import {
   isXtermHelperTextarea,
   releaseTerminalFocusForOutsidePointerDown,
   releaseTerminalFocusForWindowBlur,
+  syncFocusAfterFailedReclaim,
   resyncTerminalFocusForWindowFocus,
   setRegularTerminalInputFocusAttribute
 } from './regular-terminal-focus-ownership'
@@ -188,7 +189,9 @@ export function useTerminalPaneGlobalListeners(controller: TerminalPaneCloseCont
       if (isTextEntryElement(event.relatedTarget) && event.relatedTarget !== event.target) {
         refreshingImeInputContext = true
         try {
-          refreshTerminalImeInputContext(event.target, {})
+          refreshTerminalImeInputContext(event.target, {
+            onRefocusSkipped: (active) => syncFocusAfterFailedReclaim(active, syncFocused)
+          })
         } finally {
           refreshingImeInputContext = false
         }

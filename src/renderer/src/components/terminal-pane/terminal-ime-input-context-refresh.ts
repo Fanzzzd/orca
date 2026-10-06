@@ -19,23 +19,14 @@ export function isTextEntryElement(target: EventTarget | null): boolean {
     return true
   }
   if (target instanceof HTMLInputElement) {
-    return !NON_TEXT_INPUT_TYPES.has(target.type)
+    return TEXT_INPUT_TYPES.has(target.type)
   }
   return target instanceof HTMLElement && target.isContentEditable
 }
 
-const NON_TEXT_INPUT_TYPES = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'hidden',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit'
-])
+// Why an allowlist: date, color, range and the like never compose, and a needless refresh risks #9233.
+// `type` reads back as 'text' when the attribute is missing or unknown.
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'email', 'password', 'tel', 'url'])
 
 export function isTerminalImeInputContextRefreshing(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && refreshingHelpers.has(target)
