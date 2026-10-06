@@ -164,11 +164,14 @@ describe('isTextEntryElement', () => {
     search.type = 'search'
     const checkbox = document.createElement('input')
     checkbox.type = 'checkbox'
+    const date = document.createElement('input')
+    date.type = 'date'
     expect(isTextEntryElement(document.createElement('textarea'))).toBe(true)
     expect(isTextEntryElement(document.createElement('input'))).toBe(true)
     expect(isTextEntryElement(search)).toBe(true)
     expect(isTextEntryElement(editable)).toBe(true)
     expect(isTextEntryElement(checkbox)).toBe(false)
+    expect(isTextEntryElement(date)).toBe(false)
     expect(isTextEntryElement(document.createElement('button'))).toBe(false)
     expect(isTextEntryElement(null)).toBe(false)
   })
