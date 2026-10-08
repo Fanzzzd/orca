@@ -6,11 +6,13 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { spawnProcess } from '../../../shared/child-process/run-process'
 import { CODEX_SPAWN_TOKEN_ENV } from '../../codex/codex-structured-owner-identity'
-import { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import { readProcessStartTimeMs } from '../../runtime/agent-session-process-identity-probe'
 import { createStructuredAgentSessionOwnerProbe } from '../../runtime/structured-agent-session-owner-probe'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import { StructuredAgentSessionHost } from './structured-agent-session-host'
+import { abandonStructuredAgentSessionHost } from './structured-agent-session-host-test-abandon'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 import {
   HOST_TEST_NOW as NOW,
@@ -19,6 +21,10 @@ import {
   hostTestAttachParams,
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
+import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from './structured-agent-session-logger'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -78,9 +84,11 @@ function adapter(): StructuredAgentSessionAdapter {
 
 function openHost(overrides: Partial<StructuredAgentSessionHostDeps> = {}): void {
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
     adapter: adapter(),
-    journalRoot: root,
+    journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'spawn-a',
     now: () => NOW,
@@ -88,18 +96,9 @@ function openHost(overrides: Partial<StructuredAgentSessionHostDeps> = {}): void
   })
 }
 
-async function abandonHost(abandonedHost: StructuredAgentSessionHost): Promise<void> {
-  abandonedHost['runtimeState'].stopLeaseRenewal()
-  abandonedHost['lifetime'].dispose()
-  await Promise.all(
-    [...abandonedHost['sessions'].values()].map((session) => session.journal.close())
-  )
-  abandonedHost['sessions'].clear()
-}
-
 async function reopenStore(): Promise<void> {
-  await abandonHost(host)
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  await abandonStructuredAgentSessionHost(host)
+  store = await openTestAgentSessionRecordStore(root)
 }
 
 beforeEach(async () => {
@@ -114,19 +113,19 @@ beforeEach(async () => {
     },
     link: {
       linkId: `link-${fence}`,
-      handle: { provider: 'codex', threadId: THREAD },
+      handle: codexProviderHandle(THREAD),
       origin: store.getRecord(SESSION)?.providerHandleChain.length ? 'resumed' : 'created',
       mintedAtFence: fence,
       observedAt: NOW
     }
   }))
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   openHost()
 })
 
 afterEach(async () => {
-  await abandonHost(host)
-  await Promise.all([...supersededHosts].map(abandonHost))
+  await abandonStructuredAgentSessionHost(host)
+  await Promise.all([...supersededHosts].map(abandonStructuredAgentSessionHost))
   supersededHosts.clear()
   await Promise.all([...spawnedOwners].map((child) => stopOwner(child)))
   await rm(root, { recursive: true, force: true })
@@ -292,7 +291,7 @@ describe('recovery exits', () => {
       process: outgoing.process,
       link: {
         linkId: 'link-outgoing',
-        handle: { provider: 'codex', threadId: THREAD },
+        handle: codexProviderHandle(THREAD),
         origin: 'created',
         mintedAtFence: 1,
         observedAt: NOW
@@ -303,7 +302,7 @@ describe('recovery exits', () => {
     const outgoingHost = host
     const outgoingStore = store
     supersededHosts.add(outgoingHost)
-    store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+    store = await openTestAgentSessionRecordStore(root)
     const realProbe = createStructuredAgentSessionOwnerProbe('local')
     let overlapDriven = false
     openHost({
@@ -337,7 +336,7 @@ describe('recovery exits', () => {
       process: replacement.process,
       link: {
         linkId: 'link-replacement',
-        handle: { provider: 'codex', threadId: THREAD },
+        handle: codexProviderHandle(THREAD),
         origin: 'resumed',
         mintedAtFence: 3,
         observedAt: NOW + 2

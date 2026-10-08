@@ -1,3 +1,4 @@
+import { AGENT_JOURNAL_THREAD_SCOPE } from '../../../shared/agent-session-journal-types'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import {
   AgentSessionRecoveryCapsule,
@@ -15,9 +16,11 @@ import {
 import { STRUCTURED_AGENT_SESSION_RESTART_CONTINUATION_CALLER } from './structured-agent-session-restart-resume-wiring'
 import {
   interruptedRestart,
+  QUIT_CUT_NOTICE,
   startAgent,
   statusNotes,
-  supersededRefusal
+  supersededRefusal,
+  throwAfterContinuationAccepted
 } from './structured-agent-session-restart-interruption-test-harness'
 import {
   attach,
@@ -31,6 +34,9 @@ import {
   HOST_TEST_THREAD as THREAD,
   hostTestMessage
 } from './structured-agent-session-host-test-data'
+import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
+import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
+import { inspect } from 'node:util'
 
 afterEach(() => vi.useRealTimers())
 
@@ -50,7 +56,7 @@ it('publishes continuation attribution to the subscribed chat without another pr
 })
 
 it('reports a failed attribution note without an installed error sink or private details', async () => {
-  const { host } = await interruptedRestart()
+  const { host, log } = await interruptedRestart()
   const append = AgentSessionJournal.prototype.appendItem
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   const write = vi.spyOn(AgentSessionJournal.prototype, 'appendItem').mockImplementation(function (
@@ -66,8 +72,11 @@ it('reports a failed attribution note without an installed error sink or private
     const result = await host.restartResume.continueAfterRestart([SESSION], 'modal')
     expect(result.continued).toMatchObject([{ outcome: 'continued' }])
     expect(warning).toHaveBeenCalledExactlyOnceWith(
-      '[structured-agent-session] restart continuation attribution failed'
+      '[agent-session] restart-continuation-note: writing a restart continuation note failed',
+      { scope: 'restart-continuation-note', sessionId: SESSION }
     )
+    expect(log.scopes()).toContain('restart-continuation-note')
+    expect(inspect(log.entries, { depth: 8 })).not.toContain('/private/account')
   } finally {
     write.mockRestore()
     warning.mockRestore()
@@ -98,7 +107,7 @@ it('still continues a chat whose last send acquisition proves was never delivere
   const result = await host.restartResume.continueAfterRestart([SESSION], 'modal')
   expect((await host.journalSnapshot(SESSION)).submissions[0]).toMatchObject({
     dispatchState: 'rejected',
-    reason: 'not_delivered'
+    rejection: { kind: 'notDelivered' }
   })
   expect(acquire).toHaveBeenCalledTimes(1)
   expect(dispatch).toHaveBeenCalledTimes(1)
@@ -124,6 +133,9 @@ it('replays the same logical continuation through the durable send ledger', asyn
   if (!sent) {
     throw new Error('the continuation was not sent')
   }
+  // No person's: re-derived by its own records after another restart, so never kept as a card.
+  expect(sent).not.toHaveProperty('source')
+  expect((await host.journalSnapshot(SESSION)).submissions[0]).not.toHaveProperty('source')
   const replay = await host.send(
     { callerKey: STRUCTURED_AGENT_SESSION_RESTART_CONTINUATION_CALLER },
     { envelope: sent.envelope, body: sent.body }
@@ -134,38 +146,30 @@ it('replays the same logical continuation through the durable send ledger', asyn
 })
 
 // A send that throws after Orca may have taken it is not proof it was not delivered.
-it.each([false, true])(
-  'keeps a continuation unconfirmed when its acceptance cannot be recorded (uncertainty write fails: %s)',
-  async (uncertaintyFails) => {
-    const { host, store } = await interruptedRestart()
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(await host.restartResume.list()).toHaveLength(1)
-    const settle = store.recordOperationOutcome.bind(store)
-    const recording = vi.spyOn(store, 'recordOperationOutcome')
-    recording.mockImplementation(async (input) => {
-      // Only the continuation's own record: the start it makes records its attach as usual.
-      if (
-        input.callerKey === STRUCTURED_AGENT_SESSION_RESTART_CONTINUATION_CALLER &&
-        (input.outcome.status === 'succeeded' || uncertaintyFails)
-      ) {
-        throw new Error('operation outcome could not be persisted')
-      }
-      return settle(input)
-    })
+it('keeps a continuation unconfirmed when its send throws after acceptance', async () => {
+  const { host, store } = await interruptedRestart()
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(await host.restartResume.list()).toHaveLength(1)
+  throwAfterContinuationAccepted()
 
-    const result = await host.restartResume.continueAfterRestart([SESSION], 'modal')
+  const result = await host.restartResume
+    .continueAfterRestart([SESSION], 'modal')
+    .finally(() => vi.restoreAllMocks())
 
-    expect(result.continued).toMatchObject([{ sessionId: SESSION, outcome: 'unknown' }])
-    // Filed as unconfirmed, with a warning in the chat.
-    expect(result.failed).toMatchObject([{ sessionId: SESSION, outcome: 'unconfirmed' }])
-    expect(await statusNotes(host)).toContainEqual({
-      text: AGENT_SESSION_RESTART_CONTINUATION_UNCONFIRMED_NOTE,
-      tone: 'warning'
-    })
-    recording.mockRestore()
-    warning.mockRestore()
-  }
-)
+  expect(result.continued).toMatchObject([{ sessionId: SESSION, outcome: 'unknown' }])
+  // Filed as unconfirmed, with a warning in the chat.
+  expect(result.failed).toMatchObject([{ sessionId: SESSION, outcome: 'unconfirmed' }])
+  expect(await statusNotes(host)).toContainEqual({
+    text: AGENT_SESSION_RESTART_CONTINUATION_UNCONFIRMED_NOTE,
+    tone: 'warning'
+  })
+  // Its acceptance committed with its submission: a resend replays it.
+  expect(
+    store
+      .listOperationRows()
+      .find((row) => row.callerKey === STRUCTURED_AGENT_SESSION_RESTART_CONTINUATION_CALLER)
+  ).toMatchObject({ outcome: { status: 'succeeded' } })
+})
 
 // The continuation is accepted, then its start fails: the message is rejected with the cause and
 // the failure is filed, and nothing is stopped because nothing started.
@@ -226,7 +230,12 @@ it('waits out a slow provider answer before reporting the continuation', async (
   await dispatched.promise
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(settled).toBe(false)
-  settlement.resolve({ state: 'rejected', reason: 'provider refused' })
+  settlement.resolve({
+    state: 'rejected',
+    ...agentSessionFailureWords(agentSessionFailureFact('providerRejected'), {
+      surface: 'rejection'
+    })
+  })
   expect((await continuing).continued).toMatchObject([{ outcome: 'refused' }])
   expect(dispatch).toHaveBeenCalledTimes(1)
 })
@@ -272,7 +281,8 @@ it('serializes teardown publication behind an explicit dismissal', async () => {
   }
   events.appendItem(
     { provider: 'codex', threadId: THREAD, turnId: 'working', ordinal: 1 },
-    { kind: 'turn', turnId: 'working', state: 'running' }
+    { kind: 'turn', turnId: 'working', state: 'running' },
+    { turnScope: AGENT_JOURNAL_THREAD_SCOPE }
   )
   await host.flushStreamedEvents(SESSION)
   host.restartResume.beginTeardown('quit')
@@ -309,7 +319,7 @@ it('keeps concurrent recovery reads independent and non-destructive', async () =
 })
 
 it('fails closed on corrupt recovery storage while an ordinary send still works', async () => {
-  const { host, root, dispatch } = await interruptedRestart()
+  const { host, root, dispatch, log } = await interruptedRestart()
   await writeFile(join(root, AGENT_SESSION_RECOVERY_CAPSULE_FILE), '{')
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
   expect(await host.restartResume.list()).toEqual([])
@@ -326,9 +336,15 @@ it('fails closed on corrupt recovery storage while an ordinary send still works'
   await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1))
   // list; the action's read of offers and of failures; the post-action refresh of both. The send
   // cannot withdraw an offer it cannot read either, and says so.
-  const withdrawing = '[structured-agent-session] withdrawing a restart offer failed'
-  await vi.waitFor(() => expect(warning).toHaveBeenLastCalledWith(withdrawing))
-  expect(warning.mock.calls.filter(([message]) => message !== withdrawing)).toHaveLength(5)
+  await vi.waitFor(() =>
+    expect(log.entries.at(-1)).toEqual({
+      level: 'warn',
+      message: 'withdrawing a restart offer failed',
+      fields: { scope: 'restart-offer-withdraw', sessionId: SESSION }
+    })
+  )
+  // Counted before the console's repeat suppression, which prints each repeated read only once.
+  expect(log.scopes().filter((scope) => scope !== 'restart-offer-withdraw')).toHaveLength(5)
   warning.mockRestore()
 })
 
@@ -342,7 +358,8 @@ it("refuses a continuation quietly when the user's own message was accepted firs
     failed: []
   })
   await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
-  expect(await statusNotes(host)).toEqual([])
+  // The quit's own row about the cut, and nothing about the refused continuation.
+  expect(await statusNotes(host)).toEqual([QUIT_CUT_NOTICE])
   expect(await new AgentSessionRecoveryCapsule(root).list(NOW)).toEqual([])
   expect(await new AgentSessionRecoveryCapsule(root).listFailed(NOW)).toEqual([])
 })
@@ -430,7 +447,8 @@ it('logs teardown capsule publication failure and still releases the provider', 
   }
   events.appendItem(
     { provider: 'codex', threadId: THREAD, turnId: 'working', ordinal: 1 },
-    { kind: 'turn', turnId: 'working', state: 'running' }
+    { kind: 'turn', turnId: 'working', state: 'running' },
+    { turnScope: AGENT_JOURNAL_THREAD_SCOPE }
   )
   await previous.host.flushStreamedEvents(SESSION)
   const capsulePath = join(previous.root, AGENT_SESSION_RECOVERY_CAPSULE_FILE)
@@ -441,10 +459,39 @@ it('logs teardown capsule publication failure and still releases the provider', 
     'agent_session_ownership_unknown'
   )
   expect(warning).toHaveBeenCalledWith(
-    '[structured-agent-session] recording recovery capsule failed'
+    '[agent-session] teardown-recovery-capsule: recording the recovery capsule at teardown failed',
+    { scope: 'teardown-recovery-capsule' }
   )
-  expect(warning.mock.calls.flat().map(String).join(' ')).not.toContain(previous.root)
+  expect(inspect(warning.mock.calls, { depth: 8 })).not.toContain(previous.root)
+  expect(previous.log.scopes()).toContain('teardown-recovery-capsule')
+  expect(inspect(previous.log.entries, { depth: 8 })).not.toContain(previous.root)
   expect(previous.store.getRecord(SESSION)?.lease.claimStatus).toBe('released')
   warning.mockRestore()
   await rm(capsulePath, { recursive: true })
+})
+
+// The resume ledger's reason stays the refusal code, which is what every renderer's guidance keys
+// on; the details are filed beside it, never in its place.
+it('files a restart refused by a conflicted claim under its code, with its details beside it', async () => {
+  // The terminal agent that holds the claim is still running, so nothing may take it over.
+  const { host, store } = await interruptedRestart('turn', true, async () => ({
+    outcome: 'identity-matched',
+    matchedOn: ['spawn-token']
+  }))
+  await store.transitionHandoff(SESSION, (record) => ({
+    ...record,
+    lease: {
+      ...record.lease,
+      claimStatus: 'conflicted',
+      ownerProcess: { hostId: 'local', pid: 4242, processStartTimeMs: 1, spawnToken: 'terminal' }
+    }
+  }))
+
+  await host.restartResume.continueAfterRestart([SESSION], 'modal')
+
+  await vi.waitFor(async () =>
+    expect(await host.restartResume.listFailures()).toMatchObject([
+      { reason: 'agent_session_conflict', details: { reason: 'claimConflicted' } }
+    ])
+  )
 })

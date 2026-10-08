@@ -12,7 +12,8 @@ import {
   fakeClaude,
   PROVIDER_SESSION_ID
 } from '../../claude/claude-structured-session-test-support'
-import { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import { structuredClaudeLifecycleEvent } from '../../runtime/structured-claude-runtime-adapter'
 import { StructuredAgentSessionHost } from './structured-agent-session-host'
 import {
@@ -23,6 +24,9 @@ import {
   hostTestOperationId,
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
+import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from './structured-agent-session-logger'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
 
 /** Delivery runs on its own serialized steps; under a loaded runner they take more than a second. */
 function eventually(assertion: () => unknown): Promise<unknown> {
@@ -80,11 +84,13 @@ beforeEach(async () => {
     readProcessStartTime: async () => 1_700_000_000_000,
     now: () => NOW
   })
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
     adapter: Object.assign(adapter, { supportsCreate: () => true }),
-    journalRoot: root,
+    journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => `spawn-${claude.connections.length + 1}`,
     now: () => NOW
@@ -183,7 +189,9 @@ describe('a fresh chat whose Claude start fails', () => {
         releaseCreate()
       }
       await settleExits()
-      const startFailure = `The provider stopped before it finished starting: ${LAUNCH_FAILURE}.`
+      // The row says the provider stopped; its stderr stays out of the sentence.
+      const startFailure =
+        'Claude stopped before it finished starting. Send your message to try again.'
       // Opening the chat: the create's start, once, and its row.
       expect(claude.connections).toHaveLength(1)
       expect(await timeline()).toEqual([startFailure])

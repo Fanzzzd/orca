@@ -10,9 +10,11 @@ import type {
   AgentSessionMutationEnvelope,
   AgentSessionSubscribeEvent
 } from '../../../shared/agent-session-wire'
-import { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import { StructuredAgentSessionHost } from './structured-agent-session-host'
+import { CodexAppServerRequestError } from '../../codex/codex-app-server-request-error'
 import {
   HOST_TEST_NOW as NOW,
   HOST_TEST_SESSION as SESSION,
@@ -22,6 +24,9 @@ import {
   hostTestOperationId,
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
+import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -48,7 +53,7 @@ beforeEach(async () => {
     acquisitionGeneration: `generation-${++generation}`,
     link: {
       linkId: `link-${fence}`,
-      handle: { provider: 'codex' as const, threadId: THREAD },
+      handle: codexProviderHandle(THREAD),
       origin: store.getRecord(SESSION)?.providerHandleChain.length
         ? ('resumed' as const)
         : ('created' as const),
@@ -66,8 +71,13 @@ beforeEach(async () => {
       ordinal: dispatch.mock.calls.length
     }
   }))
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: {
+      warn: (_message, fields) => hostErrors.push(fields.error),
+      error: (_message, fields) => hostErrors.push(fields.error)
+    },
     store,
     adapter: {
       acquire,
@@ -78,11 +88,10 @@ beforeEach(async () => {
       answerPrompt: vi.fn(async () => undefined),
       setOption: vi.fn(async () => undefined)
     },
-    journalRoot: root,
+    journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => `spawn-${acquire.mock.calls.length}`,
-    now: () => NOW,
-    onEventSinkError: ({ error }) => hostErrors.push(error)
+    now: () => NOW
   })
   expect(await host.attach(CALLER, hostTestAttachParams(null))).toMatchObject({ ok: true })
 })
@@ -142,7 +151,7 @@ async function errorStatuses(): Promise<string[]> {
 
 /** The child timed out or exited: its lease is handed back and the host holds no session. */
 async function loseOwner(): Promise<void> {
-  await host.close(SESSION)
+  await host.close(SESSION, 'evict')
   expect(store.getRecord(SESSION)?.lease).toMatchObject({
     claimStatus: 'released',
     ownerProcess: null
@@ -268,10 +277,12 @@ describe('a send with no live owner', () => {
     expect(acquire).toHaveBeenCalledOnce()
   })
 
-  it('restarts nothing for a send the ledger holds but the journal never saw', async () => {
-    const params = sendParams('claimed, then the host died')
-    // The row was claimed and the host went down before the journal write: on replay, admission
-    // reconstructs an unknown-outcome submission and never needs an owner.
+  /** A row admitted for this send, then the host died before the journal write, left as `outcome`
+   *  says: `pending` by this build, `unknown` by a build that marked it before running. */
+  async function admittedThenHostDied(
+    params: ReturnType<typeof sendParams>,
+    outcome: 'pending' | 'unknown'
+  ) {
     await store.admitMutationOperation({
       callerKey: CALLER.callerKey,
       envelope: params.envelope,
@@ -279,11 +290,13 @@ describe('a send with no live owner', () => {
       now: NOW,
       operationIdScope: 'global'
     })
-    await store.recordOperationOutcome({
-      callerKey: CALLER.callerKey,
-      operationId: params.envelope.clientOperationId,
-      outcome: { status: 'unknown' }
-    })
+    if (outcome === 'unknown') {
+      await store.recordOperationOutcome({
+        callerKey: CALLER.callerKey,
+        operationId: params.envelope.clientOperationId,
+        outcome: { status: 'unknown' }
+      })
+    }
     await host.handleAdapterEvent({
       type: 'ended',
       sessionId: SESSION,
@@ -294,16 +307,31 @@ describe('a send with no live owner', () => {
     })
     expect(store.getRecord(SESSION)?.lease.claimStatus).toBe('released')
     acquire.mockClear()
-
-    const result = await host.send(CALLER, {
+    return {
       ...params,
       envelope: {
         ...params.envelope,
         expectedRuntimeFence: store.getRecord(SESSION)?.lease.runtimeFence ?? 0
       }
-    })
+    }
+  }
 
-    expect(result).toMatchObject({
+  it('runs a send admitted but never run for the first time, restarting the owner once', async () => {
+    const resent = await admittedThenHostDied(sendParams('admitted, then the host died'), 'pending')
+
+    await expect(host.send(CALLER, resent)).resolves.toMatchObject({
+      ok: true,
+      replayed: false,
+      value: { submission: { dispatchState: 'pending' } }
+    })
+    await eventually(async () => expect(dispatch).toHaveBeenCalledOnce())
+    expect(acquire).toHaveBeenCalledOnce()
+  })
+
+  it("restarts nothing for an older build's unknown row the journal never saw", async () => {
+    const resent = await admittedThenHostDied(sendParams('marked unknown, then died'), 'unknown')
+
+    await expect(host.send(CALLER, resent)).resolves.toMatchObject({
       ok: true,
       replayed: true,
       value: { submission: { dispatchState: 'unknown', recovered: true } }
@@ -378,12 +406,17 @@ describe('a send with no live owner', () => {
     await loseOwner()
     acquire.mockRejectedValue(new Error('Not signed in. Run codex login'))
     const params = sendParams('while signed out')
-    const cause =
-      'The provider stopped before it finished starting: Not signed in. Run codex login.'
+    // The acquire's error is Orca's wrapper, not the provider's words: it goes to the log. No exit
+    // was observed, so the chat does not say the provider stopped.
+    const cause = "Codex couldn't restart. Send your message to try again."
 
     const id = await accept(params)
 
-    expect(await settled(id)).toMatchObject({ dispatchState: 'rejected', reason: cause })
+    expect(await settled(id)).toMatchObject({
+      dispatchState: 'rejected',
+      reason: cause,
+      rejection: { kind: 'restartFailed' }
+    })
     expect(dispatch).not.toHaveBeenCalled()
     // Accepted, so the ledger answers a resend with the rejection rather than a second attempt.
     expect(
@@ -391,6 +424,36 @@ describe('a send with no live owner', () => {
     ).toMatchObject({ outcome: { status: 'succeeded' } })
     // One row, in the error tone, so the reason outlives the error strip.
     expect(await errorStatuses()).toEqual([cause])
+  })
+
+  it("keeps Codex's own words behind a refused resume without saying the provider stopped", async () => {
+    await loseOwner()
+    const said = `no rollout found for thread id ${THREAD}`
+    acquire.mockRejectedValue(
+      new CodexAppServerRequestError('thread/resume', -32600, `thread/resume failed: ${said}`, said)
+    )
+    const id = await accept(sendParams('after the thread went away'))
+
+    // The sentence names no cause and quotes nothing; Codex's words ride in the fact for Details.
+    const rejection = {
+      kind: 'restartFailed',
+      detail: { text: said, audience: 'person' },
+      refusal: { code: 'agent_session_operation_invalid', details: { ownerVerdict: 'exited' } }
+    }
+    expect(await settled(id)).toMatchObject({
+      dispatchState: 'rejected',
+      reason: "Codex couldn't restart. Send your message to try again.",
+      rejection
+    })
+    expect(await errorStatuses()).toEqual([
+      "Codex couldn't restart. Send your message to try again."
+    ])
+    // Orca's own text is logged once where the start failed.
+    expect(
+      hostErrors.filter(
+        (error) => error instanceof Error && error.message === `thread/resume failed: ${said}`
+      )
+    ).toHaveLength(1)
   })
 
   it('restarts again for a Retry under a new id, and replays a resend of the same id', async () => {
@@ -445,8 +508,14 @@ describe('a send with no live owner', () => {
 
     expect(unresumable).toMatchObject({
       dispatchState: 'rejected',
-      reason:
-        "Codex couldn't restart: This execution host cannot resume the requested structured agent session. Start a new chat to continue."
+      reason: "Codex couldn't restart. Start a new chat to continue.",
+      rejection: {
+        kind: 'restartFailed',
+        refusal: {
+          code: 'structured_agent_session_unsupported',
+          details: { reason: 'hostUnsupported' }
+        }
+      }
     })
   })
 
@@ -465,8 +534,13 @@ describe('a send with no live owner', () => {
 
     const id = await accept(sendParams('owner being settled'))
 
-    const cause = "Codex couldn't restart: Another runtime is still adjudicating this lease."
-    expect(await settled(id)).toMatchObject({ dispatchState: 'rejected', reason: cause })
+    // The refusal's prose stays out of the chat; its code rides in the fact.
+    const cause = "Codex couldn't restart. Send your message to try again."
+    expect(await settled(id)).toMatchObject({
+      dispatchState: 'rejected',
+      reason: cause,
+      rejection: { kind: 'restartFailed', refusal: { code: 'execution_owner_reconciling' } }
+    })
     expect(acquire).not.toHaveBeenCalled()
     expect(await errorStatuses()).toEqual([cause])
   })
@@ -480,9 +554,11 @@ describe('a send with no live owner', () => {
 
     const id = await accept(sendParams('bookkeeping failed'))
 
+    // Orca's own fault: reported to the log, and the chat says only that Orca failed.
     expect(await settled(id)).toMatchObject({
       dispatchState: 'rejected',
-      reason: "Codex couldn't restart: spawn-token mint failed."
+      reason: "Orca ran into a problem, so this didn't go through. Try again.",
+      rejection: { kind: 'hostFault' }
     })
     expect(hostErrors).toContainEqual(
       expect.objectContaining({ message: 'spawn-token mint failed' })
@@ -559,7 +635,7 @@ describe('a write fenced to an owner the pane has not seen replaced', () => {
 
     expect(await settled(id)).toMatchObject({
       dispatchState: 'rejected',
-      reason: expect.stringContaining('Not signed in')
+      rejection: { kind: 'restartFailed' }
     })
     expect(store.getRecord(SESSION)?.lease.runtimeFence).toBeGreaterThan(seenFence + 1)
     const published = frames.slice(subscribed)

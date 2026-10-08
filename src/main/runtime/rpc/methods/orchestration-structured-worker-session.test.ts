@@ -1,6 +1,9 @@
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentJournalSubmission } from '../../../../shared/agent-session-journal-types'
-import { dispatchWriteFailureReason } from '../../../../shared/structured-agent-session-dispatch-rejection'
+import type { AgentMessageSource } from '../../../../shared/agent-session-message-source'
+import { getAppEnvironment } from '../../../../shared/app-environment'
+import { DISPATCH_REJECTED_WRITE_FAILED } from '../../../../shared/structured-agent-session-dispatch-rejection'
 
 const hostRef: { current: unknown } = { current: null }
 const createSpy = vi.fn()
@@ -19,8 +22,8 @@ const {
 } = await import('./orchestration-structured-worker-session')
 const { isUnknownWorkerStartOutcome } = await import('./orchestration/worker/worker-topology')
 const { structuredWorkerIdentities } = await import('../../structured-worker-identity')
-const { structuredWorkerChildIdentityEnv } =
-  await import('../../structured-worker-child-identity-env')
+const { structuredSessionChildIdentityEnv } =
+  await import('../../structured-session-child-identity-env')
 
 // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a host stub carrying only the members the worker start reaches.
 function installHost(location = { executionHostId: 'local', wslDistro: null as string | null }) {
@@ -82,7 +85,7 @@ describe('structured worker session', () => {
     createSpy.mockImplementation(async (args: { envelope: { sessionId: string } }) => {
       // `attach` is what spawns the provider child, and the child's env is read from the registry
       // at spawn time. Registering afterwards ships a worker with no ORCA_TERMINAL_HANDLE.
-      envAtSpawn = structuredWorkerChildIdentityEnv(args.envelope.sessionId, {})
+      envAtSpawn = structuredSessionChildIdentityEnv(args.envelope.sessionId, {})
       return { ok: true, value: { sessionId: args.envelope.sessionId } }
     })
     const created = await createStructuredWorkerSession({
@@ -93,7 +96,15 @@ describe('structured worker session', () => {
       onJournalActivity: () => {}
     })
     expect(envAtSpawn?.ORCA_TERMINAL_HANDLE).toBe(created.identity.handle)
-    expect(envAtSpawn?.ORCA_CLI_COMMAND).toBe('orca')
+    // This app's own launcher by absolute path, so a login shell's profile cannot swap in a global.
+    expect(envAtSpawn?.ORCA_CLI_COMMAND).toBe(
+      join(
+        getAppEnvironment().getPath('userData'),
+        'cli',
+        'bin',
+        process.platform === 'win32' ? 'orca-dev.cmd' : 'orca-dev'
+      )
+    )
     expect(envAtSpawn?.ORCA_PANE_KEY).toBeUndefined()
     releaseStructuredWorkerSession('d_spawn')
   })
@@ -260,8 +271,41 @@ describe('structured worker dispatch preamble', () => {
     }
   }
 
+  const TASK_FROM: AgentMessageSource = {
+    kind: 'agent',
+    senders: [
+      {
+        party: { address: 'term_coord', terminalHandle: 'term_coord', orcaSessionId: null },
+        name: 'Coordinator'
+      }
+    ],
+    orchestration: { message: 'task', runId: 'r1', taskId: 't1', dispatchId: 'd1' }
+  }
+
   const send = (host: PreambleHost) =>
-    sendStructuredWorkerPreamble({ host, sessionId: 's1', dispatchId: 'd1', preamble: 'spec' })
+    sendStructuredWorkerPreamble({
+      host,
+      sessionId: 's1',
+      dispatchId: 'd1',
+      preamble: 'spec',
+      from: TASK_FROM
+    })
+
+  // No source and no person: a restart or a close rejects it, and orchestration re-derives it.
+  it('sends the preamble as no person’s', async () => {
+    const host = hostWithSubmission({ dispatchState: 'accepted', reason: null })
+    const sent = vi.spyOn(host, 'send')
+    await send(host)
+    expect(sent.mock.calls[0]?.[1]).not.toHaveProperty('source')
+    expect(sent.mock.calls[0]?.[1]).not.toHaveProperty('userSend')
+  })
+
+  it('names who the task is from on the turn it sends', async () => {
+    const host = hostWithSubmission({ dispatchState: 'accepted', reason: null })
+    const sent = vi.spyOn(host, 'send')
+    await send(host)
+    expect(sent.mock.calls[0]?.[1]).toMatchObject({ body: { from: TASK_FROM } })
+  })
 
   it('reports the preamble delivered only on an accepted submission', async () => {
     await expect(
@@ -302,6 +346,24 @@ describe('structured worker dispatch preamble', () => {
     expect(isUnknownWorkerStartOutcome(error, 'dispatch_input')).toBe(true)
   })
 
+  it('reads a queued answer as unacknowledged', async () => {
+    const host: PreambleHost = {
+      ...hostWithSubmission({ dispatchState: 'accepted', reason: null }),
+      send: async () => ({
+        ok: true,
+        replayed: false,
+        fence: 7,
+        cursor: { epoch: 'epoch-1', sequence: 1 },
+        value: { clientMessageId: 'c1', queued: { messageId: 'c1', position: 0, state: 'waiting' } }
+      })
+    }
+    await expect(send(host)).rejects.toMatchObject({
+      code: 'operation_unknown',
+      message:
+        'The dispatch preamble was submitted but not acknowledged (unknown): no reason given.'
+    })
+  })
+
   it('keeps a rejected preamble a proven failure under a code of its own', async () => {
     const error = await send(
       hostWithSubmission({ dispatchState: 'rejected', reason: 'fence moved' })
@@ -314,13 +376,33 @@ describe('structured worker dispatch preamble', () => {
     expect(isUnknownWorkerStartOutcome(error, 'dispatch_input')).toBe(false)
   })
 
+  it('ends the message with one period whether the reason is a sentence or a marker', async () => {
+    const sentence = await send(
+      hostWithSubmission({
+        dispatchState: 'rejected',
+        reason: 'The provider stopped before this message was sent.'
+      })
+    ).catch((thrown: unknown) => thrown)
+    expect(sentence).toMatchObject({
+      message:
+        'The dispatch preamble was not delivered: The provider stopped before this message was sent.'
+    })
+    const marker = await send(
+      hostWithSubmission({ dispatchState: 'unknown', reason: 'provider child exited' })
+    ).catch((thrown: unknown) => thrown)
+    expect(marker).toMatchObject({
+      message:
+        'The dispatch preamble was submitted but not acknowledged (unknown): provider child exited.'
+    })
+  })
+
   it('reports a refused transport write as undelivered, never as unknown', async () => {
     // The state a provably-unwritten frame now settles. Nothing reached the provider,
     // so there is no running turn for a coordinator to go and look at.
     const error = await send(
       hostWithSubmission({
         dispatchState: 'rejected',
-        reason: dispatchWriteFailureReason(new Error('broken pipe'))
+        reason: DISPATCH_REJECTED_WRITE_FAILED
       })
     ).catch((thrown: unknown) => thrown)
     expect((error as { code?: string }).code).toBe('dispatch_preamble_undelivered')

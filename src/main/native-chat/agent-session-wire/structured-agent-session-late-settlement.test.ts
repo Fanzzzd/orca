@@ -1,3 +1,4 @@
+import { AGENT_JOURNAL_THREAD_SCOPE } from '../../../shared/agent-session-journal-types'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +9,8 @@ import type {
   AgentSessionMutationEnvelope,
   AgentSessionSubscribeEvent
 } from '../../../shared/agent-session-wire'
-import { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { openTestAgentSessionRecordStore } from '../../runtime/agent-session-record-store-test-harness'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type {
   AgentSessionDispatchOutcome,
@@ -24,6 +26,12 @@ import {
   hostTestOperationId,
   resetHostTestOperationIds
 } from './structured-agent-session-host-test-data'
+import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
+import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
+import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
+import { createStructuredAgentSessionLogger } from './structured-agent-session-logger'
+import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
+import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -88,8 +96,10 @@ beforeEach(async () => {
   resetHostTestOperationIds()
   dispatch = vi.fn(async () => accepted())
   closeSession = vi.fn(async () => true)
-  store = await AgentSessionRecordStore.open({ directory: join(root, 'store'), hostId: 'local' })
+  store = await openTestAgentSessionRecordStore(root)
   host = new StructuredAgentSessionHost({
+    agents: NO_STRUCTURED_AGENTS,
+    logger: createStructuredAgentSessionLogger(),
     store,
     adapter: {
       acquire: vi.fn(async ({ fence }) => ({
@@ -101,7 +111,7 @@ beforeEach(async () => {
         },
         link: {
           linkId: `link-${fence}`,
-          handle: { provider: 'codex' as const, threadId: THREAD },
+          handle: codexProviderHandle(THREAD),
           origin: 'created' as const,
           mintedAtFence: fence,
           observedAt: NOW
@@ -114,7 +124,7 @@ beforeEach(async () => {
       answerPrompt: vi.fn(async () => undefined),
       setOption: vi.fn(async () => undefined)
     },
-    journalRoot: root,
+    journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'spawn-a',
     now: () => NOW
@@ -124,7 +134,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await host.flushAllStreamedEvents()
-  await host.close(SESSION)
+  await host.close(SESSION, 'evict')
   await rm(root, { recursive: true, force: true })
 })
 
@@ -197,7 +207,7 @@ describe('settling a send the provider proves it received after the ack window',
       return true
     })
 
-    await host.close(SESSION)
+    await host.close(SESSION, 'evict')
     await expect(settlement).resolves.toBeUndefined()
     await host.revealSession(SESSION)
     expect(await submissions()).toMatchObject([{ dispatchState: 'accepted' }])
@@ -237,14 +247,15 @@ describe('settling a send the provider proves it received after the ack window',
       sessionId: SESSION,
       clientMessageId: params.envelope.clientOperationId,
       state: 'rejected',
-      reason: DISPATCH_REJECTED_CANCELLED
+      ...agentSessionFailureWords(agentSessionFailureFact('cancelled'), { surface: 'rejection' })
     })
 
     expect(await submissions()).toMatchObject([
       {
         clientMessageId: params.envelope.clientOperationId,
         dispatchState: 'rejected',
-        reason: DISPATCH_REJECTED_CANCELLED
+        reason: DISPATCH_REJECTED_CANCELLED,
+        rejection: { kind: 'cancelled' }
       }
     ])
   })
@@ -268,7 +279,10 @@ describe('settling a send the provider proves it received after the ack window',
     await journal().appendItem(
       { provider: 'claude', sessionId: THREAD, uuid: 'echo-row' },
       params.body,
-      { fence: store.getRecord(SESSION)?.lease.runtimeFence ?? 1 }
+      {
+        fence: store.getRecord(SESSION)?.lease.runtimeFence ?? 1,
+        turnScope: AGENT_JOURNAL_THREAD_SCOPE
+      }
     )
 
     expect(await submissions()).toMatchObject([

@@ -10,6 +10,8 @@
 // through the user's Retry, which rotates the client message id; Orca still
 // never puts a message back on the wire on the user's behalf.
 
+import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
+import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
 import type {
   AgentJournalMessageItem,
   AgentJournalSubmission
@@ -33,6 +35,8 @@ function comparableBody(body: AgentJournalMessageItem | undefined): boolean {
   return (
     body?.kind === 'message' &&
     body.role === 'user' &&
+    // A conversation command leaves no user item in provider history to find.
+    body.command === undefined &&
     body.blocks.length === 1 &&
     body.blocks[0]?.type === 'text' &&
     body.blocks[0].text.trim().length > 0
@@ -73,7 +77,11 @@ function unseenHistory(
   }
   return {
     ...history,
-    items: history.items.filter((item) => !committed.has(agentJournalItemKey(item.identity)))
+    // An item with no identity of its own cannot be one the journal committed under it; the
+    // adapter bounds its window to after the journal's last accepted send instead.
+    items: history.items.filter(
+      (item) => item.identity === undefined || !committed.has(agentJournalItemKey(item.identity))
+    )
   }
 }
 
@@ -116,7 +124,9 @@ export async function reconcileJournalSubmissionsAgainstHistory(input: {
         : {
             clientMessageId: outcome.clientMessageId,
             state: 'rejected',
-            reason: outcome.reason,
+            ...agentSessionFailureWords(agentSessionFailureFact('notDelivered'), {
+              surface: 'rejection'
+            }),
             fence: input.fence,
             recovered: true
           }

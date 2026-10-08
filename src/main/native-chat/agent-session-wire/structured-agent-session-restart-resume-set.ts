@@ -12,6 +12,7 @@
 // DELETES the record rather than filtering it forever. What remains are structural checks that are not about work at all: the record still
 // exists and this build supports it, and the lease is free.
 
+import type { AgentSessionAnyRefusalDetails } from '../../../shared/agent-session-wire-refusals'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import {
   agentSessionProviderHandleChainHead,
@@ -56,10 +57,24 @@ export type StructuredAgentSessionResumeFailure = StructuredAgentSessionResumeCa
   outcome: AgentSessionResumeFailureOutcome
   /** The host's or provider's refusal code, verbatim, so it can be quoted in a report. */
   reason: string
+  /** The refusal's details beside its code in `reason`; absent on older records and non-refusals. */
+  details?: AgentSessionAnyRefusalDetails
   /** Whether naming it in an action would run it again: whether it is still an offer. A
    *  continuation the chat already holds, or the user having moved on, makes a retry a no-op no
    *  matter what the reason says. */
   retryable: boolean
+}
+
+/** The agents whose offers a caller may see and act on; absent, every agent this host runs. A
+ *  client too old to show an agent's chat never lists, resumes, or dismisses that agent's offers. */
+export type StructuredAgentSessionRestartAudience = (agent: string) => boolean
+
+/** The rows `audience` may see; all of them without one. */
+export function restartRowsFor<T extends { agent: string }>(
+  rows: T[],
+  audience: StructuredAgentSessionRestartAudience | undefined
+): T[] {
+  return audience ? rows.filter((row) => audience(row.agent)) : rows
 }
 
 export type StructuredAgentSessionResumableSet = {
@@ -76,6 +91,8 @@ export type StructuredAgentSessionResumeSetInput = {
   latestPrompt: (sessionId: string) => string
   /** Whether the chat moved on since the offer was taken; false when its journal is not open here. */
   movedOn: (marker: AgentSessionResumeMarker) => boolean
+  /** Whether the chat was saved by a newer Orca: its whole database, or its journal's open. */
+  savedByNewerOrca: (sessionId: string) => boolean
   /**
    * Whether the lease must be free.
    *
@@ -114,6 +131,11 @@ export function structuredAgentSessionResumableSet(
     }
     if (input.movedOn(marker)) {
       superseded.push(marker)
+      continue
+    }
+    // Nothing here can continue a chat a newer Orca saved, so it is not offered. Its offer is kept,
+    // not spent: the offers file is shared by every Orca on the host, and the newer one can act on it.
+    if (input.savedByNewerOrca(marker.sessionId)) {
       continue
     }
     const model = normalizeOptionalField(record.options?.model, AGENT_MODEL_MAX_LENGTH)

@@ -36,7 +36,7 @@
 
 スマートフォンからエージェントを監視・操作 — エージェントの完了を通知で受け取り、どこからでもフォローアップを送信できます。
 
-[iOS App Store](https://apps.apple.com/us/app/orca-ide/id6766130217) · [Android APK](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.50/app-release.apk) · [ドキュメント →](https://www.onorca.dev/docs/mobile)
+[iOS App Store](https://apps.apple.com/us/app/orca-ide/id6766130217) · [Android APK](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.52/app-release.apk) · [ドキュメント →](https://www.onorca.dev/docs/mobile)
 
 </td>
 <td width="50%">
@@ -194,6 +194,7 @@ PR、Issue、プロジェクトボードをアプリ内で閲覧 — 任意の�
   <a href="https://github.com/charmbracelet/crush"><kbd><img src="https://www.google.com/s2/favicons?domain=charm.sh&sz=64" alt="Charm logo" width="16" valign="middle" /> Charm</kbd></a> &nbsp;
   <a href="https://docs.cline.bot/cline-cli/overview"><kbd><img src="https://www.google.com/s2/favicons?domain=cline.bot&sz=64" alt="Cline logo" width="16" valign="middle" /> Cline</kbd></a> &nbsp;
   <a href="https://www.codebuff.com/docs/help/quick-start"><kbd><img src="https://www.google.com/s2/favicons?domain=codebuff.com&sz=64" alt="Codebuff logo" width="16" valign="middle" /> Codebuff</kbd></a> &nbsp;
+  <a href="https://freebuff.com/cli"><kbd><img src="https://www.google.com/s2/favicons?domain=freebuff.com&sz=64" alt="Freebuff logo" width="16" valign="middle" /> Freebuff</kbd></a> &nbsp;
   <a href="https://commandcode.ai/docs/quickstart"><kbd><img src="https://www.google.com/s2/favicons?domain=commandcode.ai&sz=64" alt="Command Code logo" width="16" valign="middle" /> Command Code</kbd></a> &nbsp;
   <a href="https://docs.continue.dev/guides/cli"><kbd><img src="https://www.google.com/s2/favicons?domain=continue.dev&sz=64" alt="Continue logo" width="16" valign="middle" /> Continue</kbd></a> &nbsp;
   <a href="https://docs.factory.ai/cli/getting-started/quickstart"><kbd><img src="../assets/droid-logo.svg" alt="Droid logo" width="16" valign="middle" /> Droid</kbd></a> &nbsp;
@@ -230,7 +231,7 @@ yay -S stably-orca-bin
 デスクトップアプリとペアリングして、スマートフォンからエージェントを監視・操作できます。
 
 - **iOS:** [App Store からダウンロード](https://apps.apple.com/us/app/orca-ide/id6766130217)
-- **Android:** [APK をダウンロード](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.50/app-release.apk)
+- **Android:** [APK をダウンロード](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.52/app-release.apk)
 
 ---
 

@@ -1,3 +1,5 @@
+import { getLegacyOpenCodeEnvKeysToDelete } from '../../opencode/legacy-shared-config-dir'
+import { restoreManagedDataAccountEnvironment } from '../../../shared/managed-data-account-environment'
 import { restoreOrStripOverlayEnv } from '../../../shared/agent-overlay-env'
 import { delimiter } from 'node:path'
 import { dropInheritedOrcaFishHistory } from '../../fish-history-session'
@@ -32,7 +34,8 @@ const PANE_IDENTITY_ENV_KEYS = [
   'ORCA_WORKTREE_ID',
   'ORCA_AGENT_LAUNCH_TOKEN',
   // Not identity but equally per-spawn: an inherited copy names another launch's CLI.
-  'ORCA_WSL_CLI_DIR'
+  'ORCA_WSL_CLI_DIR',
+  'JCODE_RUNTIME_DIR'
 ] as const
 const WINDOWS_PATH_ENV_KEY_RE = /^path$/i
 
@@ -54,6 +57,12 @@ function deleteRequestedDaemonEnvKeys(
   env: Record<string, string>,
   keys: readonly string[] | undefined
 ): void {
+  const userDataPath = process.env.ORCA_USER_DATA_PATH
+  if (userDataPath) {
+    for (const key of getLegacyOpenCodeEnvKeysToDelete(env, userDataPath, {})) {
+      delete env[key]
+    }
+  }
   // Why: persistent daemon state can differ from Electron; delete CODEX_HOME only when its Orca overlay owns it.
   const deleteOrcaOwnedCodexHome =
     keys?.includes('ORCA_CODEX_HOME') === true &&
@@ -159,8 +168,10 @@ function removeInheritedDevAgentHookEndpoint(
 
 /** A persistent daemon's inherited environment cannot supply ownership for a new pane. */
 export function createDaemonPtyEnvironment(opts: PtySubprocessOptions): Record<string, string> {
+  const inheritedEnv = stripInheritedBuildModeEnv(process.env)
+  restoreManagedDataAccountEnvironment(inheritedEnv)
   const env: Record<string, string> = {
-    ...mergeGitConfigEnvProtocol(stripInheritedBuildModeEnv(process.env), opts.env),
+    ...mergeGitConfigEnvProtocol(inheritedEnv, opts.env),
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     TERM_PROGRAM: 'Orca',
@@ -221,4 +232,13 @@ export function finalizeDaemonPtyEnvironment(
   stripLegacyTerminalShimEnv(env, process.platform)
   dropIncoherentCondaActivationEnv(env, process.platform)
   stripPiProcessOwnerEnv(env)
+  // A live daemon pins this runtime across app updates; callers cannot name the host executable.
+  for (const key of Object.keys(env)) {
+    if (key.toUpperCase() === 'ORCA_AGENT_HOOK_NODE') {
+      delete env[key]
+    }
+  }
+  if (process.platform === 'win32') {
+    env.ORCA_AGENT_HOOK_NODE = process.execPath
+  }
 }

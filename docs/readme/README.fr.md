@@ -40,7 +40,7 @@
 
 Surveillez et pilotez vos agents depuis votre téléphone — soyez notifié quand un agent termine, et envoyez des instructions de suivi où que vous soyez.
 
-[App Store iOS](https://apps.apple.com/us/app/orca-ide/id6766130217) · [TestFlight](https://testflight.apple.com/join/YjeGMQBA) · [APK Android 0.0.50](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.50/app-release.apk) · [Docs →](https://www.onorca.dev/docs/mobile)
+[App Store iOS](https://apps.apple.com/us/app/orca-ide/id6766130217) · [APK Android 0.0.52](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.52/app-release.apk) · [Docs →](https://www.onorca.dev/docs/mobile)
 
 </td>
 <td width="50%">
@@ -200,6 +200,7 @@ Fonctionne avec **n'importe quel agent CLI** — s'il tourne dans un terminal, i
   <a href="https://github.com/charmbracelet/crush"><kbd><img src="https://www.google.com/s2/favicons?domain=charm.sh&sz=64" alt="Logo Charm" width="16" valign="middle" /> Charm</kbd></a> &nbsp;
   <a href="https://docs.cline.bot/cline-cli/overview"><kbd><img src="https://www.google.com/s2/favicons?domain=cline.bot&sz=64" alt="Logo Cline" width="16" valign="middle" /> Cline</kbd></a> &nbsp;
   <a href="https://www.codebuff.com/docs/help/quick-start"><kbd><img src="https://www.google.com/s2/favicons?domain=codebuff.com&sz=64" alt="Logo Codebuff" width="16" valign="middle" /> Codebuff</kbd></a> &nbsp;
+  <a href="https://freebuff.com/cli"><kbd><img src="https://www.google.com/s2/favicons?domain=freebuff.com&sz=64" alt="Logo Freebuff" width="16" valign="middle" /> Freebuff</kbd></a> &nbsp;
   <a href="https://commandcode.ai/docs/quickstart"><kbd><img src="https://www.google.com/s2/favicons?domain=commandcode.ai&sz=64" alt="Logo Command Code" width="16" valign="middle" /> Command Code</kbd></a> &nbsp;
   <a href="https://docs.continue.dev/guides/cli"><kbd><img src="https://www.google.com/s2/favicons?domain=continue.dev&sz=64" alt="Logo Continue" width="16" valign="middle" /> Continue</kbd></a> &nbsp;
   <a href="https://docs.factory.ai/cli/getting-started/quickstart"><kbd><img src="../assets/droid-logo.svg" alt="Logo Droid" width="16" valign="middle" /> Droid</kbd></a> &nbsp;
@@ -221,7 +222,6 @@ Fonctionne avec **n'importe quel agent CLI** — s'il tourne dans un terminal, i
 - **[Télécharger depuis onOrca.dev](https://onorca.dev/download)**
 - Ou récupérez un build directement : [macOS Apple Silicon](https://github.com/stablyai/orca/releases/latest/download/orca-macos-arm64.dmg) · [macOS Intel](https://github.com/stablyai/orca/releases/latest/download/orca-macos-x64.dmg) · [Windows (.exe)](https://github.com/stablyai/orca/releases/download/v1.4.147-rc.3/orca-windows-setup.exe) · [Linux AppImage](https://github.com/stablyai/orca/releases/latest/download/orca-linux.AppImage) · [Tous les builds](https://github.com/stablyai/orca/releases/latest)
 - **Sous Windows :** utilisez la [dernière RC (`v1.4.147-rc.3`)](https://github.com/stablyai/orca/releases#release-v1.4.147-rc.3) — elle inclut des correctifs Windows absents de la stable.
-- Vous lancez `orca serve` sur un serveur Linux headless ? Consultez le [guide serveur Linux headless](../reference/headless-linux-server.md).
 
 _Ou via un gestionnaire de paquets :_
 
@@ -237,8 +237,8 @@ yay -S stably-orca-bin
 
 Associez-la à l'app de bureau pour surveiller et piloter vos agents depuis votre téléphone.
 
-- **iOS :** [Télécharger sur l'App Store](https://apps.apple.com/us/app/orca-ide/id6766130217) ou [rejoindre TestFlight](https://testflight.apple.com/join/YjeGMQBA)
-- **Android :** [Télécharger l'APK 0.0.50](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.50/app-release.apk)
+- **iOS :** [Télécharger sur l'App Store](https://apps.apple.com/us/app/orca-ide/id6766130217)
+- **Android :** [Télécharger l'APK 0.0.52](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.52/app-release.apk)
 
 ---
 
@@ -246,9 +246,9 @@ Associez-la à l'app de bureau pour surveiller et piloter vos agents depuis votr
 
 - **Discord :** Rejoignez la communauté sur **[Discord](https://discord.gg/fzjDKHxv8Q)**.
 - **Twitter / X :** Suivez **[@orca_build](https://x.com/orca_build)** pour les news et annonces.
-- **WeChat :** Scannez pour rejoindre le groupe WeChat 10 de la communauté Orca.
+- **WeChat :** Scannez pour rejoindre le groupe WeChat 11 de la communauté Orca.
 
-  <img src="../assets/wechat-qr-group10.jpg" alt="QR code WeChat groupe 10 de la communauté Orca" width="160" />
+  <img src="../assets/wechat-qr-group11.jpg" alt="QR code WeChat groupe 11 de la communauté Orca" width="160" />
 
 - **Feedback &amp; idées :** On ship vite. Il manque quelque chose ? [Demandez une feature](https://github.com/stablyai/orca/issues).
 - **Confidentialité :** Voir la [doc confidentialité &amp; télémétrie](https://www.onorca.dev/docs/telemetry) pour ce qu'Orca collecte en anonyme et comment désactiver la télémétrie.
