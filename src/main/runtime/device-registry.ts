@@ -19,7 +19,7 @@ import {
   type MobilePairingConnectionMode
 } from '../../shared/mobile-pairing-connection-mode'
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
-import { RUNTIME_DEVICE_GRANTS, type RuntimeDeviceGrant } from './rpc/rpc-method-permission'
+import { isRuntimeDeviceGrant, type RuntimeDeviceGrant } from './rpc/rpc-method-permission'
 import {
   parseMobilePushRegistration,
   type MobilePushRegistration
@@ -44,12 +44,6 @@ export type DeviceEntry = {
   pushRegistration?: MobilePushRegistration
   // Why: administrative permissions are granted only when pairing; absent on older rows means none.
   grants?: RuntimeDeviceGrant[]
-}
-
-const GRANTABLE: ReadonlySet<string> = new Set(RUNTIME_DEVICE_GRANTS)
-
-function isRuntimeDeviceGrant(value: unknown): value is RuntimeDeviceGrant {
-  return typeof value === 'string' && GRANTABLE.has(value)
 }
 
 function validGrants(value: unknown, scope: DeviceScope): RuntimeDeviceGrant[] | undefined {
