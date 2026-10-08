@@ -136,4 +136,15 @@ export function initializeMainProcessObservers(): void {
   state.codexUsage = new CodexUsageStore(store)
   state.openCodeUsage = new OpenCodeUsageStore(store)
   state.museUsage = new MuseUsageStore(store)
+  // Why here: the tracer drops spans until initObservability (above) installs its sink.
+  const hang = state.hangDetection
+  if (hang) {
+    recordDurableCrashBreadcrumb('main_thread_hang_detected', {
+      unresponsiveMs: hang.unresponsiveMs,
+      previousPid: hang.parentPid,
+      selfRecovered: hang.selfRecovered,
+      ...(hang.stackCaptureAttempts ? { stackCaptureAttempts: hang.stackCaptureAttempts } : {}),
+      ...(hang.mainThreadStack ? { mainThreadStack: hang.mainThreadStack.join('\n') } : {})
+    })
+  }
 }

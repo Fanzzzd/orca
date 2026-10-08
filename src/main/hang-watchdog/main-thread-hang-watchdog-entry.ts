@@ -12,7 +12,15 @@ type HangWatchdogPort = {
   close: () => void
 }
 
-type Stall = { unresponsiveMs: number; selfRecovered: boolean; mainThreadStack: string[] | null }
+// Why bounded: each attempt opens an inspector session the blocked main thread must later drain.
+const MAX_STACK_CAPTURE_ATTEMPTS = 3
+
+type Stall = {
+  unresponsiveMs: number
+  selfRecovered: boolean
+  mainThreadStack: string[] | null
+  stackCaptureAttempts: number
+}
 
 // Observation only: a false positive must never kill a live main thread mid-write.
 export function recordHangObservation(options: {
@@ -21,6 +29,7 @@ export function recordHangObservation(options: {
   unresponsiveMs: number
   selfRecovered: boolean
   mainThreadStack?: string[] | null
+  stackCaptureAttempts?: number
 }): void {
   if (!options.markerPath) {
     return
@@ -31,7 +40,10 @@ export function recordHangObservation(options: {
       parentPid: options.parentPid,
       unresponsiveMs: options.unresponsiveMs,
       selfRecovered: options.selfRecovered,
-      ...(options.mainThreadStack ? { mainThreadStack: options.mainThreadStack } : {})
+      ...(options.mainThreadStack ? { mainThreadStack: options.mainThreadStack } : {}),
+      ...(options.stackCaptureAttempts
+        ? { stackCaptureAttempts: options.stackCaptureAttempts }
+        : {})
     })
   } catch {
     // Why: telemetry is best-effort; a marker that cannot be written must not take down the watchdog.
@@ -59,16 +71,30 @@ export function runWatchdog(
     now: () => performance.now(),
     wallNow: () => Date.now(),
     onHangDetected: (unresponsiveMs) => {
-      const current: Stall = { unresponsiveMs, selfRecovered: false, mainThreadStack: null }
+      const current: Stall = {
+        unresponsiveMs,
+        selfRecovered: false,
+        mainThreadStack: null,
+        stackCaptureAttempts: 0
+      }
       stall = current
       record(current)
-      // Why: the duration says a stall happened; only the stack says where.
-      void captureStack().then((mainThreadStack) => {
-        if (stall === current && mainThreadStack) {
+      // Why: the duration says a stall happened; only the stack says where. Retry because a main
+      // thread blocked in native code ignores Debugger.pause but may re-enter JS mid-stall.
+      const attempt = (): void => {
+        current.stackCaptureAttempts += 1
+        void captureStack().then((mainThreadStack) => {
+          if (stall !== current || current.selfRecovered) {
+            return
+          }
           current.mainThreadStack = mainThreadStack
+          if (!mainThreadStack && current.stackCaptureAttempts < MAX_STACK_CAPTURE_ATTEMPTS) {
+            setTimeout(attempt, config.checkIntervalMs)
+          }
           record(current)
-        }
-      })
+        })
+      }
+      attempt()
     },
     // Why: rewriting the marker keeps one observation per stall rather than two rows to reconcile.
     onHangResolved: (unresponsiveMs) => {

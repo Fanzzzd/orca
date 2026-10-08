@@ -10,6 +10,8 @@ export type HangDetectionMarker = {
   parentPid: number
   unresponsiveMs: number
   selfRecovered: boolean
+  /** How many stack reads were tried; set without mainThreadStack, the main thread never paused. */
+  stackCaptureAttempts?: number
   /** The main thread's JS stack while it was stuck; absent when it was stuck in native code. */
   mainThreadStack?: string[]
 }
@@ -49,6 +51,9 @@ export function consumeHangDetectionMarker(markerPath: string): HangDetectionMar
       unresponsiveMs: parsed.unresponsiveMs,
       // Why: a marker left by the detect leg and never rewritten means the stall never cleared.
       selfRecovered: parsed.selfRecovered === true,
+      ...(typeof parsed.stackCaptureAttempts === 'number'
+        ? { stackCaptureAttempts: parsed.stackCaptureAttempts }
+        : {}),
       ...(Array.isArray(parsed.mainThreadStack) &&
       parsed.mainThreadStack.every((frame) => typeof frame === 'string')
         ? { mainThreadStack: parsed.mainThreadStack }

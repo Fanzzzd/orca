@@ -44,7 +44,6 @@ import { browserSessionRegistry } from '../browser/browser-session-registry'
 import { logStartupMilestone } from './startup-diagnostics'
 import { writeHttp1CompatibilityMarker } from './http1-compatibility-marker'
 import { mainProcessState as state } from './main-process-state'
-import { recordDurableCrashBreadcrumb } from '../crash-reporting/durable-crash-breadcrumb'
 import { syncMacMenuBarIcon } from './main-window-actions'
 import { updateGpuAccelerationAboutPanel } from './gpu-lifecycle'
 import { reconcileManagedWslCliRegistrations } from '../cli/wsl-cli-registration-reconciliation'
@@ -70,16 +69,6 @@ export async function initializeReadyFoundation(): Promise<void> {
   const canonicalUserDataPath = getCanonicalUserDataPath()
   installMainThreadHangWatchdog({ userDataPath: canonicalUserDataPath })
   state.hangDetection = consumeHangDetectionMarker(hangDetectionMarkerPath(canonicalUserDataPath))
-  if (state.hangDetection) {
-    recordDurableCrashBreadcrumb('main_thread_hang_detected', {
-      unresponsiveMs: state.hangDetection.unresponsiveMs,
-      previousPid: state.hangDetection.parentPid,
-      selfRecovered: state.hangDetection.selfRecovered,
-      ...(state.hangDetection.mainThreadStack
-        ? { mainThreadStack: state.hangDetection.mainThreadStack.join('\n') }
-        : {})
-    })
-  }
   // Why: install certificate decisions before any webview or headless window issues its first TLS request.
   app.on(
     'certificate-error',

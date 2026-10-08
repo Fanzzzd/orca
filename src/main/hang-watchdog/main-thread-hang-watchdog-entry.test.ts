@@ -207,4 +207,49 @@ describe('watchdog worker entry', () => {
       rmSync(markerPath, { force: true })
     }
   })
+
+  it('retries the stack read while the stall lasts and records how many reads it tried', async () => {
+    const markerPath = join(tmpdir(), `hang-watchdog-retry-${process.pid}.json`)
+    const port = { on: vi.fn(), close: vi.fn() }
+    const captureStack = vi
+      .fn<() => Promise<string[] | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(['spin out/main/index.js:1:42 | spin()'])
+    try {
+      runWatchdog(
+        { parentPid: process.pid, markerPath, timeoutMs: 100, checkIntervalMs: 25 },
+        port,
+        captureStack
+      )
+      await vi.advanceTimersByTimeAsync(300)
+      expect(captureStack).toHaveBeenCalledTimes(3)
+      expect(consumeHangDetectionMarker(markerPath)).toMatchObject({
+        stackCaptureAttempts: 3,
+        mainThreadStack: ['spin out/main/index.js:1:42 | spin()']
+      })
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  it('stops after three failed stack reads', async () => {
+    const markerPath = join(tmpdir(), `hang-watchdog-giveup-${process.pid}.json`)
+    const port = { on: vi.fn(), close: vi.fn() }
+    const captureStack = vi.fn(async () => null)
+    try {
+      runWatchdog(
+        { parentPid: process.pid, markerPath, timeoutMs: 100, checkIntervalMs: 25 },
+        port,
+        captureStack
+      )
+      await vi.advanceTimersByTimeAsync(500)
+      expect(captureStack).toHaveBeenCalledTimes(3)
+      const marker = consumeHangDetectionMarker(markerPath)
+      expect(marker).toMatchObject({ stackCaptureAttempts: 3 })
+      expect(marker?.mainThreadStack).toBeUndefined()
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
 })
