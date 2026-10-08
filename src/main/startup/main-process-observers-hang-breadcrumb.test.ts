@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const events: string[] = []
+const breadcrumbData = new Map<string, unknown>()
 
 vi.mock('electron', () => ({
   app: { isPackaged: true, getPath: () => '/tmp/orca-test' }
@@ -9,7 +10,10 @@ vi.mock('../observability', () => ({
   initObservability: () => events.push('observability')
 }))
 vi.mock('../crash-reporting/durable-crash-breadcrumb', () => ({
-  recordDurableCrashBreadcrumb: (name: string) => events.push(name)
+  recordDurableCrashBreadcrumb: (name: string, data?: unknown) => {
+    events.push(name)
+    breadcrumbData.set(name, data)
+  }
 }))
 vi.mock('../agent-awake-service', () => ({
   AgentAwakeService: class {
@@ -81,5 +85,10 @@ describe('main thread hang breadcrumb', () => {
       'main_process_lifecycle_started',
       'main_thread_hang_detected'
     ])
+    expect(breadcrumbData.get('main_thread_hang_detected')).toEqual({
+      unresponsiveMs: 103_000,
+      previousPid: 9536,
+      selfRecovered: true
+    })
   })
 })
