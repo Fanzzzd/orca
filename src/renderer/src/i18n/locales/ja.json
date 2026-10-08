@@ -164,6 +164,7 @@
     "reportCrash": "クラッシュを報告…",
     "file": "ファイル",
     "exit": "終了",
+    "quitApp": "{{appName}} を終了",
     "edit": "編集",
     "appearance": "外観",
     "toggleLeftSidebar": "左サイドバーの表示/非表示",
@@ -13656,7 +13657,9 @@
             "sessionDeleteFailed": "セッションを削除できませんでした",
             "resumeInChatConflict": "別のチャットですでにこの会話が行われています。",
             "resumeInChatTranscriptMissing": "この会話の履歴を読み込めなかったため、チャットで再開できません。",
-            "resumeInChatFailed": "新規チャットでこのセッションを再開できませんでした。"
+            "resumeInChatFailed": "新規チャットでこのセッションを再開できませんでした。",
+            "resumeInNewCliUnavailable": "このセッションは CLI で開けません。",
+            "resumeInNewCliHostTooOld": "このチャットを新しい CLI で再開するには、チャットを実行しているホストの Orca を更新してください。"
           },
           "AiVaultPanelControls": {
             "scanningSessions": "セッションをスキャンしています",
@@ -13792,7 +13795,10 @@
             "deleteReasonNonLocalHost": "このデバイス上のセッションのみ削除できます。",
             "deleteReasonSyntheticPath": "このセッションは Orca では削除できません。",
             "deleteReasonUnsupportedAgent": "{{value0}} のセッションは Orca では削除できません。",
-            "resumeInNewChat": "新規チャットで再開"
+            "resumeInNewNativeChat": "新規ネイティブチャットで再開",
+            "resumeInNewCli": "新規 CLI で再開",
+            "resumeInNewCliTooltipFork": "この会話を新しい CLI セッションにフォークします。",
+            "resumeInNewCliTooltipChat": "ネイティブチャットはそのまま残ります。"
           },
           "AiVaultSessionDeleteDialog": {
             "title": "このセッションを削除しますか?",
@@ -17541,7 +17547,17 @@
         "activitySubagentOne": "サブ Agent 実行中: {{value0}}",
         "activitySubagentMany": "{{value0}} 個のサブ Agent が実行中",
         "activityMonitorOne": "監視中: {{value0}}",
-        "activityMonitorMany": "{{value0}} 個のバックグラウンドタスクを監視中"
+        "activityMonitorMany": "{{value0}} 個のバックグラウンドタスクを監視中",
+        "selectWorkspace": "{{value0}} のチャットをすべて選択",
+        "workspaceSelectedCount": "{{value0}}/{{value1}}",
+        "selectAll": "すべてのチャットを選択",
+        "selectAllLabel": "すべて選択",
+        "selectedCount": "{{value1}} 件中 {{value0}} 件を選択",
+        "selectProject": "{{value0}} のチャットをすべて選択",
+        "collapseNode": "{{value0}} を折りたたむ",
+        "expandNode": "{{value0}} を展開します",
+        "selectMachine": "{{value0}} のチャットをすべて選択",
+        "sshHost": "SSH"
       },
       "linear-issue-attribute-filter-coverage-notice": {
         "statusPartialTeamCoverage": "{{value0}}/{{value1}} チームステータスをフィルタリングしています。残りのチームからの問題は含まれません。",
@@ -17779,6 +17795,11 @@
         "editSavedArguments": "設定 > Agent > 引数で編集してください。",
         "couldNotRestart": "{{agent}} を再起動できませんでした。",
         "notSignedIn": "{{agent}} は選択したアカウントでサインインしていません。",
+        "claudeSystemNotSignedIn": "Claude にサインインしていません。`claude` を実行して /login でサインインするか、設定の Claude アカウントでアカウントを選択してください。",
+        "claudeManagedNotSignedIn": "この Claude アカウントにサインインしていません。設定の Claude アカウントで再度サインインしてください。",
+        "codexSystemNotSignedIn": "Codex にサインインしていません。`codex login` を実行してください。",
+        "codexManagedNotSignedIn": "この Codex アカウントにサインインしていません。設定の Codex アカウントで再度サインインしてください。",
+        "cliMissing": "このチャットを実行しているコンピューターで {{agent}} が見つかりませんでした。インストールするか、[設定] → [Agent] の [コマンド] を確認してください。",
         "signInFirst": "先にサインインしてください。",
         "signInThenRunCommand": "サインインしてから、/{{command}} をもう一度実行してください。",
         "signInThenSend": "サインインしてから、メッセージをもう一度送信してください。",
