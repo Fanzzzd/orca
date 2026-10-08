@@ -71,7 +71,10 @@ const MENU_JS = `document.querySelector('button').addEventListener('click', () =
   chrome.runtime.sendMessage({ type: 'menu-pick' })
 })`
 
-const SHORTCUT_MODIFIERS = [process.platform === 'darwin' ? 'meta' : 'control', 'shift']
+const SHORTCUT_MODIFIERS: Electron.InputEvent['modifiers'] = [
+  process.platform === 'darwin' ? 'meta' : 'control',
+  'shift'
+]
 
 test('a password-manager style extension works inside pages', async ({ orcaPage, electronApp }) => {
   const server = await startHtmlServer((request, port) =>
