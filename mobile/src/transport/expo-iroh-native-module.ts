@@ -5,6 +5,7 @@
 export type ExpoIrohApi = typeof import('@orca/expo-iroh')
 
 export function loadExpoIroh(): ExpoIrohApi {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: require() of the package typed by this same import() expression.
   return require('@orca/expo-iroh') as ExpoIrohApi
 }
 

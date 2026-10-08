@@ -5,7 +5,8 @@ import {
   dependencies,
   FakeLogicalClient,
   FakeRelaySession,
-  host
+  host,
+  relay
 } from './mobile-endpoint-supervisor-test-fakes'
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
@@ -36,7 +37,7 @@ describe('mobile endpoint supervisor relay credential eligibility', () => {
         current: { ...bundle.current, expiresAt: Date.now() - 1 }
       }))
     })
-    const supervisor = new MobileEndpointSupervisor(logical, host, deps)
+    const supervisor = new MobileEndpointSupervisor(logical, host.id, relay, deps)
 
     await supervisor.start()
     supervisor.stop()

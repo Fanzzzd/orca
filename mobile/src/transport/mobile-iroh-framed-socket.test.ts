@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const irohStart = vi.fn(async () => ({ endpointId: 'b'.repeat(64) }))
 const irohConnect = vi.fn(async () => ({ connectionId: 'conn-1' }))
-const irohSend = vi.fn(async () => {})
+const irohSend = vi.fn(async (_connectionId: string, _b64: string) => {})
 const irohClose = vi.fn(async () => {})
 let messageListener: ((event: { connectionId: string; bytesBase64: string }) => void) | null = null
 let closedListener: ((event: { connectionId: string; reason: string }) => void) | null = null
@@ -193,7 +193,7 @@ describe('MobileIrohFramedSocket', () => {
 
     socket.send(big)
 
-    const [, b64] = irohSend.mock.calls[0] as unknown as [string, string]
+    const [, b64] = irohSend.mock.calls[0] ?? ['', '']
     expect(atob(b64)).toHaveLength(big.byteLength)
   })
 })

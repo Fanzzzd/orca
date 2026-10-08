@@ -14,7 +14,7 @@ describe('iroh frame codec', () => {
     expect(frame.readUInt32BE(0)).toBe(payload.byteLength)
     expect(frame.subarray(4)).toEqual(Buffer.from(payload))
 
-    const onFrame = vi.fn()
+    const onFrame = vi.fn<(frame: Uint8Array) => void>()
     const decoder = createFrameDecoder({ onFrame, onOversize: vi.fn() })
     decoder.feed(frame)
     expect(onFrame).toHaveBeenCalledTimes(1)
@@ -24,7 +24,7 @@ describe('iroh frame codec', () => {
   it('reassembles frames split across chunk boundaries', () => {
     const payload = new TextEncoder().encode('abcdefghijklmnop')
     const frame = encodeLengthPrefixedFrame(payload)
-    const onFrame = vi.fn()
+    const onFrame = vi.fn<(frame: Uint8Array) => void>()
     const decoder = createFrameDecoder({ onFrame, onOversize: vi.fn() })
 
     decoder.feed(frame.subarray(0, 2))
@@ -32,24 +32,22 @@ describe('iroh frame codec', () => {
     decoder.feed(frame.subarray(7))
 
     expect(onFrame).toHaveBeenCalledTimes(1)
-    expect(Buffer.from(onFrame.mock.calls[0]?.[0] as Uint8Array).toString('utf8')).toBe(
-      'abcdefghijklmnop'
-    )
+    expect(Buffer.from(onFrame.mock.calls[0]?.[0] ?? []).toString('utf8')).toBe('abcdefghijklmnop')
   })
 
   it('decodes multiple frames from one buffer', () => {
     const a = encodeLengthPrefixedFrame(new TextEncoder().encode('one'))
     const b = encodeLengthPrefixedFrame(new TextEncoder().encode('two'))
-    const onFrame = vi.fn()
+    const onFrame = vi.fn<(frame: Uint8Array) => void>()
     const decoder = createFrameDecoder({ onFrame, onOversize: vi.fn() })
     decoder.feed(Buffer.concat([a, b]))
     expect(onFrame).toHaveBeenCalledTimes(2)
-    expect(Buffer.from(onFrame.mock.calls[0]?.[0] as Uint8Array).toString('utf8')).toBe('one')
-    expect(Buffer.from(onFrame.mock.calls[1]?.[0] as Uint8Array).toString('utf8')).toBe('two')
+    expect(Buffer.from(onFrame.mock.calls[0]?.[0] ?? []).toString('utf8')).toBe('one')
+    expect(Buffer.from(onFrame.mock.calls[1]?.[0] ?? []).toString('utf8')).toBe('two')
   })
 
   it('rejects oversize declared lengths and clears state', () => {
-    const onFrame = vi.fn()
+    const onFrame = vi.fn<(frame: Uint8Array) => void>()
     const onOversize = vi.fn()
     const decoder = createFrameDecoder({ onFrame, onOversize })
     const header = Buffer.alloc(4)

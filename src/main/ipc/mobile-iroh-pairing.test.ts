@@ -52,6 +52,7 @@ describe('registerMobileHandlers iroh pairing', () => {
       connectionMode: 'iroh'
     })
 
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The handler under test reads only createMobilePairingOffer.
     registerMobileHandlers({ createMobilePairingOffer } as never)
     await handlers.get('mobile:getPairingQR')?.(null, { connectionMode: 'iroh' })
 
@@ -61,6 +62,7 @@ describe('registerMobileHandlers iroh pairing', () => {
   })
 
   it('reports iroh endpoint bind status for the pairing path picker', () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The handler under test reads only getIrohEndpointId.
     registerMobileHandlers({
       getIrohEndpointId: () => 'a'.repeat(64)
     } as never)

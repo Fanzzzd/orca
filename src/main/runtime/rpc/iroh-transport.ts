@@ -97,6 +97,7 @@ export class IrohTransport implements RpcTransport, MobileSocketTransport {
   }
 
   setClientId(ws: WebSocket, clientId: string): void {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Only IrohFramedSockets are registered with this transport, so every ws handed back is one.
     const socket = ws as unknown as IrohFramedSocket
     if (this.sockets.has(socket)) {
       this.clientIds.set(socket, clientId)
@@ -207,6 +208,7 @@ export class IrohTransport implements RpcTransport, MobileSocketTransport {
       )
       const hasOtherConnections =
         clientId !== null && Array.from(this.clientIds.values()).includes(clientId)
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: IrohFramedSocket implements the send/close/readyState surface the RPC core uses on a WebSocket.
       this.connectionCloseHandler?.(clientId, socket as unknown as WebSocket, hasOtherConnections)
     }
 
@@ -241,6 +243,7 @@ export class IrohTransport implements RpcTransport, MobileSocketTransport {
               socket.send(response)
             }
           },
+          // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: IrohFramedSocket implements the send/close/readyState surface the RPC core uses on a WebSocket.
           socket as unknown as WebSocket
         )
       },

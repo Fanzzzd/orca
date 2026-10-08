@@ -25,10 +25,10 @@ describe('iroh endpoint secret', () => {
     const second = loadOrCreateIrohEndpointSecret(userDataPath)
     expect(second).toEqual(first)
 
-    const raw = JSON.parse(
+    const raw: { v?: unknown; secretKeyB64?: unknown } = JSON.parse(
       readFileSync(join(userDataPath, IROH_ENDPOINT_SECRET_FILENAME), 'utf8')
-    ) as { v: number; secretKeyB64: string }
+    )
     expect(raw.v).toBe(1)
-    expect(Buffer.from(raw.secretKeyB64, 'base64')).toHaveLength(32)
+    expect(Buffer.from(String(raw.secretKeyB64), 'base64')).toHaveLength(32)
   })
 })

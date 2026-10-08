@@ -24,7 +24,9 @@ export function loadOrCreateIrohEndpointSecret(userDataPath: string): number[] {
       if (statSync(filePath).size > MAX_SECRET_FILE_BYTES) {
         throw new Error('iroh endpoint secret file is too large')
       }
-      const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as SecretFile
+      const raw: Partial<Record<keyof SecretFile, unknown>> = JSON.parse(
+        readFileSync(filePath, 'utf-8')
+      )
       if (raw.v === SECRET_VERSION && typeof raw.secretKeyB64 === 'string') {
         const bytes = Array.from(Buffer.from(raw.secretKeyB64, 'base64'))
         if (bytes.length === SECRET_KEY_BYTES) {

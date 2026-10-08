@@ -32,6 +32,7 @@ export function openIrohRpcClient(args: {
     return connect(irohEndpointLogUrl(desktopEndpointId), deviceToken, publicKeyB64, {
       onLog,
       createSocket: () =>
+        // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: MobileIrohFramedSocket implements the WebSocket surface rpc-client reads (send/close/readyState/on* handlers).
         new MobileIrohFramedSocket({
           desktopEndpointId,
           ...(dialHints ? { dialHints } : {}),
