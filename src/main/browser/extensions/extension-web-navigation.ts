@@ -1,6 +1,7 @@
 import { webFrameMain, type WebContents, type WebFrameMain } from 'electron'
 import { emitPerExtension, handleExtensionApi, type ExtensionCaller } from './extension-api-host'
 import { numberArg, objectArg } from './extension-api-args'
+import { extensionHasPermission } from './extension-match-pattern'
 import { extensionTabs } from './extension-tab-registry'
 
 /** Chrome's extension frame id: 0 for the tab's main frame, else the frame tree node id. */
@@ -27,8 +28,7 @@ function emit(tab: WebContents, event: string, frame: WebFrameMain | null | unde
   const details = { tabId: tab.id, timeStamp: Date.now(), ...frameInfo(frame), ...extra }
   // Why only these: chrome.webNavigation exists only for extensions that asked for it.
   emitPerExtension(tab.session, `webNavigation.${event}`, (extension) => {
-    const permissions: unknown = extension.manifest.permissions
-    return Array.isArray(permissions) && permissions.includes('webNavigation') ? [details] : null
+    return extensionHasPermission(extension, 'webNavigation') ? [details] : null
   })
 }
 
@@ -49,9 +49,15 @@ export function watchWebNavigation(tab: WebContents): void {
     })
   )
   tab.on('dom-ready', () => emit(tab, 'onDOMContentLoaded', tab.mainFrame))
+  const subframes = new WeakSet<WebFrameMain>()
   tab.on('frame-created', (_event, details) => {
     const created = details.frame
-    created?.on('dom-ready', () => emit(tab, 'onDOMContentLoaded', created))
+    // Why: the main frame reports through the tab's dom-ready, and Electron can reuse a frame object.
+    if (!created || created.parent === null || subframes.has(created)) {
+      return
+    }
+    subframes.add(created)
+    created.on('dom-ready', () => emit(tab, 'onDOMContentLoaded', created))
   })
   tab.on('did-frame-finish-load', (_event, _isMain, processId, routingId) =>
     emit(tab, 'onCompleted', frame(processId, routingId))

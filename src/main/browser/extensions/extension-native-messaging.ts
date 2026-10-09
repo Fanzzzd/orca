@@ -42,6 +42,17 @@ async function startHost(
   return child
 }
 
+// Why: port ids are sequential, so another extension could guess one and talk to this host.
+function ownedPort(caller: ExtensionCaller, value: unknown) {
+  const id = numberArg(value, 'port')
+  const port = ports.get(id)
+  return port &&
+    port.caller.extension.id === caller.extension.id &&
+    port.caller.session === caller.session
+    ? { id, port }
+    : undefined
+}
+
 function closePort(id: number, error?: string): void {
   const port = ports.get(id)
   if (!port) {
@@ -85,10 +96,15 @@ handleExtensionApi('nativePort', {
     host.once('exit', () => closePort(id, 'Native host has exited.'))
     return id
   },
-  post: (_caller: ExtensionCaller, id: unknown, message: unknown) => {
-    ports.get(numberArg(id, 'port'))?.host.stdin.write(encodeNativeMessage(message))
+  post: (caller: ExtensionCaller, id: unknown, message: unknown) => {
+    ownedPort(caller, id)?.port.host.stdin.write(encodeNativeMessage(message))
   },
-  disconnect: (_caller: ExtensionCaller, id: unknown) => closePort(numberArg(id, 'port'))
+  disconnect: (caller: ExtensionCaller, id: unknown) => {
+    const owned = ownedPort(caller, id)
+    if (owned) {
+      closePort(owned.id)
+    }
+  }
 })
 
 handleExtensionApi('runtime', {

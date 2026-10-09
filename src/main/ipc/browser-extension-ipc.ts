@@ -110,7 +110,7 @@ export function registerBrowserExtensionHandlers(): void {
     'browser:runExtensionMenuItem',
     (event, args: { browserPageId?: unknown; index?: unknown }) => {
       const guest = guestFor(event, args?.browserPageId)
-      if (guest && Number.isInteger(args.index)) {
+      if (guest && Number.isInteger(args?.index)) {
         runBrowserExtensionMenuItem(
           guest,
           Number(args.index),

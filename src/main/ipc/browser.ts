@@ -220,8 +220,8 @@ export function registerBrowserHandlers(): void {
   // Why: keeps the bridge's active tab in sync with the renderer's UI state.
   // Without this, a user switching tabs in the UI would leave the agent operating
   // on the previous tab, which is confusing.
-  ipcMain.handle('browser:activeTabChanged', (event, args: { browserPageId: string }) => {
-    if (!isTrustedBrowserRenderer(event.sender)) {
+  ipcMain.handle('browser:activeTabChanged', (event, args: { browserPageId?: unknown }) => {
+    if (!isTrustedBrowserRenderer(event.sender) || typeof args?.browserPageId !== 'string') {
       return false
     }
     const wcId = browserManager.getGuestWebContentsId(args.browserPageId)

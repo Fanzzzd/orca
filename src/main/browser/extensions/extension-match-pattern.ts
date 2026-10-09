@@ -44,16 +44,27 @@ export function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${escaped}$`)
 }
 
-/** Whether the extension may see `url`: the "tabs" permission or a host permission covering it. */
-export function extensionCanSeeUrl(extension: Electron.Extension, url: string): boolean {
+function manifestPermissions(extension: Electron.Extension): unknown[] {
   const manifest = extension.manifest
-  const permissions: unknown[] = [
+  return [
     ...(Array.isArray(manifest.permissions) ? manifest.permissions : []),
     ...(Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [])
   ]
-  return permissions.some(
-    (permission) =>
-      permission === 'tabs' ||
-      (typeof permission === 'string' && matchesUrlPattern(permission, url))
+}
+
+/** Whether the manifest declares an API permission such as "cookies". */
+export function extensionHasPermission(extension: Electron.Extension, name: string): boolean {
+  return manifestPermissions(extension).includes(name)
+}
+
+/** Whether a host permission covers `url`; "tabs" alone does not grant one. */
+export function extensionHasHostPermission(extension: Electron.Extension, url: string): boolean {
+  return manifestPermissions(extension).some(
+    (permission) => typeof permission === 'string' && matchesUrlPattern(permission, url)
   )
+}
+
+/** Whether the extension may see `url`: the "tabs" permission or a host permission covering it. */
+export function extensionCanSeeUrl(extension: Electron.Extension, url: string): boolean {
+  return extensionHasPermission(extension, 'tabs') || extensionHasHostPermission(extension, url)
 }
