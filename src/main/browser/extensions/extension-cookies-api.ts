@@ -1,7 +1,7 @@
 import type { Session } from 'electron'
 import { emitPerExtension, handleExtensionApi, type ExtensionCaller } from './extension-api-host'
 import { objectArg, optionalString, stringArg } from './extension-api-args'
-import { extensionCanSeeUrl } from './extension-match-pattern'
+import { extensionHasHostPermission, extensionHasPermission } from './extension-match-pattern'
 import { extensionTabs } from './extension-tab-registry'
 
 // Orca's browser sessions have no incognito twin, so each has one store.
@@ -30,9 +30,14 @@ function describeCookie(cookie: Electron.Cookie): Record<string, unknown> {
   }
 }
 
+// Why not extensionCanSeeUrl: "tabs" reveals tab URLs, but Chrome gates cookies on "cookies" plus a host permission.
+function canReadCookies(extension: Electron.Extension, url: string): boolean {
+  return extensionHasPermission(extension, 'cookies') && extensionHasHostPermission(extension, url)
+}
+
 function requireUrl(caller: ExtensionCaller, value: unknown): string {
   const url = stringArg(value, 'url')
-  if (!extensionCanSeeUrl(caller.extension, url)) {
+  if (!canReadCookies(caller.extension, url)) {
     throw new Error(`No host permissions for cookies at url: "${url}".`)
   }
   return url
@@ -57,7 +62,7 @@ handleExtensionApi('cookies', {
     }
     const cookies = await caller.session.cookies.get(filter)
     return cookies
-      .filter((cookie) => extensionCanSeeUrl(caller.extension, cookieUrl(cookie)))
+      .filter((cookie) => canReadCookies(caller.extension, cookieUrl(cookie)))
       .map(describeCookie)
   },
   set: async (caller: ExtensionCaller, details: unknown) => {
@@ -105,9 +110,7 @@ export function watchExtensionCookies(session: Session): void {
   session.cookies.on('changed', (_event, cookie, cause, removed) => {
     const url = cookieUrl(cookie)
     emitPerExtension(session, 'cookies.onChanged', (extension) =>
-      extensionCanSeeUrl(extension, url)
-        ? [{ removed, cookie: describeCookie(cookie), cause }]
-        : null
+      canReadCookies(extension, url) ? [{ removed, cookie: describeCookie(cookie), cause }] : null
     )
   })
 }
