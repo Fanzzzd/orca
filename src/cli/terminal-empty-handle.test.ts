@@ -49,6 +49,7 @@ import { COMMAND_SPECS } from './specs'
 import { buildWorktree, okFixture, queueFixtures, worktreeListFixture } from './test-fixtures'
 
 function fakeClient(call: RuntimeClient['call']): RuntimeClient {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: getTerminalHandle reads only call and isRemote from the client.
   return { call, isRemote: false } as unknown as RuntimeClient
 }
 
