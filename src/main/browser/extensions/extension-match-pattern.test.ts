@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { extensionCanSeeUrl, globToRegExp, matchesUrlPattern } from './extension-match-pattern'
+import {
+  extensionCanSeeUrl,
+  extensionHasHostPermission,
+  globToRegExp,
+  matchesUrlPattern
+} from './extension-match-pattern'
 
 describe('matchesUrlPattern', () => {
   it.each([
@@ -39,5 +44,11 @@ describe('extensionCanSeeUrl', () => {
     expect(extensionCanSeeUrl(extension({ permissions: ['storage'] }), 'https://a.com/')).toBe(
       false
     )
+  })
+
+  it('does not count tabs as a host permission', () => {
+    const url = 'https://a.com/'
+    expect(extensionHasHostPermission(extension({ permissions: ['tabs'] }), url)).toBe(false)
+    expect(extensionHasHostPermission(extension({ permissions: ['<all_urls>'] }), url)).toBe(true)
   })
 })

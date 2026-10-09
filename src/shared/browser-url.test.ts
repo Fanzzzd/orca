@@ -178,6 +178,12 @@ describe('browser-url helpers', () => {
     expect(normalizeExternalBrowserUrl('\\\\server\\share\\Example.ipynb')).toBeNull()
   })
 
+  it('keeps chrome-extension:// in Orca, since the OS browser has no such extension', () => {
+    const url = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/options.html'
+    expect(normalizeBrowserNavigationUrl(url)).toBe(url)
+    expect(normalizeExternalBrowserUrl(url)).toBeNull()
+  })
+
   it('returns null for non-URL input without search engine opt-in', () => {
     expect(normalizeBrowserNavigationUrl('not a url')).toBeNull()
   })

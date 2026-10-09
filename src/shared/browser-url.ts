@@ -361,7 +361,8 @@ export function normalizeExternalBrowserUrl(rawUrl: string): string | null {
   // hand off http(s) targets to the OS. file:// is allowed for the in-app
   // browser pane (local HTML preview), but forwarding it to openExternal
   // would let a remote page smuggle arbitrary file paths into Finder/Explorer.
-  if (normalized.startsWith('file:')) {
+  // chrome-extension:// ids are Orca's own, so the OS browser cannot open them either.
+  if (normalized.startsWith('file:') || normalized.startsWith('chrome-extension:')) {
     return null
   }
   return normalized
