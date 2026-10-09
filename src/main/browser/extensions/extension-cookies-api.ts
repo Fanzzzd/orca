@@ -8,10 +8,15 @@ import { extensionTabs } from './extension-tab-registry'
 const STORE_ID = '0'
 const watchedSessions = new WeakSet<Session>()
 
-/** A URL a cookie is sent to, for checking it against host permissions. */
-function cookieUrl(cookie: Electron.Cookie): string {
+/** The URLs a cookie is sent to: a Secure cookie only over https, any other over either. */
+function cookieUrls(cookie: Electron.Cookie): string[] {
   const host = (cookie.domain ?? '').replace(/^\./, '')
-  return `${cookie.secure ? 'https' : 'http'}://${host}${cookie.path ?? '/'}`
+  const schemes = cookie.secure ? ['https'] : ['https', 'http']
+  return schemes.map((scheme) => `${scheme}://${host}${cookie.path ?? '/'}`)
+}
+
+function canReadCookie(extension: Electron.Extension, cookie: Electron.Cookie): boolean {
+  return cookieUrls(cookie).some((url) => canReadCookies(extension, url))
 }
 
 function describeCookie(cookie: Electron.Cookie): Record<string, unknown> {
@@ -61,9 +66,7 @@ handleExtensionApi('cookies', {
       session: typeof args.session === 'boolean' ? args.session : undefined
     }
     const cookies = await caller.session.cookies.get(filter)
-    return cookies
-      .filter((cookie) => canReadCookies(caller.extension, cookieUrl(cookie)))
-      .map(describeCookie)
+    return cookies.filter((cookie) => canReadCookie(caller.extension, cookie)).map(describeCookie)
   },
   set: async (caller: ExtensionCaller, details: unknown) => {
     const args = objectArg(details)
@@ -108,9 +111,8 @@ export function watchExtensionCookies(session: Session): void {
   }
   watchedSessions.add(session)
   session.cookies.on('changed', (_event, cookie, cause, removed) => {
-    const url = cookieUrl(cookie)
     emitPerExtension(session, 'cookies.onChanged', (extension) =>
-      canReadCookies(extension, url) ? [{ removed, cookie: describeCookie(cookie), cause }] : null
+      canReadCookie(extension, cookie) ? [{ removed, cookie: describeCookie(cookie), cause }] : null
     )
   })
 }
