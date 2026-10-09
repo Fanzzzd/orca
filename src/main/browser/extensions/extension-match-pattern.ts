@@ -60,7 +60,10 @@ export function extensionHasPermission(extension: Electron.Extension, name: stri
 /** Whether a host permission covers `url`; "tabs" alone does not grant one. */
 export function extensionHasHostPermission(extension: Electron.Extension, url: string): boolean {
   return manifestPermissions(extension).some(
-    (permission) => typeof permission === 'string' && matchesUrlPattern(permission, url)
+    (permission) =>
+      typeof permission === 'string' &&
+      // Why: Chrome requires a path in a host permission but ignores its value.
+      matchesUrlPattern(permission.replace(/^([^:]+:\/\/[^/]*)\/.*$/, '$1/*'), url)
   )
 }
 
