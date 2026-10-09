@@ -51,4 +51,11 @@ describe('extensionCanSeeUrl', () => {
     expect(extensionHasHostPermission(extension({ permissions: ['tabs'] }), url)).toBe(false)
     expect(extensionHasHostPermission(extension({ permissions: ['<all_urls>'] }), url)).toBe(true)
   })
+
+  it('ignores the path of a host permission, as Chrome does', () => {
+    const scoped = extension({ host_permissions: ['https://a.com/account/*'] })
+    expect(extensionHasHostPermission(scoped, 'https://a.com/other')).toBe(true)
+    expect(extensionHasHostPermission(scoped, 'http://a.com/other')).toBe(false)
+    expect(extensionHasHostPermission(scoped, 'https://b.com/account/x')).toBe(false)
+  })
 })
