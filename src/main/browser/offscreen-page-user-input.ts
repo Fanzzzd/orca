@@ -167,7 +167,10 @@ export function electronWheelEvent(
 /** The key in the shape a <webview>'s before-input-event carries, for Orca's shortcut matching. */
 export function electronKeyInput(
   input: Extract<OffscreenPageUserInput, { kind: 'key' }>
-): Pick<Electron.Input, 'type' | 'key' | 'code' | 'meta' | 'control' | 'alt' | 'shift'> {
+): Pick<
+  Electron.Input,
+  'type' | 'key' | 'code' | 'meta' | 'control' | 'alt' | 'shift' | 'isAutoRepeat'
+> {
   return {
     type: input.type,
     key: input.key,
@@ -175,7 +178,8 @@ export function electronKeyInput(
     meta: input.modifiers.includes('meta'),
     control: input.modifiers.includes('control'),
     alt: input.modifiers.includes('alt'),
-    shift: input.modifiers.includes('shift')
+    shift: input.modifiers.includes('shift'),
+    isAutoRepeat: input.repeat
   }
 }
 

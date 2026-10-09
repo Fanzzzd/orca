@@ -66,6 +66,7 @@ function createFakeBind(recv: FakeRecv, send: FakeSend, endpointId = 'a'.repeat(
     connection,
     pushIncoming: () => acceptResolve?.(incoming),
     bindEndpoint: async () => ({
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: IrohTransport calls only acceptNext/close/id on the bound endpoint, which the double provides.
       endpoint: endpoint as never,
       endpointId
     })

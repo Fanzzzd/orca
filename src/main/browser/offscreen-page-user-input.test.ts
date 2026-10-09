@@ -151,7 +151,8 @@ describe('Electron input shapes', () => {
       meta: true,
       control: false,
       alt: false,
-      shift: true
+      shift: true,
+      isAutoRepeat: false
     })
   })
 })

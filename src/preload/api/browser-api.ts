@@ -22,7 +22,8 @@ import type {
   BrowserCaptureSelectionScreenshotArgs,
   BrowserCaptureSelectionScreenshotResult,
   BrowserExtractHoverArgs,
-  BrowserExtractHoverResult
+  BrowserExtractHoverResult,
+  GrabIntent
 } from '../../shared/browser-grab-types'
 import type {
   BrowserContextMenuDismissedEvent,
@@ -137,7 +138,7 @@ export type BrowserApi = BrowserExtensionsApi & {
     args: BrowserCaptureSelectionScreenshotArgs
   ) => Promise<BrowserCaptureSelectionScreenshotResult>
   extractHoverPayload: (args: BrowserExtractHoverArgs) => Promise<BrowserExtractHoverResult>
-  onGrabModeToggle: (callback: (browserPageId: string) => void) => () => void
+  onGrabModeToggle: (callback: (browserPageId: string, intent: GrabIntent) => void) => () => void
   onGrabActionShortcut: (
     callback: (args: { browserPageId: string; key: 'c' | 's' }) => void
   ) => () => void
@@ -145,6 +146,7 @@ export type BrowserApi = BrowserExtensionsApi & {
   /** Resolves once the SSH workspace's partition is bound and proxy-verified; the webview must wait for it. */
   prepareSshWorkspacePartition: (args: {
     targetId: string
+    expectedSshTargetGeneration?: number
     browserProfileId?: string
     skipProbe?: boolean
   }) => Promise<{ partition: string }>

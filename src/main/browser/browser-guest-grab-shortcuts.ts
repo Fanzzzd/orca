@@ -11,7 +11,7 @@ export type GrabShortcutContext = {
 
 type GrabShortcutInput = Pick<
   Electron.Input,
-  'type' | 'key' | 'code' | 'meta' | 'control' | 'alt' | 'shift'
+  'type' | 'key' | 'code' | 'meta' | 'control' | 'alt' | 'shift' | 'isAutoRepeat'
 >
 
 /**
@@ -46,6 +46,8 @@ export function handleGrabShortcutInput(
   }
 
   if (
+    // Why: the renderer toggles the picker per message, so a held chord would flicker it.
+    input.isAutoRepeat ||
     !keybindingMatchesAction('browser.grabElement', input, process.platform, getKeybindings?.())
   ) {
     return false
@@ -72,7 +74,7 @@ export function handleGrabShortcutInput(
     .then((shouldToggle) => {
       if (shouldToggle) {
         claimToggle?.()
-        resolveRenderer(browserTabId)?.send('browser:grabModeToggle', browserTabId)
+        resolveRenderer(browserTabId)?.send('browser:grabModeToggle', browserTabId, 'copy')
       }
     })
     .catch(() => {

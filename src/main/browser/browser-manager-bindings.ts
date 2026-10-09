@@ -60,7 +60,10 @@ export abstract class BrowserManagerBindings extends BrowserManagerGrab {
   handleOffscreenPageGrabKey(
     browserTabId: string,
     guest: Electron.WebContents,
-    input: Pick<Electron.Input, 'type' | 'key' | 'code' | 'meta' | 'control' | 'alt' | 'shift'>
+    input: Pick<
+      Electron.Input,
+      'type' | 'key' | 'code' | 'meta' | 'control' | 'alt' | 'shift' | 'isAutoRepeat'
+    >
   ): boolean {
     return handleGrabShortcutInput(
       {
