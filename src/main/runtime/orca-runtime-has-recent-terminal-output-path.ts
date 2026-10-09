@@ -166,7 +166,7 @@ export class OrcaRuntimeWithHasRecentTerminalOutputPath extends OrcaRuntimeWithG
     return this.terminalDrivers.getAll()
   }
 
-  browserScreencastAck(subscriptionId: string, seq: number, connectionId?: string): void {
+  ackScreencastFrame(subscriptionId: string, seq: number, connectionId?: string): void {
     this.edgeCommands.ackScreencastFrame(subscriptionId, seq, connectionId)
   }
 
