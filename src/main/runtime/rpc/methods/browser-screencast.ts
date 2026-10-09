@@ -30,9 +30,10 @@ export const BROWSER_SCREENCAST_METHODS = [
   }),
   defineMethod({
     name: 'browser.screencast.ack',
+    permission: 'workspace',
     params: ScreencastAck,
     handler: async (params, { runtime, connectionId }) => {
-      runtime.browserScreencastAck(params.subscriptionId, params.seq, connectionId)
+      runtime.ackScreencastFrame(params.subscriptionId, params.seq, connectionId)
       return { acked: true }
     }
   }),

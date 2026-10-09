@@ -27,6 +27,7 @@ import {
 } from './mobile-browser-stream-events'
 import { createBrowserFramePacer } from './browser-frame-pacer'
 import { createBrowserScreencastFrameAcks } from './browser-screencast-frame-acks'
+import { browserScreencastFrameAck } from './mobile-browser-command-operations'
 import { useMobileBrowserRequest } from './use-mobile-browser-request'
 
 type MobileBrowserStreamArgs = {
@@ -199,7 +200,7 @@ export function useMobileBrowserStream(args: MobileBrowserStreamArgs) {
       }
     }
     const frameAcks = createBrowserScreencastFrameAcks((subscriptionId, seq) => {
-      void client.sendRequest('browser.screencast.ack', { subscriptionId, seq }).catch(() => {})
+      void browserScreencastFrameAck.request(client, { subscriptionId, seq }).catch(() => {})
     })
     const unsubscribe = client.subscribe(
       'browser.screencast',
