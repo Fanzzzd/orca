@@ -135,17 +135,21 @@ export function installBrowserExtensionApi(
   chromeApi.runtime.connectNative = (application: string) => {
     const handlers = { message: new Set<Listener>(), disconnect: new Set<Listener>() }
     const opened = call('nativePort', 'open', [application])
+    // Why swallow: a host that never opened reports through onDisconnect, as in Chrome.
+    const ignore = (): void => {}
     const port = {
       name: application,
       onMessage: eventOf(handlers.message),
       onDisconnect: eventOf(handlers.disconnect),
       postMessage: (message: unknown) =>
-        void opened.then((id) => call('nativePort', 'post', [id, message])),
+        void opened.then((id) => call('nativePort', 'post', [id, message])).catch(ignore),
       disconnect: () =>
-        void opened.then((id) => {
-          ports.delete(id)
-          return call('nativePort', 'disconnect', [id])
-        })
+        void opened
+          .then((id) => {
+            ports.delete(id)
+            return call('nativePort', 'disconnect', [id])
+          })
+          .catch(ignore)
     }
     const entry = { port, ...handlers }
     opened.then(
