@@ -58,7 +58,11 @@ export const BROWSER_EXTENSION_API: Readonly<Record<string, BrowserExtensionName
       'onDOMContentLoaded',
       'onCompleted',
       'onErrorOccurred',
-      'onHistoryStateUpdated'
+      'onHistoryStateUpdated',
+      // Why declared though Orca never fires them: 1Password's worker aborts startup on a missing event.
+      'onCreatedNavigationTarget',
+      'onReferenceFragmentUpdated',
+      'onTabReplaced'
     ]
   },
   notifications: {
