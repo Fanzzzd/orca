@@ -2,7 +2,13 @@ import { join } from 'node:path'
 import { rm } from 'node:fs/promises'
 import { app, BrowserWindow, dialog, webContents, type Session } from 'electron'
 import { translateMain } from '../../i18n/main-i18n'
-import { installExtensionApiHost } from './extension-api-host'
+import {
+  handleExtensionApi,
+  installExtensionApiHost,
+  type ExtensionCaller
+} from './extension-api-host'
+import { stringArg } from './extension-api-args'
+import { extensionHasPermission } from './extension-match-pattern'
 import { setBrowserExtensionSessionEnabler } from './extension-session-enabler'
 import { watchExtensionCookies } from './extension-cookies-api'
 import {
@@ -129,6 +135,27 @@ export async function setBrowserExtensionEnabled(id: string, enabled: boolean): 
     await load(sess, install.path)
   }
 }
+
+// Why here: chrome.management.setEnabled shares Orca's own enable switch, which lives in this module.
+handleExtensionApi('management', {
+  setEnabled: async (caller: ExtensionCaller, id: unknown, enabled: unknown) => {
+    const target = stringArg(id, 'id')
+    if (!extensionHasPermission(caller.extension, 'management')) {
+      throw new Error('chrome.management needs the "management" permission')
+    }
+    if (target === caller.extension.id) {
+      throw new Error('An extension cannot change its own enabled state')
+    }
+    // Why disable only: Chrome asks the user before one extension re-enables another.
+    if (enabled !== false) {
+      throw new Error('Extensions can only be re-enabled from Orca settings')
+    }
+    if (!caller.session.extensions.getExtension(target)) {
+      throw new Error(`Failed to find extension with id ${target}`)
+    }
+    await setBrowserExtensionEnabled(target, false)
+  }
+})
 
 export async function removeBrowserExtension(id: string): Promise<void> {
   const [sess] = sessions

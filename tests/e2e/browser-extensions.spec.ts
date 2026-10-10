@@ -18,6 +18,7 @@ browser.runtime.onMessage.addListener((_message, sender, reply) => {
     reply({
       windows: typeof browser.windows?.getAll,
       contextMenus: typeof browser.contextMenus?.create,
+      createdNavigationTarget: typeof browser.webNavigation?.onCreatedNavigationTarget?.addListener,
       sameNamespace: browser === chrome,
       activeTabIsSender: tabs.length === 1 && tabs[0].id === sender.tab?.id
     })
@@ -70,6 +71,7 @@ test('an installed extension runs with the full chrome API and shows a toolbar b
         JSON.stringify({
           windows: 'function',
           contextMenus: 'function',
+          createdNavigationTarget: 'function',
           sameNamespace: true,
           activeTabIsSender: true
         })

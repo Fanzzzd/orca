@@ -12,15 +12,28 @@ export type BrowserExtensionNamespace = {
   constants?: Readonly<Record<string, unknown>>
 }
 
+// Why every Chrome event of a namespace, fired or not: a worker that registers a missing one throws
+// during startup, as 1Password's did on webNavigation.onCreatedNavigationTarget.
 export const BROWSER_EXTENSION_API: Readonly<Record<string, BrowserExtensionNamespace>> = {
   tabs: {
-    methods: ['get', 'getCurrent', 'query', 'create', 'update', 'remove'],
-    events: ['onCreated', 'onUpdated', 'onRemoved', 'onActivated', 'onHighlighted'],
+    methods: ['get', 'getCurrent', 'query', 'create', 'update', 'remove', 'captureVisibleTab'],
+    events: [
+      'onCreated',
+      'onUpdated',
+      'onRemoved',
+      'onActivated',
+      'onHighlighted',
+      'onMoved',
+      'onAttached',
+      'onDetached',
+      'onReplaced',
+      'onZoomChange'
+    ],
     constants: { TAB_ID_NONE: -1 }
   },
   windows: {
     methods: ['get', 'getCurrent', 'getLastFocused', 'getAll', 'create', 'update', 'remove'],
-    events: ['onCreated', 'onRemoved', 'onFocusChanged'],
+    events: ['onCreated', 'onRemoved', 'onFocusChanged', 'onBoundsChanged'],
     constants: { WINDOW_ID_NONE: -1, WINDOW_ID_CURRENT: -2 }
   },
   action: {
@@ -42,7 +55,7 @@ export const BROWSER_EXTENSION_API: Readonly<Record<string, BrowserExtensionName
       'openPopup',
       'getUserSettings'
     ],
-    events: ['onClicked']
+    events: ['onClicked', 'onUserSettingsChanged']
   },
   contextMenus: {
     methods: ['create', 'update', 'remove', 'removeAll'],
@@ -59,7 +72,6 @@ export const BROWSER_EXTENSION_API: Readonly<Record<string, BrowserExtensionName
       'onCompleted',
       'onErrorOccurred',
       'onHistoryStateUpdated',
-      // Why declared though Orca never fires them: 1Password's worker aborts startup on a missing event.
       'onCreatedNavigationTarget',
       'onReferenceFragmentUpdated',
       'onTabReplaced'
@@ -67,18 +79,24 @@ export const BROWSER_EXTENSION_API: Readonly<Record<string, BrowserExtensionName
   },
   notifications: {
     methods: ['create', 'update', 'clear', 'getAll', 'getPermissionLevel'],
-    events: ['onClicked', 'onClosed', 'onButtonClicked']
+    events: ['onClicked', 'onClosed', 'onButtonClicked', 'onPermissionLevelChanged']
   },
   cookies: {
     methods: ['get', 'getAll', 'set', 'remove', 'getAllCookieStores'],
     events: ['onChanged']
   },
-  downloads: { methods: ['download'], events: ['onCreated', 'onChanged'] },
+  downloads: {
+    methods: ['download'],
+    events: ['onCreated', 'onChanged', 'onErased', 'onDeterminingFilename']
+  },
   permissions: {
     methods: ['contains', 'getAll', 'request', 'remove'],
     events: ['onAdded', 'onRemoved']
   },
-  management: { methods: ['getAll', 'get'], events: [] },
+  management: {
+    methods: ['getAll', 'get', 'setEnabled'],
+    events: ['onInstalled', 'onUninstalled', 'onEnabled', 'onDisabled']
+  },
   runtime: { methods: ['sendNativeMessage'], events: [] }
 }
 
