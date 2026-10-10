@@ -5,6 +5,7 @@ import {
   PAIRING_PUBLIC_KEY_MAX_CHARACTERS,
   PAIRING_RELAY_URL_MAX_CHARACTERS
 } from './mobile-pairing-protocol-limits'
+import { RuntimeHostDescriptorSchema } from './runtime-host-descriptor'
 
 export const PAIRING_OFFER_VERSION = 2
 const PairingScopeSchema = z.enum(['mobile', 'runtime'])
@@ -89,7 +90,9 @@ export function createPairingOfferSchema(now: () => number = () => Date.now()) {
       scope: PairingScopeSchema.optional(),
       relay: relaySchema.optional(),
       // Why: optional iroh dial target; unknown to older clients and stripped only if invalid.
-      iroh: irohSchema.optional()
+      iroh: irohSchema.optional(),
+      // Why catch: a descriptor this build cannot read is dropped, never a reason to refuse pairing.
+      hostDescriptor: RuntimeHostDescriptorSchema.optional().catch(undefined)
     })
     .superRefine((offer, ctx) => {
       if (offer.relay && offer.scope === 'runtime') {

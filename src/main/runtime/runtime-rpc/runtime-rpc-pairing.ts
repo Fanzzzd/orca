@@ -108,6 +108,10 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
     this.mobileRelayPairingProvider = provider
   }
 
+  setMobileRelayPairingProviderInstaller(install: (() => Promise<unknown>) | null): void {
+    this.mobileRelayPairingProviderInstaller = install
+  }
+
   async revokeMobileDevice(deviceId: string): Promise<boolean> {
     const device = this.deviceRegistry?.getDevice(deviceId)
     if (device?.scope !== 'mobile') {
@@ -218,6 +222,7 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
       console.error('[runtime] Failed to persist pairing credential:', error)
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
     }
+    const hostDescriptor = this.hostDescriptor
     const pairingUrl = encodePairingOffer({
       v: PAIRING_OFFER_VERSION,
       endpoint,
@@ -225,7 +230,9 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
       publicKeyB64,
       pairedDeviceId: device.deviceId,
       scope,
-      ...(iroh ? { iroh } : {})
+      ...(iroh ? { iroh } : {}),
+      // Why runtime scope only: mobile never pins it, and every byte densifies the phone's QR.
+      ...(hostDescriptor && scope === 'runtime' ? { hostDescriptor } : {})
     })
     return {
       available: true,
