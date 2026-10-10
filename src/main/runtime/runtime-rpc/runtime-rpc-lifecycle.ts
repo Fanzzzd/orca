@@ -20,6 +20,7 @@ import {
   createRuntimeTransportMetadata,
   sweepOrphanedRuntimeSockets
 } from './runtime-rpc-socket-metadata'
+import { errorMessage } from '../../../shared/error-message'
 
 export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
   private shouldStartIrohTransport(): boolean {
@@ -59,7 +60,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
           reply(JSON.stringify(response))
         })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = errorMessage(error)
           // Why: best-effort id recovery so the client can correlate the error frame to its pending request.
           let id = 'unknown'
           try {
