@@ -7,7 +7,12 @@ import {
   optionalNumber,
   optionalString
 } from './extension-api-args'
-import { extensionCanSeeUrl, globToRegExp, matchesUrlPattern } from './extension-match-pattern'
+import {
+  extensionCanSeeUrl,
+  extensionHasHostPermission,
+  globToRegExp,
+  matchesUrlPattern
+} from './extension-match-pattern'
 import { WINDOW_ID_CURRENT } from './extension-tab-details'
 import { presentExtensionWindow } from './extension-action-state'
 import { isBackgroundLaunch } from '../../window/foreground-activation-policy'
@@ -136,6 +141,25 @@ handleExtensionApi('tabs', {
       activateExtensionTab(tab)
     }
     return describe(caller, tab)
+  },
+  captureVisibleTab: async (caller: ExtensionCaller, first: unknown, second: unknown) => {
+    // captureVisibleTab(windowId?, options?): the active tab of that window or the caller's.
+    const hasWindow = typeof first === 'number'
+    const options = objectArg(hasWindow ? second : first)
+    const window = hasWindow ? findWindow(caller, first) : callerWindow(caller)
+    const tab = window && activeTabOf(window)
+    if (!tab) {
+      throw new Error('No active tab')
+    }
+    if (!extensionHasHostPermission(caller.extension, tab.getURL())) {
+      throw new Error("Either the '<all_urls>' or 'activeTab' permission is required.")
+    }
+    const image = await tab.capturePage()
+    if (options.format === 'png') {
+      return image.toDataURL()
+    }
+    const quality = optionalNumber(options.quality) ?? 92
+    return `data:image/jpeg;base64,${image.toJPEG(quality).toString('base64')}`
   },
   remove: (caller: ExtensionCaller, tabIds: unknown) => {
     for (const id of [tabIds].flat()) {
