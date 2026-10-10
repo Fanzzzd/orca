@@ -9,7 +9,7 @@ import {
 } from './extension-api-args'
 import {
   extensionCanSeeUrl,
-  extensionHasHostPermission,
+  extensionHasPermission,
   globToRegExp,
   matchesUrlPattern
 } from './extension-match-pattern'
@@ -151,7 +151,8 @@ handleExtensionApi('tabs', {
     if (!tab) {
       throw new Error('No active tab')
     }
-    if (!extensionHasHostPermission(caller.extension, tab.getURL())) {
+    // Why <all_urls> only: Chrome also accepts an invocation-granted activeTab, which Orca does not grant.
+    if (!extensionHasPermission(caller.extension, '<all_urls>')) {
       throw new Error("Either the '<all_urls>' or 'activeTab' permission is required.")
     }
     const image = await tab.capturePage()
