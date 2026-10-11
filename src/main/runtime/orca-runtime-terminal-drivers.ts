@@ -2,6 +2,7 @@
 import { OrcaRuntimeWithFitOverrideListeners } from './orca-runtime-fit-override-listeners'
 import { RuntimeTerminalDriverController } from './runtime-terminal-driver-controller'
 import { RuntimeEdgeCommandController } from './runtime-edge-command-controller'
+import { readBrowserTabBar } from './browser-tab-listing'
 import { getBrowserHostLeaseRegistry } from './browser-host-lease-registry-instance'
 import { getRuntimeBrowserPageRegistry } from './runtime-browser-page-registry'
 import type {
@@ -50,6 +51,8 @@ export class OrcaRuntimeWithTerminalDrivers extends OrcaRuntimeWithFitOverrideLi
       markHeadlessBrowserSessionTabActive: this.markHeadlessBrowserSessionTabActive.bind(this),
       notifyHeadlessBrowserSessionTabsChanged: (worktreeId) =>
         this.notifyMobileSessionTabsChanged(worktreeId),
+      readBrowserTabBar: (worktreeId) =>
+        readBrowserTabBar(this.mobileSessionTabsByWorktree, worktreeId),
       retireRuntimeOwnedBrowserSessionTab: (worktreeId, browserPageId) =>
         this.retireRuntimeOwnedBrowserSessionTab(worktreeId, browserPageId)
     },

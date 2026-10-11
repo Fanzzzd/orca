@@ -9,6 +9,7 @@ import type { AgentBrowserBridge } from '../browser/agent-browser-bridge'
 import { BrowserError } from '../browser/browser-error'
 import { webContents } from 'electron'
 import {
+  waitForTabFirstLoad,
   waitForTabRegistration,
   waitForWorktreeTabRegistration
 } from '../ipc/browser-tab-registration-wait'
@@ -174,6 +175,8 @@ export class RuntimeBrowserCommandsWithActiveScreencastsByPageId extends Runtime
       worktreeId ? { worktreeId, browserPageId } : { browserPageId }
     )
     await waitForTabRegistration(browserPageId)
+    // Why: a woken tab should behave like one that was open all along, not a blank page mid-load.
+    await waitForTabFirstLoad(browserPageId)
   }
 
   // Why: helper-driven clicks can bypass Electron navigation events; push authoritative URL/title updates after automation.

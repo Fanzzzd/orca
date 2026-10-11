@@ -90,6 +90,13 @@ export class RuntimeBrowserCommandsWithBrowserTabList extends RuntimeBrowserComm
         `${label} out of range (0-${listed.tabs.length - 1})`
       )
     }
+    if (selected.loaded === false) {
+      try {
+        await this.ensureBrowserPageActive(selected.worktreeId ?? undefined, selected.browserPageId)
+      } catch {
+        // The switch below reports browser_tab_not_found if the page could not load.
+      }
+    }
     const clientPage = this.host.getRuntimeBrowserPageRegistry().getPage(selected.browserPageId)
     if (clientPage) {
       this.host
