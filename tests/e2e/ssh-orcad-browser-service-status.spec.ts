@@ -5,10 +5,10 @@ import { expect, test } from './helpers/orca-app'
 import { createRestartSession } from './helpers/orca-restart'
 import { waitForSessionReady } from './helpers/store'
 import {
-  cleanupDockerSshRelayTarget,
-  DOCKER_SSH_RELAY_REMOTE_REPO_PATH,
-  startDockerSshRelayTarget
-} from './helpers/docker-ssh-relay-target'
+  cleanupDockerSshHostTarget,
+  DOCKER_SSH_HOST_REMOTE_REPO_PATH,
+  startDockerSshHostTarget
+} from './helpers/docker-ssh-host-target'
 import { seedRelayEraProfile } from './helpers/orcad-upgrade-profile'
 import {
   startSshRemoteOnlyBrowserFixture,
@@ -16,14 +16,14 @@ import {
 } from './helpers/ssh-remote-only-browser-fixture'
 import { createRetentionFixtureDirectory } from './helpers/host-created-terminal-retention-oracle'
 import { reconnect, serverCall } from './helpers/orcad-convert-flow'
+import { ORCAD_TEMPLATE, skipUnlessManagedDockerHost } from './helpers/orcad-managed-workspace'
 
-const TEMPLATE = process.env.ORCA_E2E_ORCAD_CONVERT_TEMPLATE
-test.skip(!TEMPLATE || process.env.ORCA_E2E_SSH_DOCKER !== '1', 'Needs Docker and server template')
+skipUnlessManagedDockerHost()
 
 test('an unavailable browser on a responding managed host does not report a server outage', async (// oxlint-disable-next-line no-empty-pattern -- Owns app launch.
 {}, testInfo) => {
   test.setTimeout(5 * 60_000)
-  const target = startDockerSshRelayTarget(testInfo)
+  const target = startDockerSshHostTarget(testInfo)
   const scratch = createRetentionFixtureDirectory()
   const template = path.join(scratch, 'template')
   const session = createRestartSession(testInfo, { ORCA_ORCAD_TEMPLATE_PATH: template })
@@ -47,7 +47,7 @@ test('an unavailable browser on a responding managed host does not report a serv
         identitiesOnly: true,
         relayGracePeriodSeconds: 1
       },
-      { repoPath: DOCKER_SSH_RELAY_REMOTE_REPO_PATH, folderPath: '/tmp' }
+      { repoPath: DOCKER_SSH_HOST_REMOTE_REPO_PATH, folderPath: '/tmp' }
     )
     const launched = await session.launch()
     app = launched.app
@@ -58,7 +58,7 @@ test('an unavailable browser on a responding managed host does not report a serv
       }
     })
     await waitForSessionReady(page)
-    cpSync(TEMPLATE!, template, { recursive: true })
+    cpSync(ORCAD_TEMPLATE!, template, { recursive: true })
     const server = await reconnect(page, remote.targetId)
     console.log('[browser-conversion-connect]', server)
     expect(JSON.parse(server)).toMatchObject({ kind: 'managed' })
@@ -168,7 +168,7 @@ test('an unavailable browser on a responding managed host does not report a serv
       await session.close(app)
     }
     await session.dispose()
-    cleanupDockerSshRelayTarget(target)
+    cleanupDockerSshHostTarget(target)
     rmSync(scratch, { recursive: true, force: true })
   }
 })

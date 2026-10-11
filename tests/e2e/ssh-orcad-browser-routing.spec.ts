@@ -5,10 +5,10 @@ import { expect, test } from './helpers/orca-app'
 import { createRestartSession } from './helpers/orca-restart'
 import { waitForSessionReady, waitForStartupWorktreeRefresh } from './helpers/store'
 import {
-  cleanupDockerSshRelayTarget,
-  DOCKER_SSH_RELAY_REMOTE_REPO_PATH,
-  startDockerSshRelayTarget
-} from './helpers/docker-ssh-relay-target'
+  cleanupDockerSshHostTarget,
+  DOCKER_SSH_HOST_REMOTE_REPO_PATH,
+  startDockerSshHostTarget
+} from './helpers/docker-ssh-host-target'
 import { seedRelayEraProfile } from './helpers/orcad-upgrade-profile'
 import {
   startSshRemoteOnlyBrowserFixture,
@@ -24,9 +24,9 @@ import { deriveBrowserRoutePartition } from '../../src/main/browser/browser-rout
 import { sshExecutionHostStorageIdentity } from '../../src/main/browser/browser-execution-host-storage-identity'
 import { reconnect } from './helpers/orcad-convert-flow'
 import { navigateGuest } from './helpers/browser-split-guest-probes'
+import { ORCAD_TEMPLATE, skipUnlessManagedDockerHost } from './helpers/orcad-managed-workspace'
 
-const TEMPLATE = process.env.ORCA_E2E_ORCAD_CONVERT_TEMPLATE
-test.skip(!TEMPLATE || process.env.ORCA_E2E_SSH_DOCKER !== '1', 'Needs Docker and server template')
+skipUnlessManagedDockerHost()
 
 /** The partition a relay-era build kept this host's browser storage in (local-ssh-browser-partitions). */
 function relayEraPartition(targetId: string): string {
@@ -58,7 +58,7 @@ async function guestMarker(page: Page, tabId: string): Promise<unknown> {
 test('retained and new browser tabs keep SSH routing and login cookies after managed conversion', async (// oxlint-disable-next-line no-empty-pattern -- Owns app launch.
 {}, testInfo) => {
   test.setTimeout(5 * 60_000)
-  const target = startDockerSshRelayTarget(testInfo)
+  const target = startDockerSshHostTarget(testInfo)
   const scratch = createRetentionFixtureDirectory()
   const template = path.join(scratch, 'template')
   const session = createRestartSession(testInfo, { ORCA_ORCAD_TEMPLATE_PATH: template })
@@ -82,7 +82,7 @@ test('retained and new browser tabs keep SSH routing and login cookies after man
         identitiesOnly: true,
         relayGracePeriodSeconds: 1
       },
-      { repoPath: DOCKER_SSH_RELAY_REMOTE_REPO_PATH, folderPath: '/tmp' }
+      { repoPath: DOCKER_SSH_HOST_REMOTE_REPO_PATH, folderPath: '/tmp' }
     )
     const launched = await session.launch()
     app = launched.app
@@ -147,7 +147,7 @@ test('retained and new browser tabs keep SSH routing and login cookies after man
         value: SSH_REMOTE_ONLY_COOKIE_VALUE
       }
     )
-    cpSync(TEMPLATE!, template, { recursive: true })
+    cpSync(ORCAD_TEMPLATE!, template, { recursive: true })
     const server = await reconnect(page, remote.targetId)
     console.log('[browser-conversion-connect]', server)
     expect(JSON.parse(server)).toMatchObject({ kind: 'managed' })
@@ -366,7 +366,7 @@ test('retained and new browser tabs keep SSH routing and login cookies after man
       await session.close(app)
     }
     await session.dispose()
-    cleanupDockerSshRelayTarget(target)
+    cleanupDockerSshHostTarget(target)
     rmSync(scratch, { recursive: true, force: true })
   }
 })

@@ -2,22 +2,26 @@
 // (mobile) connections. Each paired device gets its own revocable token so
 // compromising one device doesn't expose others. The registry is a simple
 // JSON file with hardened permissions matching the runtime metadata pattern.
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   hardenExistingSecureFile,
   isUnreadableError,
+  writeDurableSecureJsonFile,
   writeSecureJsonFile
 } from '../../shared/secure-file'
 import type { DeviceScope } from '../../shared/runtime-types'
 import { removeStaleDurableWriteTempFiles } from '../durable-file-write'
 import { DEVICE_REGISTRY_FILENAME } from './mobile-pairing-files'
 import { mintDeviceCredential } from './device-credential'
-import type { RelayDeviceBinding } from './relay/relay-revoke-outbox'
+import { planDeviceKeyFork } from './device-key-fork'
 import {
-  parseMobilePairingConnectionMode,
-  type MobilePairingConnectionMode
-} from '../../shared/mobile-pairing-connection-mode'
+  corruptRegistryCopyExists,
+  isMissingFileError,
+  quarantineCorruptRegistry
+} from './device-registry-corruption'
+import type { RelayDeviceBinding } from './relay/relay-revoke-outbox'
+import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
 import type { DelegatedPhone } from '../../shared/delegated-mobile-device-contract'
 import {
@@ -25,40 +29,23 @@ import {
   type DelegatedMobileDeviceEntry
 } from './delegated-mobile-devices'
 import type { RuntimeDeviceGrant } from './rpc/rpc-method-permission'
-import { validGrants, validRelayBinding } from './device-registry-row-validation'
+import { normalizeLoadedDeviceRow, validGrants } from './device-registry-row-validation'
 import {
-  parseMobilePushRegistration,
-  type MobilePushRegistration
-} from '../../shared/mobile-push-contract'
+  isPendingTokenRow,
+  mobilePairingConnectionModeOf,
+  isStillAuthenticated,
+  type AuthenticatedPrincipalBinding,
+  lookupDeviceKeyRow,
+  sameGrants,
+  type DeviceEntry,
+  type DeviceKeyLookup,
+  type TokenDeviceEntry
+} from './device-entry'
+import type { MobilePushRegistration } from '../../shared/mobile-push-contract'
 
 export type { DeviceScope }
 
-export type DeviceEntry = {
-  deviceId: string
-  name: string
-  token: string
-  scope: DeviceScope
-  pairedAt: number
-  lastSeenAt: number
-  relayBinding?: RelayDeviceBinding
-  mobilePairingConnectionMode?: MobilePairingConnectionMode
-  // Why: STA-2370 — a grant minted for "This computer only" proves nothing about off-host reach when its
-  // client connects, so the bind decision must be able to tell it apart from a LAN/phone grant.
-  pairingReach?: RuntimePairingReach
-  // Why: survives a desktop restart so the host can keep pushing without the phone
-  // re-registering. Absent on every registry written before background push existed.
-  pushRegistration?: MobilePushRegistration
-  // Why: a phone relayed by a paired desktop is that desktop's child; it dies with the parent's grant.
-  parentDeviceId?: string
-  phoneKey?: string
-  // Why: administrative permissions are granted only when pairing; absent on older rows means none.
-  grants?: RuntimeDeviceGrant[]
-}
-
-function sameGrants(entry: DeviceEntry, grants: readonly RuntimeDeviceGrant[]): boolean {
-  const current = entry.grants ?? []
-  return current.length === grants.length && current.every((grant) => grants.includes(grant))
-}
+export type { DeviceEntry, DeviceKeyLookup, TokenDeviceEntry }
 
 // Why: a lastSeen refresh is pure bookkeeping, so coalesce reconnect bursts into one write instead of
 // paying a secure-file rewrite (two synchronous PowerShell ACL spawns on Windows) per connection.
@@ -70,6 +57,9 @@ export class DeviceRegistry {
   private devices: DeviceEntry[] = []
   /** Set when the registry exists but could not be read, which makes `devices` a lie to save from. */
   private registryUnreadable = false
+  /** A parse failure, now or in an earlier run, means an unlisted device may still exist. */
+  private registryDoubtful = false
+  private corruptFilePending = false
   private pendingLastSeenFlush: NodeJS.Timeout | null = null
 
   constructor(userDataPath: string) {
@@ -86,7 +76,7 @@ export class DeviceRegistry {
     scope: DeviceScope = 'mobile',
     pairingReach: RuntimePairingReach = 'network',
     grants: readonly RuntimeDeviceGrant[] = []
-  ): DeviceEntry {
+  ): TokenDeviceEntry {
     return this.createAndPersistDevice(this.devices, name, scope, pairingReach, grants)
   }
 
@@ -96,9 +86,9 @@ export class DeviceRegistry {
     scope: DeviceScope,
     pairingReach: RuntimePairingReach,
     grants: readonly RuntimeDeviceGrant[]
-  ): DeviceEntry {
+  ): TokenDeviceEntry {
     const validatedGrants = validGrants(grants, scope)
-    const entry: DeviceEntry = {
+    const entry: TokenDeviceEntry = {
       ...mintDeviceCredential(),
       name,
       scope,
@@ -125,11 +115,11 @@ export class DeviceRegistry {
     scope: DeviceScope = 'mobile',
     pairingReach: RuntimePairingReach = 'network',
     grants: readonly RuntimeDeviceGrant[] = []
-  ): DeviceEntry {
+  ): TokenDeviceEntry {
     // Why: a pending token is reused only for the same grants, so re-advertising never widens one.
     const existing = this.devices.find(
-      (d) =>
-        d.lastSeenAt === 0 && d.scope === scope && sameGrants(d, validGrants(grants, scope) ?? [])
+      (d): d is TokenDeviceEntry =>
+        isPendingTokenRow(d) && d.scope === scope && sameGrants(d, validGrants(grants, scope) ?? [])
     )
     if (existing) {
       // Why: the same pending token can be re-advertised at a broader reach; widen it but never narrow it,
@@ -141,15 +131,12 @@ export class DeviceRegistry {
     return this.addDevice(name, scope, pairingReach, grants)
   }
 
-  private setPairingReach(existing: DeviceEntry, pairingReach: RuntimePairingReach): DeviceEntry {
-    const updated: DeviceEntry = { ...existing, pairingReach }
-    const nextDevices = this.devices.map((device) =>
-      device.deviceId === existing.deviceId ? updated : device
-    )
-    // Why: persist before the memory swap so a failed write cannot leave the bind decision reading a
-    // reach that never reached disk.
-    this.save(nextDevices)
-    this.devices = nextDevices
+  private setPairingReach(
+    existing: TokenDeviceEntry,
+    pairingReach: RuntimePairingReach
+  ): TokenDeviceEntry {
+    const updated: TokenDeviceEntry = { ...existing, pairingReach }
+    this.replaceRow(existing.deviceId, () => updated)
     return updated
   }
 
@@ -164,9 +151,9 @@ export class DeviceRegistry {
     scope: DeviceScope = 'mobile',
     pairingReach: RuntimePairingReach = 'network',
     grants: readonly RuntimeDeviceGrant[] = []
-  ): DeviceEntry {
+  ): TokenDeviceEntry {
     // Why: a pending runtime device has no delegated children — its first auth sets lastSeenAt before any sync.
-    const retainedDevices = this.devices.filter((d) => d.lastSeenAt !== 0 || d.scope !== scope)
+    const retainedDevices = this.devices.filter((d) => !isPendingTokenRow(d) || d.scope !== scope)
     return this.createAndPersistDevice(retainedDevices, name, scope, pairingReach, grants)
   }
 
@@ -203,66 +190,41 @@ export class DeviceRegistry {
     return this.devices.find((d) => d.deviceId === deviceId) ?? null
   }
 
-  getPendingDevice(scope: DeviceScope = 'mobile'): DeviceEntry | null {
-    return this.devices.find((device) => device.lastSeenAt === 0 && device.scope === scope) ?? null
+  getPendingDevice(scope: DeviceScope = 'mobile'): TokenDeviceEntry | null {
+    return (
+      this.devices.find(
+        (device): device is TokenDeviceEntry => isPendingTokenRow(device) && device.scope === scope
+      ) ?? null
+    )
   }
 
   setRelayBinding(deviceId: string, binding: RelayDeviceBinding): boolean {
-    const index = this.devices.findIndex((candidate) => candidate.deviceId === deviceId)
-    if (index === -1 || binding.relayDeviceId !== deviceId) {
-      return false
-    }
-    const nextDevices = this.devices.map((device, candidateIndex) =>
-      candidateIndex === index ? { ...device, relayBinding: binding } : device
+    return (
+      binding.relayDeviceId === deviceId &&
+      this.replaceRow(deviceId, (device) => ({ ...device, relayBinding: binding }))
     )
-    this.save(nextDevices)
-    this.devices = nextDevices
-    return true
   }
 
   /** Passing null clears the registration (unregister, or a token the gateway reported dead). */
   setPushRegistration(deviceId: string, registration: MobilePushRegistration | null): boolean {
-    const index = this.devices.findIndex((candidate) => candidate.deviceId === deviceId)
-    if (index === -1 || this.devices[index]?.scope !== 'mobile') {
-      return false
-    }
-    const nextDevices = this.devices.map((device, candidateIndex) => {
-      if (candidateIndex !== index) {
-        return device
-      }
-      const { pushRegistration: _dropped, ...rest } = device
-      return registration ? { ...rest, pushRegistration: registration } : rest
-    })
-    // Why: persist before the memory swap so a failed write cannot leave the dispatcher
-    // pushing to a registration disk says is gone (or vice versa on reload).
-    this.save(nextDevices)
-    this.devices = nextDevices
-    return true
+    return (
+      this.getDevice(deviceId)?.scope === 'mobile' &&
+      this.replaceRow(deviceId, (device) => {
+        const { pushRegistration: _dropped, ...rest } = device
+        return registration ? { ...rest, pushRegistration: registration } : rest
+      })
+    )
   }
 
   setMobilePairingConnectionMode(deviceId: string, mode: MobilePairingConnectionMode): boolean {
-    const index = this.devices.findIndex((candidate) => candidate.deviceId === deviceId)
-    if (index === -1 || this.devices[index]?.scope !== 'mobile') {
-      return false
-    }
-    // Why: persist before swapping memory so a failed write does not leave a
-    // mode the UI/runtime believe was stored.
-    const nextDevices = this.devices.map((device, candidateIndex) =>
-      candidateIndex === index ? { ...device, mobilePairingConnectionMode: mode } : device
+    return (
+      this.getDevice(deviceId)?.scope === 'mobile' &&
+      this.replaceRow(deviceId, (device) => ({ ...device, mobilePairingConnectionMode: mode }))
     )
-    this.save(nextDevices)
-    this.devices = nextDevices
-    return true
   }
 
   getMobilePairingConnectionMode(deviceId: string): MobilePairingConnectionMode | null {
-    const device = this.devices.find((candidate) => candidate.deviceId === deviceId)
-    if (!device || device.scope !== 'mobile') {
-      return null
-    }
-    // Why: pairings created before this preference existed used automatic
-    // direct-first Relay fallback, so missing/unknown state must preserve that.
-    return parseMobilePairingConnectionMode(device.mobilePairingConnectionMode)
+    return mobilePairingConnectionModeOf(this.getDevice(deviceId))
   }
 
   listDevices(): readonly DeviceEntry[] {
@@ -270,23 +232,46 @@ export class DeviceRegistry {
   }
 
   validateToken(token: string): DeviceEntry | null {
-    return this.devices.find((d) => d.token === token) ?? null
+    return (
+      (token && this.devices.find((d) => d.credentialKind === undefined && d.token === token)) ||
+      null
+    )
+  }
+
+  // Why: "unknown" must mean "readable and absent" — clients delete their key only on that verdict.
+  lookupDeviceKey(deviceId: string): DeviceKeyLookup {
+    const lookup = lookupDeviceKeyRow(this.getDevice(deviceId))
+    return lookup.kind === 'unknown' && (this.registryUnreadable || this.registryDoubtful)
+      ? { kind: 'unavailable' }
+      : lookup
+  }
+
+  /** Forks `legacyDeviceId` into a keyed row; durable before it returns (security transition). */
+  forkDeviceKey(legacyDeviceId: string, devicePublicKeyB64: string, label: string): DeviceEntry {
+    const fork = planDeviceKeyFork(
+      this.devices,
+      legacyDeviceId,
+      devicePublicKeyB64,
+      label,
+      Date.now()
+    )
+    if (fork.created) {
+      this.save(fork.nextDevices, { durable: true })
+      this.devices = fork.nextDevices
+    }
+    return fork.entry
+  }
+
+  /** The row an authenticated socket is still entitled to, or null once revoked or re-credentialed. */
+  resolveAuthenticatedPrincipal(principal: AuthenticatedPrincipalBinding): DeviceEntry | null {
+    const device = this.getDevice(principal.deviceId)
+    return device && isStillAuthenticated(device, principal) ? device : null
   }
 
   updateLastSeen(deviceId: string): void {
-    const index = this.devices.findIndex((d) => d.deviceId === deviceId)
-    if (index === -1) {
-      return
-    }
-    // Why: persist before memory swap so a failed write cannot leave a scanned
-    // device looking never-scanned on disk, where rotation would drop it.
+    // Why: a failed write must not leave a scanned device never-scanned on disk, where rotation drops it.
     const seenAt = Date.now()
-    const nextDevices = this.devices.map((device, candidateIndex) =>
-      candidateIndex === index ? { ...device, lastSeenAt: seenAt } : device
-    )
-    this.save(nextDevices)
-    this.devices = nextDevices
-    this.cancelPendingLastSeenFlush()
+    this.replaceRow(deviceId, (device) => ({ ...device, lastSeenAt: seenAt }))
   }
 
   /**
@@ -296,17 +281,13 @@ export class DeviceRegistry {
    * never scanned, so only that 0 -> non-zero transition is load-bearing.
    */
   updateLastSeenDeferred(deviceId: string): void {
-    const index = this.devices.findIndex((d) => d.deviceId === deviceId)
-    if (index === -1) {
-      return
-    }
-    if (this.devices[index]!.lastSeenAt === 0) {
-      this.updateLastSeen(deviceId)
-      return
+    const existing = this.getDevice(deviceId)
+    if (!existing || existing.lastSeenAt === 0) {
+      return existing ? this.updateLastSeen(deviceId) : undefined
     }
     const seenAt = Date.now()
-    this.devices = this.devices.map((device, candidateIndex) =>
-      candidateIndex === index ? { ...device, lastSeenAt: seenAt } : device
+    this.devices = this.devices.map((device) =>
+      device === existing ? { ...device, lastSeenAt: seenAt } : device
     )
     if (this.pendingLastSeenFlush) {
       return
@@ -341,49 +322,59 @@ export class DeviceRegistry {
   }
 
   private load(): void {
-    if (!existsSync(this.registryPath)) {
-      this.devices = []
-      return
-    }
+    // Why: a set-aside corrupt copy keeps revocation verdicts off until the owner removes it, even
+    // when the rewrite after quarantine never landed and the registry file itself is missing.
+    this.registryDoubtful = corruptRegistryCopyExists(this.registryPath)
     try {
       hardenExistingSecureFile(this.registryPath)
       const parsed = JSON.parse(readFileSync(this.registryPath, 'utf-8')) as DeviceEntry[]
-      this.devices = parsed.map((device) => ({
-        ...device,
-        // Why: older registries only existed for phone pairing. Treat missing
-        // scope as mobile so legacy device tokens do not gain new CLI powers.
-        scope: device.scope === 'runtime' ? 'runtime' : 'mobile',
-        grants: validGrants(device.grants, device.scope === 'runtime' ? 'runtime' : 'mobile'),
-        relayBinding: validRelayBinding(device.relayBinding, device.deviceId),
-        mobilePairingConnectionMode: parseMobilePairingConnectionMode(
-          device.mobilePairingConnectionMode
-        ),
-        // Why: registries written before this field existed only ever held network-reach grants (phones and
-        // LAN links), so a missing value must keep binding every interface on reconnect.
-        pairingReach: device.pairingReach === 'this-computer' ? 'this-computer' : 'network',
-        // Why: a malformed row must degrade to "no background push", never fail the load
-        // and strand every paired device.
-        pushRegistration: parseMobilePushRegistration(device.pushRegistration),
-        parentDeviceId:
-          typeof device.parentDeviceId === 'string' ? device.parentDeviceId : undefined,
-        phoneKey: typeof device.phoneKey === 'string' ? device.phoneKey : undefined
-      }))
+      this.devices = parsed.map(normalizeLoadedDeviceRow)
       this.registryUnreadable = false
     } catch (error) {
+      this.devices = []
+      if (isMissingFileError(error)) {
+        return
+      }
       // "Cannot read" is not "is empty". Saving an empty list over a registry we were merely
       // denied would erase every paired device's bearer token, and the write would succeed.
       this.registryUnreadable = isUnreadableError(error)
-      this.devices = []
+      // Why: a corrupt file is not evidence any device was revoked; never tell a keyed client so.
+      this.registryDoubtful = true
+      this.corruptFilePending = !this.registryUnreadable
     }
   }
 
-  private save(devices: DeviceEntry[]): void {
+  // Why: persist before the memory swap so a failed write never leaves memory claiming what disk lacks.
+  private replaceRow(deviceId: string, update: (device: DeviceEntry) => DeviceEntry): boolean {
+    const index = this.devices.findIndex((candidate) => candidate.deviceId === deviceId)
+    if (index === -1) {
+      return false
+    }
+    const nextDevices = this.devices.map((device, candidateIndex) =>
+      candidateIndex === index ? update(device) : device
+    )
+    this.save(nextDevices)
+    this.devices = nextDevices
+    return true
+  }
+
+  private assertReadable(): void {
     if (this.registryUnreadable) {
       throw new Error(
         `Cannot read the device registry at ${this.registryPath}: the read failed. Refusing to overwrite it, which would revoke every paired device.`
       )
     }
-    writeSecureJsonFile(this.registryPath, devices)
+    if (this.corruptFilePending) {
+      quarantineCorruptRegistry(this.registryPath)
+      this.corruptFilePending = false
+    }
+  }
+
+  // Why: durable (fsync'd) for security transitions such as a device-key fork.
+  private save(devices: DeviceEntry[], options: { durable?: boolean } = {}): void {
+    this.assertReadable()
+    const write = options.durable ? writeDurableSecureJsonFile : writeSecureJsonFile
+    write(this.registryPath, devices)
     // Why: every registry save includes the latest in-memory timestamps, so a later timer would rewrite it.
     this.cancelPendingLastSeenFlush()
   }

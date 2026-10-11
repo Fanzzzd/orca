@@ -3158,10 +3158,10 @@
             "42b283ecfc": "Orca 无法安全地重新连接此终端，因为主机无法验证其保存的会话。 Orca 保持保存的会话不变。单击“重试”立即尝试重新连接。如果仍然无法重新连接，请打开一个新终端。",
             "e16012e31e": "拥有该会话的终端守护程序已退出，因此该会话及其回滚无法恢复。打开新终端以继续。",
             "sessionUnavailable": "Orca 无法重新连接到主机上此窗格的终端会话。打开新终端以继续。",
-            "heldByPreviousRelay": "该终端仍在主机上以先前版本的 Orca 运行，当前版本无法连接到它。它会一直运行直到退出。请打开新终端以继续在此工作。",
             "sourceRestoring": "重新连接该终端 — 正在重新建立其输出。会话仍在进行。",
             "ptyAllocationLimit": "系统无法再分配 pty 设备。请在 Orca 或其他程序中关闭一些不用的终端，然后重试。",
             "terminalProcessLimit": "系统无法再启动终端进程。请关闭不用的终端或退出不用的进程，然后重试。",
+            "hostTerminalCap": "主机上运行的终端数量已达到 Orca 允许的上限。请关闭一个不再需要的终端，然后重试。",
             "ownerHostMismatch": "此终端保存的会话属于另一个主机连接，因此 Orca 无法在此重新附加它。请打开新终端以继续。"
           },
           "TerminalProcessExitOverlay": {
@@ -11544,7 +11544,7 @@
           "failed": "更新失败",
           "serviceManagerHelp": "通过启动此服务器的服务管理器更新 Orca。",
           "unpackedHelp": "开发版本必须从其源代码检出进行更新。",
-          "legacyHelp": "手动更新此服务器一次以启用远程更新。"
+          "legacyHelp": "此服务器无法远程更新。请在服务器主机上更新 Orca。"
         },
         "BrowserLinkRoutingSetting": {
           "description": "在 Orca 内置浏览器中打开来自终端、Markdown 和编辑器的 http(s) 链接。{{shortcut}} 始终使用系统浏览器。",
@@ -13648,7 +13648,8 @@
             "resumeInChatTranscriptMissing": "无法加载此对话的历史记录，因此无法在聊天中恢复。",
             "resumeInChatFailed": "无法在新聊天中恢复此会话。",
             "resumeInNewCliUnavailable": "无法在 CLI 中打开此会话。",
-            "resumeInNewCliHostTooOld": "请更新运行此聊天的主机上的 Orca，才能在新的 CLI 中恢复它。"
+            "resumeInNewCliHostTooOld": "请更新运行此聊天的主机上的 Orca，才能在新的 CLI 中恢复它。",
+            "folderWorkspaceUnavailable": "文件夹工作区不再可用。"
           },
           "AiVaultPanelControls": {
             "scanningSessions": "正在扫描会话",
@@ -13750,7 +13751,9 @@
             "copied": "已复制",
             "copy": "复制",
             "noFirstPromptAvailable": "没有可用的首次提示",
-            "loadingFirstPrompt": "正在加载首次提示…"
+            "loadingFirstPrompt": "正在加载首次提示…",
+            "folder": "文件夹",
+            "resumeInFolder": "在文件夹中恢复"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "恢复 {{value0}} 会话",
@@ -13846,7 +13849,12 @@
             "noRecordedWorktree": "此会话没有记录工作树。",
             "archivedJumpUnavailable": "此会话位于已归档的工作树中。",
             "noActiveWorktreeMatch": "没有与此会话匹配的活动工作树。",
-            "noActiveWorktreeTarget": "没有可用的活动工作树。"
+            "noActiveWorktreeTarget": "没有可用的活动工作树。",
+            "activeFolder": "文件夹",
+            "archivedFolder": "已归档的文件夹",
+            "archivedFolderJumpUnavailable": "此会话位于已归档的文件夹中。",
+            "currentFolder": "当前文件夹",
+            "jumpToFolder": "跳转到文件夹"
           },
           "AiVaultSessionSubagents": {
             "subagentsCount": "子智能体（{{value0}}）",
@@ -18219,7 +18227,8 @@
         "orcaStopQuit": "此回复进行期间，{{machine}} 上的 Orca 已关闭。",
         "orcaStopCrash": "此回复进行期间，{{machine}} 上的 Orca 意外停止。",
         "orcaStopRemote": "此回复进行期间，{{machine}} 上的 Orca 已停止。",
-        "orcaStopCanContinue": "你可以在此对话中继续。"
+        "orcaStopCanContinue": "你可以在此对话中继续。",
+        "orcaStopUnnamedServer": "远程服务器"
       },
       "providerFrame": {
         "byteLength": "{{value0}} 字节"

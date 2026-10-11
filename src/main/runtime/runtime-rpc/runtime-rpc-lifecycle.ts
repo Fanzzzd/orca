@@ -264,7 +264,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
             sendBinary,
             undefined,
             socket.ws,
-            socket.device.deviceToken,
+            socket.device.deviceToken ?? null,
             socket
           )
         )
@@ -296,7 +296,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
         this.runtime.cancelMobileDictationForConnection(socket.connectionId)
         this.binaryMessageRouter.deleteConnection(socket.connectionId)
         if (!hasOtherConnections) {
-          this.runtime.onClientDisconnected(socket.device.deviceToken)
+          this.runtime.onClientDisconnected(socket.device.clientId)
         }
       },
       // Why: relay attempts are authorized upstream; only direct failures should prompt local re-pairing.

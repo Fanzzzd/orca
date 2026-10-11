@@ -3158,10 +3158,10 @@
             "42b283ecfc": "ホストが保存されたセッションを確認できなかったため、Orca はこのターミナルを安全に再接続できませんでした。 Orca は保存されたセッションを変更せずに残しました。今すぐ再接続を試みるには、「再試行」をクリックします。それでも再接続できない場合は、新規ターミナルを開きます。",
             "e16012e31e": "このセッションを所有していたターミナルデーモンが終了したため、セッションとそのスクロールバックを回復できませんでした。続行するには、新規ターミナルを開いてください。",
             "sessionUnavailable": "Orca はホスト上のこのペインのターミナルセッションに再接続できませんでした。続行するには、新規ターミナルを開いてください。",
-            "heldByPreviousRelay": "このターミナルは以前のバージョンの Orca のもとでホスト上でまだ実行中ですが、このバージョンからは接続できません。終了するまで実行され続けます。ここで作業を続けるには新しいターミナルを開いてください。",
             "sourceRestoring": "このターミナルを再接続しています — その出力が再確立されています。セッションはまだ実行中です。",
             "ptyAllocationLimit": "システムはこれ以上 pty デバイスを割り当てられません。Orca または他のプログラムで使っていないターミナルをいくつか閉じてから、もう一度お試しください。",
             "terminalProcessLimit": "システムはこれ以上ターミナルプロセスを起動できません。使っていないターミナルを閉じるか、不要なプロセスを終了してから、もう一度お試しください。",
+            "hostTerminalCap": "ホストではすでに Orca が許可する上限までターミナルが実行されています。不要になったターミナルを閉じてから、もう一度お試しください。",
             "ownerHostMismatch": "このターミナルの保存済みセッションは別のホスト接続に属しているため、Orca はここで再接続できません。続行するには、新規ターミナルを開いてください。"
           },
           "TerminalProcessExitOverlay": {
@@ -11544,7 +11544,7 @@
           "failed": "更新に失敗しました",
           "serviceManagerHelp": "このサーバーを開始するサービスマネージャーを通じて Orca を更新してください。",
           "unpackedHelp": "開発ビルドはソースチェックアウトから更新する必要があります。",
-          "legacyHelp": "リモート更新を有効にするには、このサーバーを一度手動で更新してください。"
+          "legacyHelp": "このサーバーではリモート更新を利用できません。サーバー上で Orca を更新してください。"
         },
         "BrowserLinkRoutingSetting": {
           "description": "ターミナル、Markdown、エディターの http(s) リンクを Orca の組み込みブラウザで開きます。{{shortcut}} は常にシステムブラウザを使用します。",
@@ -13634,7 +13634,8 @@
             "resumeInChatTranscriptMissing": "この会話の履歴を読み込めなかったため、チャットで再開できません。",
             "resumeInChatFailed": "新規チャットでこのセッションを再開できませんでした。",
             "resumeInNewCliUnavailable": "このセッションは CLI で開けません。",
-            "resumeInNewCliHostTooOld": "このチャットを新しい CLI で再開するには、チャットを実行しているホストの Orca を更新してください。"
+            "resumeInNewCliHostTooOld": "このチャットを新しい CLI で再開するには、チャットを実行しているホストの Orca を更新してください。",
+            "folderWorkspaceUnavailable": "フォルダーワークスペースは利用できなくなりました。"
           },
           "AiVaultPanelControls": {
             "scanningSessions": "セッションをスキャンしています",
@@ -13736,7 +13737,9 @@
             "copied": "コピーしました",
             "copy": "コピー",
             "noFirstPromptAvailable": "最初のプロンプトはありません",
-            "loadingFirstPrompt": "最初のプロンプトを読み込み中…"
+            "loadingFirstPrompt": "最初のプロンプトを読み込み中…",
+            "folder": "フォルダー",
+            "resumeInFolder": "フォルダーで再開"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "{{value0}} セッションを再開",
@@ -13832,7 +13835,12 @@
             "noRecordedWorktree": "このセッションに記録されたワークツリーはありません。",
             "archivedJumpUnavailable": "このセッションはアーカイブされたワークツリーにあります。",
             "noActiveWorktreeMatch": "このセッションに一致するアクティブなワークツリーはありません。",
-            "noActiveWorktreeTarget": "利用可能なアクティブなワークツリーはありません。"
+            "noActiveWorktreeTarget": "利用可能なアクティブなワークツリーはありません。",
+            "activeFolder": "フォルダー",
+            "archivedFolder": "アーカイブされたフォルダー",
+            "archivedFolderJumpUnavailable": "このセッションはアーカイブされたフォルダーにあります。",
+            "currentFolder": "現在のフォルダー",
+            "jumpToFolder": "フォルダーにジャンプ"
           },
           "AiVaultSessionSubagents": {
             "subagentsCount": "サブ Agent ({{value0}})",
@@ -18240,7 +18248,8 @@
         "orcaStopQuit": "この応答の途中で、{{machine}} の Orca が終了しました。",
         "orcaStopCrash": "この応答の途中で、{{machine}} の Orca が予期せず停止しました。",
         "orcaStopRemote": "この応答の途中で、{{machine}} の Orca が停止しました。",
-        "orcaStopCanContinue": "この会話で続行できます。"
+        "orcaStopCanContinue": "この会話で続行できます。",
+        "orcaStopUnnamedServer": "リモートサーバー"
       },
       "providerFrame": {
         "byteLength": "{{value0}}バイト"

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { WebSocket } from 'ws'
 import type { DeviceEntry, DeviceRegistry } from '../device-registry'
+import { devicePrincipalOf } from '../device-principal'
 import type { E2EEKeypair } from '../e2ee-keypair'
 import { E2EEChannel, type E2EEAuthenticatedDevice } from './e2ee-channel'
 import { createMobileE2EEOutboundMemoryBudget } from './mobile-e2ee-outbound-memory-budget'
@@ -38,6 +39,8 @@ export type AuthenticatedMobileSocket = {
   ws: WebSocket
   connectionId: string
   device: E2EEAuthenticatedDevice
+  // Why: a device-key registration proves possession over this exact connection.
+  transcriptHashB64: string | null
   clientCapabilities: readonly RuntimeCapability[]
   transport: MobileSocketTransportMetadata
 }
@@ -60,9 +63,8 @@ type MobileSocketWiringOptions = {
 
 function toAuthenticatedDevice(device: DeviceEntry): E2EEAuthenticatedDevice {
   return {
-    deviceId: device.deviceId,
-    deviceToken: device.token,
-    scope: device.scope
+    ...devicePrincipalOf(device),
+    ...(device.token !== undefined ? { deviceToken: device.token } : {})
   }
 }
 
@@ -123,10 +125,10 @@ export class MobileSocketWiring {
     return this.connectionIds.size
   }
 
-  terminateDeviceConnections(deviceToken: string): number {
+  terminateDeviceConnections(deviceId: string): number {
     let terminated = 0
     for (const transport of this.transports) {
-      terminated += transport.terminateClientConnections(deviceToken)
+      terminated += transport.terminateClientConnections(deviceId)
     }
     return terminated
   }
@@ -161,11 +163,33 @@ export class MobileSocketWiring {
           }
           return toAuthenticatedDevice(device)
         },
+        resolveAuthenticatedDeviceKey: (deviceId) => {
+          const lookup = this.deviceRegistry.lookupDeviceKey(deviceId)
+          if (lookup.kind !== 'found') {
+            return lookup
+          }
+          // Why: same relay binding rule as token auth — the outer relay cannot pick the identity.
+          // A fork keeps its token row's Relay binding (the key proof names the installation).
+          // Never "unknown": the device exists, and that verdict would make the client delete its key.
+          if (
+            metadata.transport === 'relay' &&
+            metadata.relayDeviceId !== lookup.device.deviceId &&
+            metadata.relayDeviceId !== lookup.device.forkedFrom
+          ) {
+            return { kind: 'refused' }
+          }
+          return {
+            kind: 'found',
+            device: toAuthenticatedDevice(lookup.device),
+            devicePublicKeyB64: lookup.device.devicePublicKeyB64
+          }
+        },
         onReady: (channel, device) => {
           const socket = {
             ws,
             connectionId,
             device,
+            transcriptHashB64: channel.transcriptHashB64,
             // Why: the channel owns the set for the whole connection, so this reads
             // through rather than snapshotting. It must also WRITE through — the
             // capability RPC updates the socket, and a getter-only property makes
@@ -179,7 +203,7 @@ export class MobileSocketWiring {
             transport: metadata
           }
           this.authenticatedSockets.set(ws, socket)
-          transport.setClientId(ws, device.deviceToken)
+          transport.setClientId(ws, device.deviceId)
           // Why: deferred — the client's e2ee_authenticated must not wait on a secure-file rewrite.
           this.deviceRegistry.updateLastSeenDeferred(device.deviceId)
           this.onReady?.(socket)
@@ -225,7 +249,7 @@ export class MobileSocketWiring {
     const hasOtherConnections =
       socket !== null &&
       Array.from(this.authenticatedSockets.values()).some(
-        (candidate) => candidate.device.deviceToken === socket.device.deviceToken
+        (candidate) => candidate.device.deviceId === socket.device.deviceId
       )
     this.onClose(socket, hasOtherConnections)
   }

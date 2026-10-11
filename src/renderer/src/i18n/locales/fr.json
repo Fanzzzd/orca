@@ -3262,11 +3262,11 @@
             "retryUnavailable": "Réessayez mais impossible de vous reconnecter pour l'instant. Réessayez sous peu.",
             "ownerUnknown": "Orca n'a pas pu vérifier le propriétaire de ce terminal.",
             "42b283ecfc": "Orca n'a pas pu reconnecter ce terminal en toute sécurité car l'hôte n'a pas pu vérifier sa session enregistrée. Orca a laissé la session enregistrée inchangée. Cliquez sur Réessayer pour essayer de vous reconnecter maintenant. S'il ne parvient toujours pas à se reconnecter, ouvrez un nouveau terminal.",
-            "heldByPreviousRelay": "Ce terminal s'exécute toujours sur l'hôte sous la version précédente d'Orca, à laquelle cette version ne peut pas se connecter. Il continue jusqu'à sa fin. Ouvrez un nouveau terminal pour continuer à travailler ici.",
             "sourceRestoring": "Reconnexion de ce terminal - sa sortie est en cours de rétablissement. La session est toujours en cours.",
             "remoteTerminalClosed": "Le terminal distant était fermé.",
             "ptyAllocationLimit": "Votre système ne peut plus allouer de périphériques pty. Fermez quelques terminaux inutilisés, dans Orca ou dans un autre programme, puis réessayez.",
             "terminalProcessLimit": "Votre système ne peut pas démarrer un autre processus de terminal. Fermez les terminaux inutilisés ou quittez les processus inutiles, puis réessayez.",
+            "hostTerminalCap": "L'hôte exécute déjà autant de terminaux qu'Orca le permet. Fermez un terminal dont vous n'avez plus besoin, puis réessayez.",
             "ownerHostMismatch": "La session enregistrée de ce terminal appartient à une autre connexion d'hôte : Orca ne peut donc pas le rattacher ici. Ouvrez un nouveau terminal pour continuer."
           },
           "TerminalProcessExitOverlay": {
@@ -11625,7 +11625,7 @@
           "failed": "Échec de la mise à jour",
           "serviceManagerHelp": "Mettez à jour Orca via le gestionnaire de services qui démarre ce serveur.",
           "unpackedHelp": "Les builds de développement doivent être mis à jour depuis leur checkout source.",
-          "legacyHelp": "Mettez à jour ce serveur une fois manuellement pour activer les mises à jour à distance."
+          "legacyHelp": "Les mises à jour à distance ne sont pas disponibles pour ce serveur. Mettez Orca à jour sur le serveur."
         },
         "BrowserLinkRoutingSetting": {
           "description": "Ouvre les liens http(s) dans le navigateur intégré d'Orca — depuis le terminal, le markdown et l'éditeur. {{shortcut}} utilise toujours votre navigateur système.",
@@ -13737,7 +13737,8 @@
             "resumeInChatTranscriptMissing": "L'historique de cette conversation n'a pas pu être chargé, elle ne peut donc pas être reprise dans le chat.",
             "resumeInChatFailed": "Impossible de reprendre cette session dans un nouveau chat.",
             "resumeInNewCliUnavailable": "Impossible d'ouvrir cette session dans la CLI.",
-            "resumeInNewCliHostTooOld": "Mettez à jour Orca sur l'hôte qui exécute ce chat pour le reprendre dans une nouvelle CLI."
+            "resumeInNewCliHostTooOld": "Mettez à jour Orca sur l'hôte qui exécute ce chat pour le reprendre dans une nouvelle CLI.",
+            "folderWorkspaceUnavailable": "L'espace de travail de type dossier n'est plus disponible."
           },
           "AiVaultPanelControls": {
             "scanningSessions": "Analyse des sessions",
@@ -13839,7 +13840,9 @@
             "copied": "Copied",
             "copy": "Copier",
             "noFirstPromptAvailable": "Aucun premier prompt disponible",
-            "loadingFirstPrompt": "Chargement du premier prompt…"
+            "loadingFirstPrompt": "Chargement du premier prompt…",
+            "folder": "Dossier",
+            "resumeInFolder": "Reprendre dans le dossier"
           },
           "AiVaultSessionRow": {
             "noPreviewAvailable": "Aucun aperçu de conversation disponible",
@@ -13935,7 +13938,12 @@
             "noRecordedWorktree": "Aucun worktree n'a été enregistré pour cette session.",
             "archivedJumpUnavailable": "Cette session se trouve dans un worktree archivé.",
             "noActiveWorktreeMatch": "Aucun worktree actif ne correspond à cette session.",
-            "noActiveWorktreeTarget": "Aucun worktree actif n'est disponible."
+            "noActiveWorktreeTarget": "Aucun worktree actif n'est disponible.",
+            "activeFolder": "Dossier",
+            "archivedFolder": "Dossier archivé",
+            "archivedFolderJumpUnavailable": "Cette session se trouve dans un dossier archivé.",
+            "currentFolder": "Dossier actuel",
+            "jumpToFolder": "Aller au dossier"
           },
           "AiVaultSessionSubagents": {
             "subagentsCount": "Sous-agents ({{value0}})",
@@ -18304,7 +18312,8 @@
         "orcaStopQuit": "Orca sur {{machine}} a été fermé pendant que cette réponse était en cours.",
         "orcaStopCrash": "Orca sur {{machine}} s'est arrêté de manière inattendue pendant que cette réponse était en cours.",
         "orcaStopRemote": "Orca sur {{machine}} s'est arrêté pendant que cette réponse était en cours.",
-        "orcaStopCanContinue": "Vous pouvez continuer dans cette conversation."
+        "orcaStopCanContinue": "Vous pouvez continuer dans cette conversation.",
+        "orcaStopUnnamedServer": "le serveur distant"
       },
       "providerFrame": {
         "byteLength": "{{value0}} octets"
