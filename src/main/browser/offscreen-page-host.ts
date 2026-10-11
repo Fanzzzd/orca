@@ -30,7 +30,6 @@ import { readOffscreenPageCaret } from './offscreen-page-caret'
 import { runOffscreenPageCommand } from './offscreen-page-commands'
 import { sendOffscreenPageFrame } from './offscreen-page-frame-delivery'
 import {
-  appliedPageZoomFactor,
   hostZoomFactor,
   inputInPageDips,
   syncOffscreenPageHostZoom,
@@ -223,7 +222,7 @@ export class OffscreenPageHost {
         if (page.openSelect && renderer) {
           const anchor = toHostSelectAnchor(
             page.openSelect,
-            page.surface.contents,
+            page.features.zoom.factor(),
             hostZoomFactor(page.hostZoom)
           )
           renderer.send(OFFSCREEN_PAGE_SELECT_CHANNEL, browserPageId, anchor)
@@ -248,7 +247,7 @@ export class OffscreenPageHost {
       window,
       popup,
       point: { x: point.x * factor, y: point.y * factor },
-      pageZoomFactor: appliedPageZoomFactor(page.surface.contents)
+      pageZoomFactor: page.features.zoom.factor()
     })
   }
 
@@ -262,7 +261,11 @@ export class OffscreenPageHost {
   async readCaret(browserPageId: string): Promise<OffscreenPageCaret | null> {
     const page = this.livePage(browserPageId)
     return page
-      ? readOffscreenPageCaret(page.surface.contents, hostZoomFactor(page.hostZoom))
+      ? readOffscreenPageCaret(
+          page.surface.contents,
+          page.features.zoom.factor(),
+          hostZoomFactor(page.hostZoom)
+        )
       : null
   }
 

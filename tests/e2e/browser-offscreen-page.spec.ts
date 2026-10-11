@@ -138,6 +138,33 @@ test.describe('offscreen browser pages', () => {
       .toBeCloseTo(box.height - 10, 0)
   })
 
+  test('a click lands where it is drawn after the page is zoomed', async ({
+    orcaPage,
+    electronApp
+  }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    await electronApp.evaluate(({ webContents }, url) => {
+      webContents
+        .getAllWebContents()
+        .find((wc) => wc.getURL() === url)
+        ?.setZoomLevel(1)
+    }, server.url)
+    const box = (await pageElement(orcaPage, pageId).boundingBox())!
+    await expect
+      .poll(() => evalInPage(orcaPage, pageId, 'innerWidth'))
+      .toBeLessThan(box.width * 0.9)
+    await evalInPage(
+      orcaPage,
+      pageId,
+      'addEventListener("mousedown", (e) => { window.__down = [e.clientX, e.clientY] }, { capture: true }), 1'
+    )
+    await orcaPage.mouse.click(box.x + 600, box.y + 480)
+    // Why within 1px: at a fractional device scale the page rounds its CSS size up by a pixel.
+    const miss =
+      'window.__down ? Math.max(Math.abs(__down[0] - 500), Math.abs(__down[1] - 400)) : 99'
+    await expect.poll(() => evalInPage(orcaPage, pageId, miss)).toBeLessThanOrEqual(1)
+  })
+
   test("clicks in a PDF land where they are drawn, though the viewer's zoom is not 100%", async ({
     orcaPage,
     electronApp
@@ -161,12 +188,12 @@ test.describe('offscreen browser pages', () => {
         )
       )
       .not.toBe(1)
+    // Why hook until the document frame answers: the viewer replaces its frames while it loads.
+    const hook =
+      'window.__downs ??= [], window.__hooked ??= (addEventListener("mousedown", (e) => window.__downs.push([e.clientX, e.clientY]), true), 1), location.href.endsWith("/doc.pdf") && document.readyState === "complete"'
     await expect
-      .poll(async () => (await inViewerFrames('1')).filter((ok) => ok === 1).length)
-      .toBeGreaterThanOrEqual(2)
-    await inViewerFrames(
-      'window.__downs = [], addEventListener("mousedown", (e) => window.__downs.push([e.clientX, e.clientY]), true), 1'
-    )
+      .poll(async () => (await inViewerFrames(hook)).includes(true), { timeout: 20_000 })
+      .toBe(true)
 
     const box = (await pageElement(orcaPage, pageId).boundingBox())!
     const first = [Math.round(box.width * 0.3), Math.round(box.height * 0.5)]

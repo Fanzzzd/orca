@@ -35,10 +35,10 @@ export function mayOpenOffscreenPageSelect(input: OffscreenPageUserInput): boole
 /** The select's anchor in the host renderer's CSS px, relative to the page element. */
 export function toHostSelectAnchor(
   popup: OffscreenPageSelectPopup,
-  contents: WebContents,
+  pageZoomFactor: number,
   hostZoomFactor: number
 ): OffscreenPageSelectAnchor {
-  const scale = contents.getZoomFactor() / hostZoomFactor
+  const scale = pageZoomFactor / hostZoomFactor
   const { x, y, width, height } = popup.anchor
   return { x: x * scale, y: y * scale, width: width * scale, height: height * scale }
 }
