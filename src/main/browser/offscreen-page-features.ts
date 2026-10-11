@@ -19,6 +19,7 @@ import {
   createOffscreenPageFrameRate,
   type OffscreenPageFrameRate
 } from './offscreen-page-frame-rate'
+import { trackOffscreenPageZoom, type OffscreenPageZoom } from './offscreen-page-zoom'
 
 /** Everything an offscreen page does beyond painting, each wired to the page's one CDP session. */
 export type OffscreenPageFeatures = {
@@ -26,6 +27,7 @@ export type OffscreenPageFeatures = {
   readonly frames: OffscreenPageFrames
   readonly frameRate: OffscreenPageFrameRate
   readonly drag: OffscreenPageDragBridge
+  readonly zoom: OffscreenPageZoom
   /** Whether the user's keyboard focus is in this page; the page sees focus and blur from it. */
   setKeyboardFocus(focused: boolean): void
   dispose(): void
@@ -56,7 +58,8 @@ export function createOffscreenPageFeatures(args: {
   const frameRate = createOffscreenPageFrameRate(contents, () =>
     Math.max(...screen.getAllDisplays().map((display) => display.displayFrequency))
   )
-  const drag = createOffscreenPageDragBridge(session, frames, contents)
+  const zoom = trackOffscreenPageZoom(contents, session)
+  const drag = createOffscreenPageDragBridge(session, frames, contents, zoom)
   const stopDialogs = routeOffscreenPageDialogs({
     contents,
     session,
@@ -68,6 +71,7 @@ export function createOffscreenPageFeatures(args: {
     frames,
     frameRate,
     drag,
+    zoom,
     setKeyboardFocus(focused) {
       if (focused === keyboardFocused) {
         return
@@ -79,6 +83,7 @@ export function createOffscreenPageFeatures(args: {
     dispose() {
       stopDialogs()
       drag.dispose()
+      zoom.dispose()
       frameRate.dispose()
       unregisterFrames()
       frames.dispose()

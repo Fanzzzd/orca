@@ -1,9 +1,9 @@
 import type { WebContents } from 'electron'
-import { appliedPageZoomFactor } from './offscreen-page-host-zoom'
 import type { OffscreenPageUserInput } from '../../shared/offscreen-page-protocol'
 import type { OffscreenPageCdpSession } from './offscreen-page-cdp-session'
 import type { OffscreenPageFrames } from './offscreen-page-frames'
 import { macKeyEditingCommands } from './offscreen-page-mac-key-commands'
+import type { OffscreenPageZoom } from './offscreen-page-zoom'
 
 type Modifier = 'shift' | 'control' | 'alt' | 'meta'
 type HeldButton = 'left' | 'middle' | 'right'
@@ -59,7 +59,7 @@ export function sendOffscreenPageMouse(
  */
 export async function dispatchOffscreenPageUserInput(
   target: WebContents,
-  cdp: { session: OffscreenPageCdpSession; frames: OffscreenPageFrames },
+  cdp: { session: OffscreenPageCdpSession; frames: OffscreenPageFrames; zoom: OffscreenPageZoom },
   input: OffscreenPageUserInput,
   platform: NodeJS.Platform = process.platform
 ): Promise<void> {
@@ -79,7 +79,7 @@ export async function dispatchOffscreenPageUserInput(
       }
       const pressed = input.type === 'mouseDown' ? (SIDE_BUTTON_BITS[input.button] ?? 0) : 0
       // CDP takes CSS px; page zoom scales them to the DIPs the input came in.
-      const zoom = appliedPageZoomFactor(target)
+      const zoom = cdp.zoom.factor()
       const sent = await frames.sendMouse({
         type,
         x: input.x / zoom,

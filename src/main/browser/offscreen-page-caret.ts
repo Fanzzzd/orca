@@ -1,5 +1,4 @@
 import type { WebContents } from 'electron'
-import { appliedPageZoomFactor } from './offscreen-page-host-zoom'
 import type { OffscreenPageCaret } from '../../shared/offscreen-page-protocol'
 
 /**
@@ -8,6 +7,7 @@ import type { OffscreenPageCaret } from '../../shared/offscreen-page-protocol'
  */
 export async function readOffscreenPageCaret(
   contents: WebContents,
+  pageZoomFactor: number,
   hostZoomFactor: number
 ): Promise<OffscreenPageCaret | null> {
   const caret: unknown = await contents
@@ -17,7 +17,7 @@ export async function readOffscreenPageCaret(
     return null
   }
   // Page CSS px -> page DIPs -> the host renderer's CSS px.
-  const scale = appliedPageZoomFactor(contents) / hostZoomFactor
+  const scale = pageZoomFactor / hostZoomFactor
   return { x: caret.x * scale, y: caret.y * scale, height: caret.height * scale }
 }
 

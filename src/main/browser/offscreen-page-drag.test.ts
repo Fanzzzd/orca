@@ -7,9 +7,7 @@ type Listener = (method: string, params: Record<string, unknown>, sessionId?: st
 
 function fakePage() {
   const contents = Object.assign(new EventEmitter(), {
-    isDestroyed: () => false,
-    getZoomFactor: () => 1,
-    mainFrame: { frames: [] }
+    isDestroyed: () => false
   })
   const listeners = new Set<Listener>()
   const session = {
@@ -29,7 +27,10 @@ function fakePage() {
   }
   const frames = createOffscreenPageFrames(session, () => [])
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fake implements every WebContents member the bridge touches.
-  const bridge = createOffscreenPageDragBridge(session, frames, contents as never)
+  const bridge = createOffscreenPageDragBridge(session, frames, contents as never, {
+    factor: () => 1,
+    dispose() {}
+  })
   const dragEvents = () =>
     session.send.mock.calls
       .filter(([method]) => method === 'Input.dispatchDragEvent')

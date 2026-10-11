@@ -8,12 +8,7 @@ import {
 } from './offscreen-page-user-input'
 
 function fakePage(attached = true) {
-  const target = {
-    isDestroyed: () => false,
-    sendInputEvent: vi.fn(),
-    getZoomFactor: () => 2,
-    mainFrame: { frames: [] }
-  }
+  const target = { isDestroyed: () => false, sendInputEvent: vi.fn() }
   const session = {
     send: vi.fn((_method: string, _params?: Record<string, unknown>, _sessionId?: string) =>
       Promise.resolve(attached ? {} : undefined)
@@ -22,9 +17,10 @@ function fakePage(attached = true) {
     dispose: vi.fn()
   }
   const frames = createOffscreenPageFrames(session, () => [])
+  const cdp = { session, frames, zoom: { factor: () => 2, dispose() {} } }
   const dispatch = (input: OffscreenPageUserInput, platform: NodeJS.Platform = 'darwin') =>
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fake implements every WebContents member dispatch touches.
-    dispatchOffscreenPageUserInput(target as never, { session, frames }, input, platform)
+    dispatchOffscreenPageUserInput(target as never, cdp, input, platform)
   return { target, session, dispatch }
 }
 

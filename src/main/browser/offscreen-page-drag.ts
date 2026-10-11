@@ -1,8 +1,8 @@
 import type { WebContents } from 'electron'
-import { appliedPageZoomFactor } from './offscreen-page-host-zoom'
 import type { OffscreenPageFileDrop } from '../../shared/offscreen-page-protocol'
 import type { OffscreenPageCdpSession } from './offscreen-page-cdp-session'
 import type { OffscreenPageFrames } from './offscreen-page-frames'
+import type { OffscreenPageZoom } from './offscreen-page-zoom'
 
 type DragData = Record<string, unknown>
 
@@ -24,7 +24,8 @@ export type OffscreenPageDragBridge = {
 export function createOffscreenPageDragBridge(
   session: OffscreenPageCdpSession,
   frames: OffscreenPageFrames,
-  contents: WebContents
+  contents: WebContents,
+  zoom: OffscreenPageZoom
 ): OffscreenPageDragBridge {
   let drag: { data: DragData; entered: boolean } | null = null
   // The frame target the drag is over, so leaving it can be told apart from moving within it.
@@ -78,9 +79,9 @@ export function createOffscreenPageDragBridge(
     if (!isRecord(input) || typeof input.type !== 'string') {
       return
     }
-    const zoom = appliedPageZoomFactor(contents)
-    const x = (typeof input.x === 'number' ? input.x : 0) / zoom
-    const y = (typeof input.y === 'number' ? input.y : 0) / zoom
+    const factor = zoom.factor()
+    const x = (typeof input.x === 'number' ? input.x : 0) / factor
+    const y = (typeof input.y === 'number' ? input.y : 0) / factor
     if (input.type === 'mouseMove' || input.type === 'mouseUp') {
       onPointer(input.type === 'mouseMove' ? 'move' : 'up', x, y)
     } else if (
@@ -100,8 +101,8 @@ export function createOffscreenPageDragBridge(
 
   return {
     async dropFiles(drop) {
-      const zoom = appliedPageZoomFactor(contents)
-      const [x, y] = [drop.x / zoom, drop.y / zoom]
+      const factor = zoom.factor()
+      const [x, y] = [drop.x / factor, drop.y / factor]
       // Why mask 1 (copy): that is what an OS file drop offers a page.
       const data = { items: [], files: drop.files, dragOperationsMask: 1 }
       for (const type of ['dragEnter', 'dragOver', 'drop']) {
