@@ -1,6 +1,7 @@
 import { DaemonServer } from './daemon-server'
 import type { DaemonServerOptions } from './daemon-server-options'
 import type { DaemonFileLog } from './daemon-file-log'
+import { readTerminalSpawnAdmissionArg } from './terminal-spawn-gate'
 
 export type DaemonStartOptions = {
   socketPath: string
@@ -19,6 +20,7 @@ export type DaemonStartOptions = {
   onPtySessionExit?: DaemonServerOptions['onPtySessionExit']
   onAuthenticatedClientPair?: DaemonServerOptions['onAuthenticatedClientPair']
   log?: DaemonFileLog
+  spawnAdmission?: DaemonServerOptions['spawnAdmission']
   onIdleShutdown?: () => void
   onRpcShutdown?: () => void
   initialAdoptionTestConfig?: DaemonServerOptions['initialAdoptionTestConfig']
@@ -49,6 +51,8 @@ export async function startDaemon(opts: DaemonStartOptions): Promise<DaemonHandl
       ? { onAuthenticatedClientPair: opts.onAuthenticatedClientPair }
       : {}),
     ...(opts.log ? { log: opts.log } : {}),
+    // Why argv: the launcher passes it on the daemon's own command line; tests pass it directly.
+    spawnAdmission: opts.spawnAdmission ?? readTerminalSpawnAdmissionArg(process.argv),
     ...(opts.onIdleShutdown ? { onIdleShutdown: opts.onIdleShutdown } : {}),
     ...(opts.onRpcShutdown ? { onRpcShutdown: opts.onRpcShutdown } : {}),
     ...(opts.initialAdoptionTestConfig
