@@ -30,6 +30,7 @@ import { readOffscreenPageCaret } from './offscreen-page-caret'
 import { runOffscreenPageCommand } from './offscreen-page-commands'
 import { sendOffscreenPageFrame } from './offscreen-page-frame-delivery'
 import {
+  appliedPageZoomFactor,
   hostZoomFactor,
   inputInPageDips,
   syncOffscreenPageHostZoom,
@@ -247,7 +248,7 @@ export class OffscreenPageHost {
       window,
       popup,
       point: { x: point.x * factor, y: point.y * factor },
-      pageZoomFactor: page.surface.contents.getZoomFactor()
+      pageZoomFactor: appliedPageZoomFactor(page.surface.contents)
     })
   }
 

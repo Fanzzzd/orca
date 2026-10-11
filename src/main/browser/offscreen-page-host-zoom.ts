@@ -56,3 +56,17 @@ export function syncOffscreenPageHostZoom(args: {
   renderer.send(OFFSCREEN_PAGE_EVENT_CHANNEL, args.browserPageId, event)
   return { level, factor: renderer.getZoomFactor() }
 }
+
+// Chromium's built-in PDF viewer, which a full-page PDF hosts as a child frame.
+const PDF_VIEWER_ORIGIN = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai'
+
+/**
+ * Page CSS px per page DIP as the main frame draws them. Why not getZoomFactor alone: the PDF
+ * viewer puts its page in manual zoom mode, which reports the PDF's fit zoom but draws at 100%.
+ */
+export function appliedPageZoomFactor(contents: WebContents): number {
+  const hostsPdfViewer = contents.mainFrame.frames.some(
+    (frame) => frame.origin === PDF_VIEWER_ORIGIN
+  )
+  return hostsPdfViewer ? 1 : contents.getZoomFactor()
+}

@@ -8,7 +8,8 @@ type Listener = (method: string, params: Record<string, unknown>, sessionId?: st
 function fakePage() {
   const contents = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
-    getZoomFactor: () => 1
+    getZoomFactor: () => 1,
+    mainFrame: { frames: [] }
   })
   const listeners = new Set<Listener>()
   const session = {

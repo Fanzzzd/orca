@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { appliedPageZoomFactor } from './offscreen-page-host-zoom'
 import type { OffscreenPageFileDrop } from '../../shared/offscreen-page-protocol'
 import type { OffscreenPageCdpSession } from './offscreen-page-cdp-session'
 import type { OffscreenPageFrames } from './offscreen-page-frames'
@@ -77,7 +78,7 @@ export function createOffscreenPageDragBridge(
     if (!isRecord(input) || typeof input.type !== 'string') {
       return
     }
-    const zoom = contents.getZoomFactor()
+    const zoom = appliedPageZoomFactor(contents)
     const x = (typeof input.x === 'number' ? input.x : 0) / zoom
     const y = (typeof input.y === 'number' ? input.y : 0) / zoom
     if (input.type === 'mouseMove' || input.type === 'mouseUp') {
@@ -99,7 +100,7 @@ export function createOffscreenPageDragBridge(
 
   return {
     async dropFiles(drop) {
-      const zoom = contents.getZoomFactor()
+      const zoom = appliedPageZoomFactor(contents)
       const [x, y] = [drop.x / zoom, drop.y / zoom]
       // Why mask 1 (copy): that is what an OS file drop offers a page.
       const data = { items: [], files: drop.files, dragOperationsMask: 1 }
