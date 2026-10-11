@@ -13,7 +13,7 @@ export function getRuntimeFeatureInteractionId(
   if (method === 'browser.profileClearDefaultCookies') {
     return hasBooleanResult(result, 'cleared') ? 'cookie-import' : null
   }
-  if (method === 'browser.screencast.unsubscribe' || method === 'browser.screencast.ack') {
+  if (method === 'browser.screencast.unsubscribe') {
     return null
   }
   if (method.startsWith('browser.') && isBrowserPaneUiRuntimeRpcParams(rawParams)) {

@@ -15,8 +15,6 @@ export type BrowserDialogState = {
 
 export type ScreencastEvent = {
   type?: string
-  subscriptionId?: string
-  frameAck?: { window?: number }
   message?: string
   error?: { message?: string }
   dialogType?: string

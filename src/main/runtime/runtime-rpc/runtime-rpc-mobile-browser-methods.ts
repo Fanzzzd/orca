@@ -14,7 +14,6 @@ export const MOBILE_BROWSER_RPC_METHODS = [
   'browser.mouseWheel',
   'browser.reload',
   'browser.screencast',
-  'browser.screencast.ack',
   'browser.screencast.unsubscribe',
   'browser.tabCreate',
   'browser.viewport'

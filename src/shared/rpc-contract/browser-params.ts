@@ -66,9 +66,7 @@ export const Screencast = BrowserTarget.extend({
   deviceScaleFactor: OptionalFiniteNumber,
   mobile: OptionalBoolean,
   everyNthFrame: OptionalFiniteNumber,
-  minFrameIntervalMs: OptionalFiniteNumber,
-  /** Unacked frames the viewer allows in flight; it acks with browser.screencast.ack once `ready` echoes `frameAck`. */
-  ackWindow: OptionalFiniteNumber
+  minFrameIntervalMs: OptionalFiniteNumber
 })
 
 export const FullScreenshot = BrowserTarget.extend({
