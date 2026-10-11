@@ -8,7 +8,12 @@ import {
 } from './offscreen-page-user-input'
 
 function fakePage(attached = true) {
-  const target = { isDestroyed: () => false, sendInputEvent: vi.fn(), getZoomFactor: () => 2 }
+  const target = {
+    isDestroyed: () => false,
+    sendInputEvent: vi.fn(),
+    getZoomFactor: () => 2,
+    mainFrame: { frames: [] }
+  }
   const session = {
     send: vi.fn((_method: string, _params?: Record<string, unknown>, _sessionId?: string) =>
       Promise.resolve(attached ? {} : undefined)

@@ -138,6 +138,53 @@ test.describe('offscreen browser pages', () => {
       .toBeCloseTo(box.height - 10, 0)
   })
 
+  test("clicks in a PDF land where they are drawn, though the viewer's zoom is not 100%", async ({
+    orcaPage,
+    electronApp
+  }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, `${server.url}doc.pdf`, null)
+    // Why every child frame: the viewer draws the document in a frame nested inside its own.
+    const inViewerFrames = (code: string) =>
+      electronApp.evaluate(async ({ webContents }, script) => {
+        const page = webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/doc.pdf'))
+        const frames = page?.mainFrame.framesInSubtree.filter((f) => f !== page.mainFrame) ?? []
+        return Promise.all(frames.map((f) => f.executeJavaScript(script).catch(() => null)))
+      }, code)
+    // The viewer applies its fit zoom after the document loads.
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .find((wc) => wc.getURL().endsWith('/doc.pdf'))
+            ?.getZoomFactor()
+        )
+      )
+      .not.toBe(1)
+    await expect
+      .poll(async () => (await inViewerFrames('1')).filter((ok) => ok === 1).length)
+      .toBeGreaterThanOrEqual(2)
+    await inViewerFrames(
+      'window.__downs = [], addEventListener("mousedown", (e) => window.__downs.push([e.clientX, e.clientY]), true), 1'
+    )
+
+    const box = (await pageElement(orcaPage, pageId).boundingBox())!
+    const first = [Math.round(box.width * 0.3), Math.round(box.height * 0.5)]
+    const second = [Math.round(box.width * 0.7), Math.round(box.height * 0.7)]
+    for (const [x, y] of [first, second]) {
+      await orcaPage.mouse.click(box.x + x, box.y + y)
+    }
+    // Both clicks hit the document's frame; the distance between them must match the screen's.
+    const downsOf = async () =>
+      (await inViewerFrames('JSON.stringify(window.__downs)'))
+        .map((json): unknown => JSON.parse(String(json ?? '[]')))
+        .find((downs): downs is number[][] => Array.isArray(downs) && downs.length === 2)
+    await expect.poll(downsOf).toBeDefined()
+    const [[x1, y1], [x2, y2]] = (await downsOf())!
+    expect(Math.abs(x2 - x1 - (second[0] - first[0]))).toBeLessThanOrEqual(1)
+    expect(Math.abs(y2 - y1 - (second[1] - first[1]))).toBeLessThanOrEqual(1)
+  })
+
   test('select menus open as native menus and apply the choice', async ({
     orcaPage,
     electronApp

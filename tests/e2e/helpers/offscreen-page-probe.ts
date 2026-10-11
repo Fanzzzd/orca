@@ -86,8 +86,35 @@ const FRAME_HTML = `<!doctype html>
   </script>
 </body>`
 
+// A one-page PDF larger than the pane, so the viewer reports a fit zoom below 100%.
+const PROBE_PDF = (() => {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1224 1584] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    '<< /Length 44 >>\nstream\nBT /F1 24 Tf 72 700 Td (Offscreen PDF) Tj ET\nendstream',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ]
+  let body = '%PDF-1.4\n'
+  const offsets = objects.map((object, index) => {
+    const offset = body.length
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`
+    return offset
+  })
+  const xref = body.length
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  body += offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return body
+})()
+
 export async function startProbeServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const server: Server = createServer((request, response) => {
+    if (request.url === '/doc.pdf') {
+      response.writeHead(200, { 'Content-Type': 'application/pdf' })
+      response.end(PROBE_PDF)
+      return
+    }
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     response.end(
       request.url === '/popup'
@@ -153,7 +180,8 @@ export async function evalInPage(page: Page, pageId: string, expression: string)
 
 export async function openOffscreenTab(
   page: Page,
-  url: string
+  url: string,
+  title: string | null = 'Offscreen probe'
 ): Promise<{ tabId: string; pageId: string; worktreeId: string }> {
   await waitForActiveWorktree(page)
   await ensureTerminalVisible(page)
@@ -174,9 +202,11 @@ export async function openOffscreenTab(
   expect(created?.pageId).toBeTruthy()
   const pageId = created!.pageId!
   await expect(pageElement(page, pageId)).toBeVisible({ timeout: 20_000 })
-  await expect
-    .poll(() => evalInPage(page, pageId, 'document.title'), { timeout: 20_000 })
-    .toBe('Offscreen probe')
+  if (title !== null) {
+    await expect
+      .poll(() => evalInPage(page, pageId, 'document.title'), { timeout: 20_000 })
+      .toBe(title)
+  }
   // Why: input before the first frame is fine, but a painted canvas proves the texture path works.
   await expect
     .poll(() => pageElement(page, pageId).evaluate(canvasWidth), { timeout: 20_000 })
