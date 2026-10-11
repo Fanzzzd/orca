@@ -41,11 +41,8 @@ export class RuntimeBrowserCommandsWithListLogicalBrowserTabs extends RuntimeBro
         profileLabel: profile.label
       }
     })
-    // Why only with a window: headless serve keeps every page live, so its tab bar adds nothing.
-    const tabBar =
-      bridge && this.host.getAvailableAuthoritativeWindow()
-        ? (this.host.readBrowserTabBar?.(worktreeId) ?? [])
-        : []
+    // Why no window check: headless snapshots hold only live pages, which the merge dedupes.
+    const tabBar = bridge ? (this.host.readBrowserTabBar?.(worktreeId) ?? []) : []
     return mergeBrowserTabListing({ tabBar, liveTabs, clientTabs })
   }
 
