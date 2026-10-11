@@ -7,6 +7,7 @@ import type { BrowserWindow } from 'electron'
 import type { BrowserBackend } from '../../browser/browser-backend'
 import type { BrowserSessionTabSelectionOptions } from '../browser-tab-create-publication'
 import type { ServeBrowserTabs } from '../serve-browser-tabs'
+import type { BrowserTabBarEntry } from '../browser-tab-listing'
 
 export type BrowserCommandTargetParams = {
   worktree?: string
@@ -53,6 +54,8 @@ export type RuntimeBrowserCommandHost = {
     options?: BrowserSessionTabSelectionOptions
   ): void
   notifyHeadlessBrowserSessionTabsChanged?(worktreeId: string): void
+  /** The tab bar's browser tabs, loaded or not, from the published session snapshot. */
+  readBrowserTabBar?(worktreeId: string | undefined): BrowserTabBarEntry[]
   /** True when a runtime-owned session row for that page existed and was retired. */
   retireRuntimeOwnedBrowserSessionTab?(worktreeId: string, browserPageId: string): boolean | void
   /** Saved browser tabs on a host with no window; their writes and starts do nothing with one. */

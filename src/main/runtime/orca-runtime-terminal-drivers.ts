@@ -1,5 +1,6 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
 import { OrcaRuntimeWithFitOverrideListeners } from './orca-runtime-fit-override-listeners'
+import { readBrowserTabBar } from './browser-tab-listing'
 import type {
   DriverState,
   ApplyLayoutResult,
@@ -94,6 +95,8 @@ export abstract class OrcaRuntimeWithTerminalDrivers extends OrcaRuntimeWithFitO
       markHeadlessBrowserSessionTabActive: this.markHeadlessBrowserSessionTabActive.bind(this),
       notifyHeadlessBrowserSessionTabsChanged: (worktreeId) =>
         this.notifyMobileSessionTabsChanged(worktreeId),
+      readBrowserTabBar: (worktreeId) =>
+        readBrowserTabBar(this.mobileSessionTabsByWorktree, worktreeId),
       retireRuntimeOwnedBrowserSessionTab: (worktreeId, browserPageId) =>
         this.retireRuntimeOwnedBrowserSessionTab(worktreeId, browserPageId),
       serveBrowserTabs: this.serveBrowserTabs
