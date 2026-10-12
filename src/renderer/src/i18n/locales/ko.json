@@ -4583,9 +4583,8 @@
         "SkillFreshnessRow": {
           "statusUpdateAvailable": "업데이트 있음",
           "statusCantUpdate": "업데이트할 수 없음",
-          "cantUpdateReason": "이 스킬은 Orca가 안전하게 업데이트할 수 없는 위치에 설치되어 있어, npx skills update 명령이 변경하지 않습니다.",
+          "cantUpdateReason": "이 스킬은 Orca가 안전하게 업데이트할 수 없는 위치에 설치되어 있어, 업데이트 명령이 변경하지 않습니다.",
           "chipCurrent": "최신",
-          "chipUnrecognized": "인식 안 됨",
           "chipInaccessible": "액세스 불가",
           "chipDuplicate": "중복",
           "chipExternalLink": "외부 링크",
@@ -4594,26 +4593,20 @@
           "chipInRepo": "저장소 내",
           "chipPluginCache": "플러그인 캐시",
           "tipCurrent": "여기 있는 스킬은 이미 최신이므로 업데이트해도 변경되지 않습니다.",
-          "tipUnrecognized": "여기 있는 스킬의 콘텐츠가 어떤 공식 버전과도 일치하지 않아 Orca가 안전하게 업데이트할 수 없습니다. 업데이트를 허용하려면 여기 있는 항목을 제거하거나 교체하세요.",
           "tipInaccessible": "Orca가 여기 있는 스킬을 읽지 못해(권한 또는 파일 오류) 확인하거나 업데이트할 수 없습니다.",
-          "tipDuplicate": "이 스킬은 기본 위치와 별개로 여기에도 설치되어 있어 npx skills update 명령이 접근할 수 없습니다. 업데이트를 허용하려면 제거하세요.",
+          "tipDuplicate": "이 스킬은 기본 위치와 별개로 여기에도 설치되어 있어 업데이트 명령이 접근할 수 없습니다. 업데이트를 허용하려면 제거하세요.",
           "tipExternalLink": "Orca의 스킬 폴더 바깥을 가리키는 바로 가기입니다. 업데이트가 이를 따라가지 않습니다.",
           "tipBrokenLink": "더 이상 존재하지 않는 대상을 가리키는 바로 가기입니다. 삭제해도 됩니다.",
           "tipReadOnly": "여기 있는 스킬은 읽기 전용 위치에 있어 권한을 변경해야 업데이트할 수 있습니다.",
           "tipInRepo": "여기 있는 스킬은 전역 스킬이 아니라 프로젝트 안에 있습니다. Orca는 전역 스킬만 업데이트합니다.",
           "tipPluginCache": "여기 있는 스킬은 플러그인이 관리합니다. 대신 플러그인을 업데이트하세요.",
-          "skippedReasonUnrecognized": "The copy here doesn’t match the official version — it may be modified, or a different skill with the same name. Orca left it out of the update so it won’t overwrite it. Remove it if you want Orca to update this skill.",
           "skippedReasonReadOnly": "This copy is in a read-only location, so Orca left it out of the update. Change its permissions to let Orca update it.",
           "skippedReasonInaccessible": "Orca couldn’t read this copy, so it left the skill out of the update.",
           "skippedReasonInRepo": "This is a project skill, not a global one — Orca only updates your global skills, so it left this out of the update.",
           "skippedReasonPluginCache": "A plugin manages this skill, so Orca left it out of the update — update the plugin instead.",
           "skippedReasonExternalLink": "This copy is a shortcut pointing outside Orca’s skill folders, so Orca left it out of the update.",
           "skippedReasonBrokenLink": "This copy is a shortcut to something that no longer exists, so Orca left it out — you can safely delete it.",
-          "skippedReasonDuplicate": "This is a separate copy, so the update won’t reach it — the command only refreshes the main copy. Remove this copy, then reinstall the skill so this location follows the main one.",
-          "skippedReasonNewer": "This copy is a later version than the one this build of Orca ships, so Orca left it alone rather than roll it back. Updating Orca will bring the two back in line.",
-          "skippedReasonStaleRecord": "The skills updater has no usable record of this copy, so it reports the skill as already up to date and changes nothing. Reinstall it to bring the record back in line: {{value0}}",
-          "chipNewer": "Newer",
-          "tipNewer": "This copy is a later version than the one this build of Orca ships."
+          "skippedReasonDuplicate": "별도의 사본이라 업데이트가 적용되지 않습니다. 명령은 기본 사본만 새로 고칩니다. 이 사본을 제거한 뒤 스킬을 다시 설치하면 이 위치도 기본 사본을 따릅니다."
         },
         "SkillFreshnessUpdateDialog": {
           "title": "스킬 업데이트",
@@ -4654,7 +4647,9 @@
           "scanOutsideRoot": "플러그인 캐시 외부를 가리키는 플러그인 경로를 건너뛰었습니다.",
           "scanIoErrorWithCode": "이 플러그인 경로를 읽지 못했습니다({{value0}}).",
           "scanIoError": "이 플러그인 경로를 읽지 못했습니다.",
-          "scanIssueLimit": "건너뛴 플러그인 폴더가 너무 많아 개별적으로 표시할 수 없습니다."
+          "scanIssueLimit": "건너뛴 플러그인 폴더가 너무 많아 개별적으로 표시할 수 없습니다.",
+          "unselectedForeignOne": "Orca에서 설치하지 않은 스킬 1개는 선택되지 않았습니다.",
+          "unselectedForeignMany": "Orca에서 설치하지 않은 스킬 {{value0}}개는 선택되지 않았습니다."
         },
         "SkillFreshnessStatusPill": {
           "updateAvailable": "업데이트 가능",
@@ -4669,8 +4664,12 @@
           "stillOutdated": "Still out of date after the update ran."
         },
         "SkillUpdateRow": {
-          "oneLocation": "1 location",
-          "manyLocations": "{{value0}} locations"
+          "oneLocation": "위치 1개",
+          "manyLocations": "위치 {{value0}}개",
+          "notFromOrca": "Orca에서 설치하지 않음",
+          "notFromOrcaSourceTip": "{{value0}}에서 설치되었습니다. 선택하면 Orca 버전으로 교체됩니다.",
+          "notFromOrcaNoRecordTip": "이 사본에는 Orca 설치 기록이 없습니다. 선택하면 Orca 버전으로 교체됩니다.",
+          "includeSkill": "{{value0}} 포함"
         },
         "host": {
           "local": "이 컴퓨터",
@@ -5051,8 +5050,7 @@
         "AddProjectFromFolderDialog": {
           "7d1f51678c": "프로젝트 추가",
           "7726a16374": "취소",
-          "046751dbfb": "이 폴더를 별도의 Orca 프로젝트로 추가합니다.",
-          "e643b30398": "원격 프로젝트가 추가되었습니다."
+          "046751dbfb": "이 폴더를 별도의 Orca 프로젝트로 추가합니다."
         },
         "AddRepoCreateStep": {
           "0ae45b8238": "my-project",
@@ -5070,8 +5068,7 @@
           "fe1e616c5b": "프로젝트를 만들려면 Git이 필요합니다.",
           "c234df77f7": "만들기 전에 서버 상위 폴더를 선택하거나 입력하세요.",
           "3a13f6e88b": "위치가 선택되지 않음",
-          "6ed14c0281": "서버 폴더가 선택되지 않음",
-          "ssh_parent_manual": "SSH 상위 경로를 입력하세요."
+          "6ed14c0281": "서버 폴더가 선택되지 않음"
         },
         "AddRepoNestedImportStep": {
           "496f68cf8c": "repos를 스캔하는 중입니다. 중지하려면 클릭하세요.",
@@ -5096,13 +5093,9 @@
           "e52454b7f6": "폴더로 열기"
         },
         "AddRepoRemoteStep": {
-          "5b205b5281": "스캔 중지",
           "6680289908": "/home/user/project",
           "ef410aa881": "원격 경로",
-          "0416bde073": "설정에 추가",
-          "df6fbcf880": "구성된 SSH 대상이 없습니다.",
           "44637f43bd": "SSH 대상",
-          "80557be85a": "연결된 SSH 대상을 선택하고 Git 리포지토리 경로를 입력하세요.",
           "serverDescription": "{{server}}이(가) 연결하는 SSH 호스트를 선택하고, 그 호스트의 Git 저장소 경로를 입력하세요.",
           "serverEmpty": "{{server}}에 아직 SSH 호스트가 없습니다.",
           "serverAddHost": "SSH 호스트 추가",
@@ -5110,10 +5103,7 @@
           "007651bdf9": "디렉터리로 이동한 후 선택을 클릭하여 선택합니다.",
           "dd3ff65486": "원격 파일 시스템 찾아보기",
           "36d427bb66": "원격 프로젝트 추가",
-          "35831a7312": "추가 중...",
-          "lockedDescription": "{{value0}}의 Git 리포지토리 경로를 입력하세요.",
-          "lockedDisconnected": "{{value0}} 연결이 끊어졌습니다.",
-          "93e0221434": "연결"
+          "35831a7312": "추가 중..."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "옵션 추가로 돌아가기",
@@ -5863,12 +5853,8 @@
                   "serverSshTitle": "이 서버의 SSH 호스트에 있는 프로젝트",
                   "serverSshDescription": "이 서버가 연결하는 SSH 호스트의 프로젝트 폴더를 엽니다",
                   "serverSshUpdate": "SSH 호스트에 프로젝트를 추가하려면 이 서버를 업데이트하세요",
-                  "3d162cc76f": "원격 프로젝트",
                   "fb4fc5380e": "로컬 프로젝트, Git repo 또는 repos가 많은 폴더",
                   "2281fdc8c7": "폴더 찾아보기",
-                  "sshCreateUnavailable": "아직 SSH 호스트에서는 사용할 수 없습니다.",
-                  "sshBrowseTitle": "SSH 호스트에서 프로젝트 열기",
-                  "sshBrowseDescription": "이 SSH 호스트의 기존 Git 리포지토리 또는 폴더",
                   "runtimeBrowseDescription": "이 호스트의 기존 Git 리포지토리 또는 폴더"
                 }
               }
@@ -12371,7 +12357,7 @@
           }
         },
         "sshHostServer": {
-          "sourceChanged": "이전 Orca에서 변경됨: 관리형 서버로 다시 이동할 때까지 릴레이를 실행합니다.",
+          "sourceChanged": "이전 버전의 Orca가 이 호스트의 프로젝트를 변경했습니다. 다시 연결하려면 해당 변경 사항을 관리형 서버로 이동하거나 서버 버전을 유지하세요.",
           "deploying": "관리형 Orca 서버 설정 중…",
           "converting": "이 호스트의 프로젝트를 관리형 Orca 서버로 이동하는 중…",
           "connecting": "관리형 Orca 서버에 연결 중…",
@@ -17968,7 +17954,6 @@
         "imagePasteFailed": "이미지 붙여넣기 실패.",
         "worktreeNotReady": "워크트리가 준비되지 않았습니다 — 잠시 후 다시 시도하세요.",
         "pasteUnavailable": "붙여넣을 수 없습니다 — 이 채팅은 지금 입력을 받을 수 없습니다.",
-        "uploadingAttachments": "{{value0}}개 파일을 원격으로 업로드 중…",
         "model": "모델",
         "effort": "추론 수준",
         "fastMode": "빠른 모드",

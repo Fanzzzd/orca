@@ -1,3 +1,4 @@
+import { ALLOW_INSECURE_WEB_PAIRING_ENV } from '../../../shared/web-origin-security'
 import { AGENT_LAUNCH_RUNTIME_CAPABILITY } from '../../../shared/agent-launch-runtime-capability'
 import { IrohTransport } from '../rpc/iroh-transport'
 import type { RuntimeTransportMetadata } from '../../../shared/runtime-bootstrap'
@@ -101,6 +102,8 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
         this.pairingInitializationFailure = null
         this.hostDescriptor = await loadHostDescriptor(this.userDataPath)
         publishHostDescriptor(this.runtime.getRuntimeId(), this.hostDescriptor)
+        let webSocketStarted = false
+        let irohStarted = false
         try {
           const host = this.resolveInitialWebSocketBindHost()
           const { transport, endpoint } = await this.startWebSocketTransport({
@@ -117,6 +120,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
           }
           activeTransports.push(transport)
           transportsMeta.push({ kind: 'websocket', endpoint })
+          webSocketStarted = true
         } catch (error) {
           // Why: WebSocket transport is supplementary; on failure (e.g. port in use)
           // continue with Unix socket (and, below, iroh — it needs no ws listener).
@@ -136,12 +140,18 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
             this.irohTransport = irohTransport
             // Why: include in activeTransports so stop() closes the endpoint; not advertised as CLI bootstrap.
             activeTransports.push(irohTransport)
+            irohStarted = true
           } catch (irohError) {
             console.error('[runtime] Failed to start iroh transport:', irohError)
             this.irohTransport = null
             // Why: a throw after start() leaves a bound endpoint + accept loop behind.
             await irohTransport?.stop().catch(() => {})
           }
+        }
+        // Why: the wiring only serves mobile transports; with neither WebSocket nor iroh up, release it.
+        if (!webSocketStarted && !irohStarted) {
+          this.mobileSocketWiring?.dispose()
+          this.mobileSocketWiring = null
         }
       }
     }
@@ -220,7 +230,10 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
       fallbackLadder: wsFallbackPortLadder(this.wsPort)
     })
     const mobileSocketWiring = this.ensureMobileSocketWiring(deviceRegistry, e2eeKeypair)
-    this.detachWebSocketWiring = mobileSocketWiring.attachTransport(wsTransport)
+    this.detachWebSocketWiring = mobileSocketWiring.attachTransport(wsTransport, (ws) => ({
+      transport: 'direct',
+      ...wsTransport.webPageOf(ws)
+    }))
 
     try {
       await wsTransport.start()
@@ -299,6 +312,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
           this.runtime.onClientDisconnected(socket.device.clientId)
         }
       },
+      allowInsecureWebPairing: () => process.env[ALLOW_INSECURE_WEB_PAIRING_ENV] === '1',
       // Why: relay attempts are authorized upstream; only direct failures should prompt local re-pairing.
       onUnpairedDeviceAuthFailure: (metadata) => {
         if (metadata.transport === 'direct') {
