@@ -7,7 +7,8 @@ function fakeContents() {
   return Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     setFrameRate: vi.fn(),
-    invalidate: vi.fn()
+    stopPainting: vi.fn(),
+    startPainting: vi.fn()
   })
 }
 
@@ -25,7 +26,7 @@ describe('createOffscreenPageFrameRate', () => {
     const rate = createOffscreenPageFrameRate(contents as never, () => 120)
     rate.setVisible(true)
     expect(contents.setFrameRate).toHaveBeenLastCalledWith(60)
-    expect(contents.invalidate).toHaveBeenCalledOnce()
+    expect(contents.startPainting).toHaveBeenCalledOnce()
     rate.setVisible(false)
     expect(contents.setFrameRate).toHaveBeenLastCalledWith(10)
   })
@@ -56,7 +57,7 @@ describe('createOffscreenPageFrameRate', () => {
     rate.setVisible(true)
     expect(rate.visible).toBe(true)
     expect(contents.setFrameRate).toHaveBeenCalledOnce()
-    expect(contents.invalidate).toHaveBeenCalledOnce()
+    expect(contents.startPainting).toHaveBeenCalledOnce()
   })
 
   it('runs a shown page at the display rate while the user drives it, then back at 60fps', () => {

@@ -10,6 +10,7 @@
 import { rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { PNG } from 'pngjs'
 import { test, expect } from './helpers/orca-app'
 import {
   startProbeServer,
@@ -136,6 +137,27 @@ test.describe('offscreen browser pages', () => {
     await expect
       .poll(() => evalInPage(orcaPage, pageId, 'window.__downY ?? null'))
       .toBeCloseTo(box.height - 10, 0)
+  })
+
+  test('a page changed while its tab was hidden shows the change once the tab is back', async ({
+    orcaPage
+  }) => {
+    const first = await openOffscreenTab(orcaPage, server.url)
+    await openOffscreenTab(orcaPage, `${server.url}?other`)
+    // A static change: the page paints it once while hidden and then sits idle.
+    await evalInPage(
+      orcaPage,
+      first.pageId,
+      'document.body.insertAdjacentHTML("beforeend", "<div style=\\"position:fixed;inset:0;background:rgb(255,0,0)\\"></div>"), 1'
+    )
+    await orcaPage.waitForTimeout(500)
+    await orcaPage.evaluate((id) => window.__store?.getState().setActiveBrowserTab(id), first.tabId)
+    const centerIsRed = async () => {
+      const png = PNG.sync.read(await pageElement(orcaPage, first.pageId).screenshot())
+      const at = (png.width * (png.height >> 1) + (png.width >> 1)) * 4
+      return png.data[at]! > 200 && png.data[at + 1]! < 60 && png.data[at + 2]! < 60
+    }
+    await expect.poll(centerIsRed, { timeout: 3000 }).toBe(true)
   })
 
   test('a click lands where it is drawn after the page is zoomed', async ({

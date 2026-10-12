@@ -55,8 +55,11 @@ export function createOffscreenPageFrameRate(
       visible = next
       apply()
       if (next && !contents.isDestroyed()) {
-        // Why: a newly shown pane needs a frame even when the page itself is idle.
-        contents.invalidate()
+        // Why restart painting: frames were dropped while hidden, and an idle page sends no new
+        // one. invalidate() only re-sends the software bitmap, which a shared-texture page lacks;
+        // restarting the capturer makes it send the current frame.
+        contents.stopPainting()
+        contents.startPainting()
       }
     },
     get visible() {
