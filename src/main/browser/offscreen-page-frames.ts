@@ -26,6 +26,8 @@ export const OFFSCREEN_PAGE_FRAME_SETUP = [AUTO_ATTACH] as const
 const MAX_DEPTH = 8
 // A point outside every frame's viewport: Blink then drops the hover the frame last had.
 const OUTSIDE = -1
+// Elements that host a frame, as DOM.describeNode names them.
+const FRAME_OWNERS = new Set(['IFRAME', 'FRAME', 'FENCEDFRAME', 'OBJECT', 'EMBED'])
 
 export type OffscreenPageFrames = {
   /**
@@ -84,10 +86,15 @@ export function createOffscreenPageFrames(
     }
     const reply = await session
       .send('Target.attachToTarget', { targetId: frameId, flatten: true })
-      .catch(() => null)
+      .catch((error: unknown) => {
+        // Only Chromium's answer for a frame without a target of its own; other failures may pass.
+        if (error instanceof Error && error.message.includes('No target with given id')) {
+          notTargets.add(frameId)
+        }
+        return null
+      })
     const sessionId = isRecord(reply) ? reply.sessionId : undefined
     if (typeof sessionId !== 'string') {
-      notTargets.add(frameId)
       return undefined
     }
     adoptChild(frameId, sessionId)
@@ -120,17 +127,24 @@ export function createOffscreenPageFrames(
     const { sessionId } = point
     const send = (method: string, params: Record<string, unknown>): Promise<unknown> =>
       session.send(method, params, sessionId).catch(() => null)
+    // Why the scroll: getNodeForLocation takes document coordinates, unlike the box model below.
+    const scroll = readLayoutScroll(await send('Page.getLayoutMetrics', {}))
+    // Why pointer-events stay honoured: real input passes through such overlays to the frame below.
     const hit = await send('DOM.getNodeForLocation', {
-      x: Math.round(point.x),
-      y: Math.round(point.y),
-      ignorePointerEventsNone: true
+      x: Math.round(point.x + scroll.x),
+      y: Math.round(point.y + scroll.y)
     })
     const backendNodeId = isRecord(hit) ? hit.backendNodeId : undefined
     if (typeof backendNodeId !== 'number') {
       return null
     }
     const described = await send('DOM.describeNode', { backendNodeId })
-    const frameId = isRecord(described) && isRecord(described.node) ? described.node.frameId : null
+    const node = isRecord(described) && isRecord(described.node) ? described.node : null
+    // Why owners only: any other node reports the frame it is in, which is not a child.
+    const frameId =
+      node && typeof node.nodeName === 'string' && FRAME_OWNERS.has(node.nodeName)
+        ? node.frameId
+        : null
     const child =
       typeof frameId === 'string'
         ? (childSessionByFrameId.get(frameId) ?? (await attachChild(frameId)))
@@ -321,6 +335,13 @@ function captured(
     y: params.y - capture.dy
   }
   return { chain: [target], target }
+}
+
+function readLayoutScroll(metrics: unknown): { x: number; y: number } {
+  const viewport = isRecord(metrics) ? metrics.cssLayoutViewport : null
+  const x = isRecord(viewport) ? viewport.pageX : null
+  const y = isRecord(viewport) ? viewport.pageY : null
+  return { x: typeof x === 'number' ? x : 0, y: typeof y === 'number' ? y : 0 }
 }
 
 function noop(): void {}

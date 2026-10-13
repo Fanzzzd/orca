@@ -3,17 +3,32 @@ import { createOffscreenPageFrames } from './offscreen-page-frames'
 
 type Listener = (method: string, params: Record<string, unknown>, sessionId?: string) => void
 
-// A page with one cross-site iframe whose content box starts at (10, 20) and is 100 px square.
-function fakePage() {
+// A page with one cross-site iframe whose content box starts at (10, 20) of the viewport and is
+// 100 px square. Like Blink, the hit test takes document coordinates and the box model viewport ones.
+function fakePage({ scrollY = 0 } = {}) {
   const listeners = new Set<Listener>()
   const inFrame = (x: unknown, y: unknown) =>
-    typeof x === 'number' && typeof y === 'number' && x >= 10 && x < 110 && y >= 20 && y < 120
+    typeof x === 'number' &&
+    typeof y === 'number' &&
+    x >= 10 &&
+    x < 110 &&
+    y - scrollY >= 20 &&
+    y - scrollY < 120
   const reply = (method: string, params: Record<string, unknown>, sessionId?: string): unknown => {
+    if (method === 'Page.getLayoutMetrics') {
+      return { cssLayoutViewport: { pageX: 0, pageY: sessionId ? 0 : scrollY } }
+    }
     if (method === 'DOM.getNodeForLocation') {
       return { backendNodeId: !sessionId && inFrame(params.x, params.y) ? 7 : 1 }
     }
     if (method === 'DOM.describeNode') {
-      return { node: params.backendNodeId === 7 ? { frameId: 'F1' } : {} }
+      // Every node names the frame it is in; only the owner element names its child frame.
+      return {
+        node:
+          params.backendNodeId === 7
+            ? { nodeName: 'IFRAME', frameId: 'F1' }
+            : { nodeName: 'HTML', frameId: sessionId ? 'F1' : 'MAIN' }
+      }
     }
     if (method === 'DOM.getBoxModel') {
       return { model: { content: [10, 20, 110, 20, 110, 120, 10, 120] } }
@@ -142,6 +157,23 @@ describe('createOffscreenPageFrames', () => {
     expect(await frames.locate(30, 50)).toEqual({ sessionId: 'S1', x: 20, y: 30 })
     message('Target.detachedFromTarget', { sessionId: 'S1' })
     expect(await frames.locate(30, 50)).toEqual({ x: 30, y: 50 })
+  })
+
+  it('hit tests a scrolled page in document coordinates', async () => {
+    const { frames, attachFrame } = fakePage({ scrollY: 500 })
+    attachFrame()
+    expect(await frames.locate(30, 50)).toEqual({ sessionId: 'S1', x: 20, y: 30 })
+  })
+
+  it('never attaches to the frame a hit lands in, only to a frame its owner element holds', async () => {
+    const { session, frames, attachFrame } = fakePage()
+    attachFrame()
+    await frames.locate(200, 200)
+    await frames.locate(30, 50)
+    const attaches = session.send.mock.calls.filter(
+      ([method]) => method === 'Target.attachToTarget'
+    )
+    expect(attaches).toEqual([])
   })
 
   it('collapses moves waiting behind a slow hit test into the newest, without passing a press', async () => {

@@ -575,6 +575,40 @@ test.describe('offscreen browser pages', () => {
     await expect.poll(frameState).toBe('inner:hi')
   })
 
+  test('a click reaches a cross-site frame on a scrolled page', async ({ orcaPage }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    const frameState = () => evalInPage(orcaPage, pageId, 'window.__frame')
+    await expect.poll(frameState).toBe(':')
+    await evalInPage(
+      orcaPage,
+      pageId,
+      'document.body.style.paddingBottom = "3000px"; window.scrollTo(0, 300); window.scrollY'
+    )
+    const frame = await rectOf(orcaPage, pageId, '#frame')
+    await orcaPage.mouse.click(frame.left + 145, frame.top + 35)
+    await orcaPage.keyboard.type('hi')
+    await expect.poll(frameState).toBe('inner:hi')
+  })
+
+  test('a click reaches a cross-site frame through an overlay that ignores the pointer', async ({
+    orcaPage
+  }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    const frameState = () => evalInPage(orcaPage, pageId, 'window.__frame')
+    await expect.poll(frameState).toBe(':')
+    await evalInPage(
+      orcaPage,
+      pageId,
+      `const veil = document.createElement('div');
+       veil.style.cssText = 'position:fixed;inset:0;pointer-events:none;background:transparent';
+       document.body.append(veil); true`
+    )
+    const frame = await rectOf(orcaPage, pageId, '#frame')
+    await orcaPage.mouse.click(frame.left + 145, frame.top + 35)
+    await orcaPage.keyboard.type('hi')
+    await expect.poll(frameState).toBe('inner:hi')
+  })
+
   test('datalist suggestions show over the page and take keys', async ({ orcaPage }) => {
     const { pageId } = await openOffscreenTab(orcaPage, server.url)
     const popup = pageElement(orcaPage, pageId).locator('.datalist')
