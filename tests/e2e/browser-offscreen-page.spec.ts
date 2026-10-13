@@ -553,6 +553,28 @@ test.describe('offscreen browser pages', () => {
     await expect.poll(frameState).toBe('inner:hi')
   })
 
+  test("a click reaches a cross-site frame even after the frame's debugger session was dropped", async ({
+    orcaPage,
+    electronApp
+  }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    const frameState = () => evalInPage(orcaPage, pageId, 'window.__frame')
+    await expect.poll(frameState).toBe(':')
+    // Another client on the page's debugger turns auto-attach off, which detaches every frame.
+    await electronApp.evaluate(async ({ webContents }, url) => {
+      const page = webContents.getAllWebContents().find((wc) => wc.getURL() === url)
+      await page?.debugger.sendCommand('Target.setAutoAttach', {
+        autoAttach: false,
+        waitForDebuggerOnStart: false,
+        flatten: true
+      })
+    }, server.url)
+    const frame = await rectOf(orcaPage, pageId, '#frame')
+    await orcaPage.mouse.click(frame.left + 145, frame.top + 35)
+    await orcaPage.keyboard.type('hi')
+    await expect.poll(frameState).toBe('inner:hi')
+  })
+
   test('datalist suggestions show over the page and take keys', async ({ orcaPage }) => {
     const { pageId } = await openOffscreenTab(orcaPage, server.url)
     const popup = pageElement(orcaPage, pageId).locator('.datalist')

@@ -53,7 +53,11 @@ export function createOffscreenPageFeatures(args: {
     focusCommand()
   ])
   // Why dialogs again: a file input in a cross-site iframe opens its chooser from that frame.
-  const frames = createOffscreenPageFrames(session, () => OFFSCREEN_PAGE_DIALOG_SETUP)
+  const frames = createOffscreenPageFrames(
+    session,
+    () => OFFSCREEN_PAGE_DIALOG_SETUP,
+    () => hasOutOfProcessFrames(contents)
+  )
   const unregisterFrames = registerOffscreenPageFrames(contents, frames)
   const frameRate = createOffscreenPageFrameRate(contents, () =>
     Math.max(...screen.getAllDisplays().map((display) => display.displayFrequency))
@@ -90,4 +94,12 @@ export function createOffscreenPageFeatures(args: {
       session.dispose()
     }
   }
+}
+
+function hasOutOfProcessFrames(contents: WebContents): boolean {
+  if (contents.isDestroyed()) {
+    return false
+  }
+  const main = contents.mainFrame
+  return main.framesInSubtree.some((frame) => frame.processId !== main.processId)
 }
