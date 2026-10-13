@@ -52,7 +52,9 @@ export type OffscreenPageFrames = {
  */
 export function createOffscreenPageFrames(
   session: OffscreenPageCdpSession,
-  childSetup: () => readonly CdpCommand[]
+  childSetup: () => readonly CdpCommand[],
+  /** Whether the page holds a frame in another process, attached or not. */
+  hasOutOfProcessFrames: () => boolean = () => false
 ): OffscreenPageFrames {
   const childSessionByFrameId = new Map<string, string>()
   const childListeners = new Set<(params: OffscreenPageMouseParams) => void>()
@@ -60,16 +62,49 @@ export function createOffscreenPageFrames(
   let capture: { sessionId?: string; dx: number; dy: number } | null = null
   let order: Promise<unknown> = Promise.resolve()
 
+  // Frames that are not targets of their own (same-process), so routing does not retry attaching.
+  const notTargets = new Set<string>()
+  const adoptChild = (frameId: string, sessionId: string): void => {
+    if (childSessionByFrameId.get(frameId) === sessionId) {
+      return
+    }
+    childSessionByFrameId.set(frameId, sessionId)
+    for (const [command, commandParams] of [AUTO_ATTACH, ...childSetup()]) {
+      void session.send(command, commandParams, sessionId).catch(() => {})
+    }
+  }
+  /**
+   * Attaches to a frame that has no session. Why: another client on the page's debugger, such as
+   * an agent tool or DevTools, can turn auto-attach off and detach every frame; input would then
+   * land on the iframe element in the page and never reach the frame.
+   */
+  const attachChild = async (frameId: string): Promise<string | undefined> => {
+    if (notTargets.has(frameId)) {
+      return undefined
+    }
+    const reply = await session
+      .send('Target.attachToTarget', { targetId: frameId, flatten: true })
+      .catch(() => null)
+    const sessionId = isRecord(reply) ? reply.sessionId : undefined
+    if (typeof sessionId !== 'string') {
+      notTargets.add(frameId)
+      return undefined
+    }
+    adoptChild(frameId, sessionId)
+    return sessionId
+  }
+
   const stopMessages = session.onMessage((method, params) => {
     const info = isRecord(params.targetInfo) ? params.targetInfo : null
     if (method === 'Target.attachedToTarget' && typeof params.sessionId === 'string') {
       if (info?.type === 'iframe' && typeof info.targetId === 'string') {
         // An out-of-process frame's target id is its frame id.
-        childSessionByFrameId.set(info.targetId, params.sessionId)
-        for (const [command, commandParams] of [AUTO_ATTACH, ...childSetup()]) {
-          void session.send(command, commandParams, params.sessionId).catch(() => {})
-        }
+        notTargets.delete(info.targetId)
+        adoptChild(info.targetId, params.sessionId)
       }
+    } else if (method === 'Page.frameNavigated') {
+      // A navigation can move a frame into its own process.
+      notTargets.clear()
     } else if (method === 'Target.detachedFromTarget') {
       for (const [frameId, sessionId] of childSessionByFrameId) {
         if (sessionId === params.sessionId) {
@@ -96,7 +131,10 @@ export function createOffscreenPageFrames(
     }
     const described = await send('DOM.describeNode', { backendNodeId })
     const frameId = isRecord(described) && isRecord(described.node) ? described.node.frameId : null
-    const child = typeof frameId === 'string' ? childSessionByFrameId.get(frameId) : undefined
+    const child =
+      typeof frameId === 'string'
+        ? (childSessionByFrameId.get(frameId) ?? (await attachChild(frameId)))
+        : undefined
     if (!child) {
       return null
     }
@@ -114,7 +152,10 @@ export function createOffscreenPageFrames(
   ): Promise<{ chain: OffscreenPageFramePoint[]; target: OffscreenPageFramePoint }> => {
     let target: OffscreenPageFramePoint = { x, y }
     const chain = [target]
-    while (childSessionByFrameId.size > 0 && chain.length <= MAX_DEPTH) {
+    while (
+      (childSessionByFrameId.size > 0 || hasOutOfProcessFrames()) &&
+      chain.length <= MAX_DEPTH
+    ) {
       const next = await childAt(target)
       if (!next) {
         break
