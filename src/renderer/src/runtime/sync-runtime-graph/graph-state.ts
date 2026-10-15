@@ -1,3 +1,4 @@
+import type { MobileProjectSectionCatalog } from '../../../../shared/mobile-project-sections-contract'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import type { AppState } from '@/store/types'
 import type {
@@ -31,6 +32,10 @@ export const EMPTY_WORKTREE_OPEN_FILE_IDS: readonly string[] = []
 
 export const mobilePublicationEpoch = `renderer:${createBrowserUuid()}`
 
+function noPublishedProjectSectionCatalog(): MobileProjectSectionCatalog | null {
+  return null
+}
+
 export const graphState = {
   syncScheduled: false,
   syncInFlight: false,
@@ -54,7 +59,11 @@ export const graphState = {
   cachedOpenFileIndexesSource: null as AppState['openFiles'] | null,
   cachedOpenFileIndexes: null as OpenFileIndexes | null,
   cachedEditorDraftHashes: null as EditorDraftHashCache | null,
-  mobileSessionSnapshotVersion: 0
+  mobileSessionSnapshotVersion: 0,
+  /** Last group grid sizes main accepted, so a refit republishes only when one changed. */
+  publishedTerminalGroupGridSizesKey: '',
+  /** Last sidebar Project catalog main accepted, so the graph carries it only when it changed. */
+  publishedProjectSectionCatalog: noPublishedProjectSectionCatalog()
 }
 
 /** IDs occurring more than once cannot address the legacy tab-keyed runtime maps safely. */

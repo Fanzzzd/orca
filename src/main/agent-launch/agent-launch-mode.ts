@@ -242,6 +242,18 @@ export function downgradeAgentLaunchModeForHost(
   )
 }
 
+export function downgradeAgentLaunchModeForStructuredRefusal(
+  receipt: AgentLaunchModeReceipt,
+  vocabulary: AgentLaunchModeVocabulary
+): AgentLaunchModeReceipt {
+  return {
+    mode: 'terminal',
+    preferred: receipt.preferred,
+    reason: 'structured_unsupported_on_host',
+    detail: `Your default is a structured chat session, but the host refused to create one here; started ${vocabulary.terminal} instead.`
+  }
+}
+
 function downgraded(
   reason: Exclude<AgentLaunchModeReason, 'user_default'>,
   vocabulary: AgentLaunchModeVocabulary
@@ -265,10 +277,15 @@ export function warnStructuredLaunchDowngrade(
   }
 }
 
-/** The store can be missing on a runtime that never opened one; that reads as no preference. */
+/** The store can be missing on a runtime that never opened one; that reads as no preference.
+ *  A relaying desktop's stamped `nativeChatDefault` stands in for this host's own chat setting. */
 export function readAgentLaunchModeSettings(
-  runtime: Pick<OrcaRuntimeService, 'getClientSettings'>
+  runtime: Pick<OrcaRuntimeService, 'getClientSettings'>,
+  nativeChatDefault?: boolean
 ): AgentLaunchModeSettings | null {
+  if (nativeChatDefault !== undefined) {
+    return { experimentalNativeChat: nativeChatDefault }
+  }
   try {
     return runtime.getClientSettings()
   } catch {

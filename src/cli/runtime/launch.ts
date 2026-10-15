@@ -38,6 +38,7 @@ import {
 } from './serve-electron-preflight'
 import { MacServeStartupAbortError } from './serve-signal-exit-diagnostic'
 import { superviseServeService } from './serve-supervised-service'
+import { supervisedAppImageUpdate } from './serve-appimage-update'
 import {
   relocateThisServeSupervisor,
   SERVE_SUPERVISOR_APP_ROOT_ENV
@@ -142,6 +143,7 @@ export function serveOrcaApp(args: ServeOrcaAppArgs = {}): Promise<number> {
         appRoot: resolveAppRoot(),
         force: args.force === true,
         park: openServeBundlePark({ executable }),
+        appImageUpdate: supervisedAppImageUpdate(executable, userDataPath, args.force === true),
         // Why first only: --force overrides a remembered abort once; the brake owns later attempts.
         runOnce: () =>
           serveOnce(

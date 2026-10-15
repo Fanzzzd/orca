@@ -5,7 +5,7 @@ import { useAppStore } from '@/store'
 import { getIndexedRepoMap } from '@/store/worktree-repo-index'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { resolveWorktreeDisplayName } from '@/lib/worktree-default-display-name'
-import { getKnownExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { getResolvedExecutionHostIdForWorktree } from '@/lib/resolved-worktree-execution-host'
 import { resolveIndexedWorktreeOwner } from '@/lib/worktree-runtime-owner-index'
 import { withRepoHostOwnership } from '@/store/slices/worktrees/listing/worktree-host-ownership'
 import { isFolderRepo } from '../../../shared/repo-kind'
@@ -34,7 +34,9 @@ export function showWorktreeCreationReadyToast(
     worktreeIdsEqual(state.activeWorktreeId, worktree.id) &&
     executionHostId !== null &&
     (executionHostId === undefined ||
-      getKnownExecutionHostIdForWorktree(state, state.activeWorktreeId) === executionHostId)
+      // Owner rows only: the Active Server setting never says which host's workspace is open.
+      (state.activeWorkspaceExecutionHostId ??
+        getResolvedExecutionHostIdForWorktree(state, state.activeWorktreeId)) === executionHostId)
   if (isViewingWorktree(useAppStore.getState())) {
     return
   }

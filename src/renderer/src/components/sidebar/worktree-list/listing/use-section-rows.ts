@@ -13,9 +13,9 @@ import { folderWorkspaceKey } from '../../../../../../shared/workspace-scope'
 import { getFolderWorkspaceHostIdentity } from '../../../../../../shared/folder-workspace-worktree'
 import { getHostDisplayLabelOverrides } from '../../../../../../shared/host-setting-overrides'
 import { buildRows } from '../grouping/build-rows'
-import type { ProjectGroupingModel } from '../grouping/project-grouping'
+import type { ProjectGroupingModel } from '../../../../../../shared/project-section-grouping'
 import type { PinnedWorktreeDisplayPolicy, Row, WorktreeGroupBy } from '../grouping/row-types'
-import { getLogicalRepoOrderRankById } from '../../project-header-drop'
+import { getLogicalRepoOrderRankById } from '../../../../../../shared/project-section-order'
 import { getEmptyProjectPlaceholderRepoIds } from '../../empty-project-placeholder-repos'
 import { deferHostSectionCollapse, scopeHostSectionCollapse } from '../../host-section-collapse'
 import { addHostSectionRows } from '../../host-section-rows'
@@ -78,6 +78,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
   const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
   const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
+  const wslHostStatuses = useAppStore((s) => s.wslHostStatuses)
+  const wslHostServerFilesMissing = useAppStore((s) => s.wslHostServerFiles === 'missing')
   const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
   const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
 
@@ -127,7 +129,10 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         settings: args.settings,
         runtimeEnvironments,
         runtimeStatusByEnvironmentId,
-        hostLabelOverrides
+        hostLabelOverrides,
+        wslHostStatuses,
+        wslHostsEnabled: args.settings?.experimentalWslHosts === true,
+        wslHostServerFilesMissing
       }),
     [
       repos,
@@ -136,7 +141,9 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.settings,
       runtimeEnvironments,
       runtimeStatusByEnvironmentId,
-      hostLabelOverrides
+      hostLabelOverrides,
+      wslHostStatuses,
+      wslHostServerFilesMissing
     ]
   )
   const hostLabelById = useMemo(

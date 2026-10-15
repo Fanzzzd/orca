@@ -35,24 +35,12 @@ vi.mock('../../shared/secure-path-windows-acl', async (importOriginal) => {
   const acl = await importOriginal<typeof WindowsAcl>()
   return {
     ...acl,
-    bestEffortRestrictWindowsPath: (
-      targetPath: string,
-      isDirectory: boolean,
-      onSettled?: (restricted: boolean) => void
-    ): void => {
-      let finish!: () => void
-      const pending = new Promise<void>((resolve) => {
-        finish = resolve
-      })
+    restrictWindowsDirectory: (dirPath: string): Promise<boolean> => {
+      const restricted = acl.restrictWindowsDirectory(dirPath)
+      const pending = restricted.then(() => undefined)
       hardening.pending.add(pending)
-      acl.bestEffortRestrictWindowsPath(targetPath, isDirectory, (restricted) => {
-        try {
-          onSettled?.(restricted)
-        } finally {
-          hardening.pending.delete(pending)
-          finish()
-        }
-      })
+      void pending.then(() => hardening.pending.delete(pending))
+      return restricted
     }
   }
 })

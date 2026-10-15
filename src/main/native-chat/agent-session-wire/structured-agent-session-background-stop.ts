@@ -2,7 +2,6 @@
 
 import {
   agentChildWorkStopEvidence,
-  agentChildWorkStopTargets,
   type AgentChildWorkStopAcknowledgement
 } from '../../../shared/agent-child-work-stop-targets'
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
@@ -24,11 +23,15 @@ export type StructuredAgentSessionBackgroundStopInput = {
 /** `atRest`: no turn runs, so ending the agent ends only the work no record lists. */
 export async function stopStructuredAgentSessionBackgroundWork(
   ctx: Pick<AgentSessionTurnContext, 'adapter' | 'sessionId' | 'fence'>,
-  input: StructuredAgentSessionBackgroundStopInput,
+  input: Pick<StructuredAgentSessionBackgroundStopInput, 'acknowledgeStops' | 'unlisted'> & {
+    /** Captured before the stop goes out: its acknowledgement may end only these runs. */
+    targets: readonly (AgentChildWorkView & { providerId: string })[]
+    /** The host could not read the task list the targets came from. */
+    unreadable?: true
+  },
   atRest: () => boolean
 ): Promise<{ cancelled: boolean; stillRunning?: true }> {
-  // Captured before the stop goes out: its acknowledgement may end only these runs.
-  const targets = agentChildWorkStopTargets(input.childWork?.(), input.taskId)
+  const { targets } = input
   const acknowledged: AgentChildWorkStopAcknowledgement[] = []
   // Nothing listed has a stop to send; an agent without a stop route would refuse even none.
   const background =
@@ -57,6 +60,10 @@ export async function stopStructuredAgentSessionBackgroundWork(
   if (input.unlisted?.present() && atRest()) {
     await input.unlisted.stop()
     return { cancelled: true }
+  }
+  // A list the host could not read proves no task ended: unconfirmed, never "nothing to stop".
+  if (input.unreadable) {
+    throw new Error('the background task list could not be read')
   }
   return { cancelled: background?.cancelled === true }
 }

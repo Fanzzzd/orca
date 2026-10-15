@@ -74,8 +74,12 @@ jobs:
             /README.md
             /docs/readme/
             /.github/scripts/check-root-directory-entries.mjs
+            /.github/scripts/check-required-pr-context.mjs
+            /.github/workflows/
+            /config/.bun-version
             /config/scripts/check-readme-local-links.mjs
             /config/scripts/pr-code-change-scope.mjs
+            /config/scripts/pr-package-test-paths.mjs
             /config/scripts/pr-layout-oracle-route.mjs
             /config/scripts/pr-e2e-source-routing.mjs
             /config/scripts/ci-e2e-job-selection.mjs
@@ -93,6 +97,14 @@ jobs:
       # The full Git index retains link targets outside the sparse working tree.
       - name: Check README local links
         run: node config/scripts/check-readme-local-links.mjs
+
+      - name: Set up Bun for required workflow validation
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: config/.bun-version
+
+      - name: Check required PR context ownership
+        run: bun .github/scripts/check-required-pr-context.mjs
 
       # Readiness changes eligibility for advisory tests, not the already-tested source.
       - name: Find identical successful required checks
@@ -206,8 +218,9 @@ jobs:
       - name: Set up Bun for preflight checks
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: 1.4.3
+          bun-version-file: config/.bun-version
 
+      # Run gate scripts directly to avoid repeated package-manager startup.
       - name: Check process-host imports
         if: '!cancelled()'
         id: process-host-imports
@@ -217,7 +230,7 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          bun --bun run check:process-host-imports
+          bun config/scripts/check-import-boundaries.mjs
 
       - name: Check main-process sync launches
         if: '!cancelled()'
@@ -228,7 +241,7 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          bun --bun run check:main-sync-spawn-ratchet
+          bun config/scripts/check-main-sync-spawn-ratchet.mjs
 
       # Keep each check in its own log while sharing this runner.
       - name: Lint
@@ -240,7 +253,7 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          pnpm exec oxlint --format github
+          node node_modules/oxlint/bin/oxlint --format github
 
       - name: Reject low-evidence patterns
         if: needs.code_paths.outputs.static_analysis == 'true'
@@ -259,11 +272,11 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          pnpm run audit:code-quality:native
+          node node_modules/oxlint/bin/oxlint --config config/oxlint-code-quality-native-plugins.json src config tests mobile --deny-warnings
 
       - name: Enforce type-aware code-quality baseline
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run audit:code-quality:type-aware
+        run: node node_modules/oxlint/bin/oxlint --type-aware --config config/oxlint-code-quality-type-aware.json src config tests --deny-warnings
 
       # Mobile installation changes import resolution for the native cycle check.
       - wait: native-code-quality
@@ -283,11 +296,11 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          pnpm run check:code-quality:changed -- "${{ github.event.pull_request.base.sha }}"
+          node config/scripts/check-changed-code-quality.mjs "${{ github.event.pull_request.base.sha }}"
 
       - name: Enforce React Doctor on changed lines
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:react-doctor:changed -- "${{ github.event.pull_request.base.sha }}"
+        run: node config/scripts/check-react-doctor-changed.mjs "${{ github.event.pull_request.base.sha }}"
 
       - wait: changed-code-quality
 
@@ -305,15 +318,15 @@ jobs:
 
       - name: Check Zustand selector fan-out budget
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:zustand-selector-fanout
+        run: node config/scripts/zustand-selector-fanout-benchmark.mjs --check
 
       - name: Check reliability gate manifest
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:reliability-gates
+        run: node config/scripts/check-reliability-gates.mjs
 
       - name: Enforce dead design-system classes
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:dead-classes
+        run: node node_modules/oxlint/bin/oxlint --config config/oxlint-dead-classes.json src/renderer
 
       - name: Check VM runtime rollback compatibility
         if: needs.code_paths.outputs.static_analysis == 'true'
@@ -339,31 +352,27 @@ jobs:
 
       - name: Enforce max-lines ratchet
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:max-lines-ratchet
+        run: node config/scripts/check-max-lines-ratchet.mjs
 
       - name: Enforce ts-nocheck ratchet
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:ts-nocheck-ratchet
+        run: node config/scripts/check-ts-nocheck-ratchet.mjs
 
       - name: Enforce runtime Electron-import ratchet
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:runtime-electron-ratchet
+        run: node config/scripts/check-runtime-electron-ratchet.mjs
 
       - name: Enforce focus-read ratchet
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:focus-read-ratchet
+        run: node config/scripts/check-focus-read-ratchet.mjs
 
       - name: Enforce layout-writer ratchets
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:layout-writer-ratchets
-
-      - name: Check compatibility-folder imports
-        if: needs.code_paths.outputs.static_analysis == 'true'
-        run: bun config/scripts/check-compat-boundary-imports.mjs
+        run: bun config/scripts/check-layout-writer-ratchets.mjs
 
       - name: Check Node runtime pin
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run check:node-runtime-pin
+        run: node config/scripts/check-node-runtime-pin.mjs
 
       # Why: extraction writes sorted evidence to an isolated temporary path,
       # so feature PRs need one normalized AST pass rather than a three-OS matrix.
@@ -407,19 +416,19 @@ jobs:
 
       - name: Verify the generated RPC params catalog
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run verify:rpc-params-catalog
+        run: node config/scripts/generate-rpc-params-catalog.mjs --check
 
       - name: Verify the generated ACP protocol schema
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run verify:acp-protocol
+        run: node config/scripts/acp/generate-protocol.mjs --check
 
       - name: Verify bundled skill guides
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run verify:bundled-skill-guides
+        run: node config/scripts/generate-bundled-skill-guides.mjs --check
 
       - name: Verify skill freshness manifest
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run verify:skill-bundle-manifest
+        run: node config/scripts/generate-skill-bundle-manifest.mjs
 
       - name: Verify localization catalogs
         if: '!cancelled()'
@@ -430,11 +439,11 @@ jobs:
           PREFLIGHT_PRIOR_SUCCESS: ${{ job.status == 'success' }}
         run: |
           if [ "$PREFLIGHT_PHASE_SELECTED" != true ] || [ "$PREFLIGHT_PRIOR_SUCCESS" != true ]; then exit 0; fi
-          pnpm run verify:localization-catalogs
+          bun config/scripts/verify-localization-catalogs.mjs
 
       - name: Verify localization coverage
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm run verify:localization-coverage
+        run: bun config/scripts/audit-localization-coverage.mjs --check
 
       - wait: [localization-catalogs, localization-extraction]
 
@@ -458,11 +467,11 @@ jobs:
 
       - name: Check feature wall asset budget
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm check:feature-wall-assets
+        run: node config/scripts/check-feature-wall-assets.mjs
 
       - name: Verify macOS entitlements
         if: needs.code_paths.outputs.static_analysis == 'true'
-        run: pnpm verify:macos-entitlements
+        run: node config/scripts/verify-macos-entitlements.mjs
 
       # Planning shares setup and stays off the compiler's critical path.
       - name: Plan unit selection
@@ -907,7 +916,7 @@ jobs:
       - name: Install WebKit for the drawer check
         id: webkit
         background: true
-        run: pnpm exec playwright install --with-deps webkit
+        run: pnpm exec playwright-core install --with-deps webkit
 
       # The entry lives in mobile/ so one React resolves; without this every RN import is nothing.
       - uses: ./.github/actions/install-mobile-dependencies
@@ -1092,6 +1101,15 @@ jobs:
           src/main/browser/browser-route-h3-egress.electron.test.ts
           src/main/browser/browser-route-dns-prefetch.electron.test.ts
           src/main/persistence/profile-state/profile-state-writer-stall.electron.test.ts
+          src/main/browser/browser-popup-compatibility.electron.test.ts
+          src/main/browser/browser-popup-native-compatibility.electron.test.ts
+          src/main/browser/browser-popup-background-compatibility.electron.test.ts
+
+      # The isolated glibc-floor build writes only the Wayland helper, so JavaScript can overlap.
+      - name: Build native components
+        id: linux-native
+        background: true
+        uses: ./.github/actions/prepare-wayland-clipboard
 
       # Restore independent fixtures during builds; keep native lifecycle probes serial.
       - uses: ./.github/actions/prepare-linux-package-fixture
@@ -1147,10 +1165,7 @@ jobs:
       - name: Build mobile web bundle
         run: pnpm run build:mobile-web
 
-      - name: Build native components
-        run: pnpm run build:native
-
-      - wait: [linux-package-tools, web-client]
+      - wait: [linux-native, linux-package-tools, web-client]
 
       - name: Package unpacked app
         env:
@@ -1186,6 +1201,14 @@ jobs:
           "$appimage_root/squashfs-root/resources/node-runtime/bin/node" --version
           rm -rf "$appimage_root"
           ls -l dist/orca-linux.AppImage "$deb" "$rpm"
+
+      # Kept briefly so a reviewer can run this exact AppImage on a real Linux desktop.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: orca-linux-appimage-${{ github.event.pull_request.head.sha }}
+          path: dist/orca-linux.AppImage
+          retention-days: 3
+          compression-level: 0
 
       - wait: shutdown-fixture-cache
 
@@ -1296,6 +1319,9 @@ jobs:
       - name: Build the Windows agent hook
         run: node config/scripts/build-windows-agent-hook.mjs
 
+      - name: Build the Windows CLI launcher
+        run: node config/scripts/build-windows-cli-launcher.mjs
+
       - name: Test Windows-specific boundaries
         run: >-
           pnpm exec vitest run --config config/vitest.config.ts
@@ -1310,6 +1336,7 @@ jobs:
           config/scripts/verify-packaged-windows-agent-hook.test.mjs
           config/scripts/script-module-dependencies.test.mjs
           src/main/windows-registry-addon.test.ts
+          src/shared/windows-security-addon.win32.test.ts
           config/scripts/windows-process-tree-gyp-path.test.mjs
           config/scripts/windows-process-tree-gyp-rebuild.test.mjs
           config/scripts/package-electron-runtime-contract.test.mjs
@@ -1344,6 +1371,8 @@ jobs:
           src/main/windows/windows-host-job.win32.test.ts
           src/main/windows/windows-process-tree-command-line-patch.test.ts
           src/main/windows/windows-process-table-native-addon.win32.test.ts
+          src/main/windows/windows-administrator-status.win32.test.ts
+          src/main/windows/windows-administrator-restart.win32.test.ts
           src/main/daemon/daemon-pid-identity-native.win32.test.ts
           src/main/persistence/profile-state/profile-state-access-windows-native.win32.test.ts
           src/main/windows-live-tree-kill.win32.test.ts
@@ -1469,6 +1498,7 @@ jobs:
       ref: ${{ github.event.pull_request.head.sha }}
 
   verify:
+    name: PR checks passed
     if: ${{ !cancelled() }}
     needs:
       - code_paths

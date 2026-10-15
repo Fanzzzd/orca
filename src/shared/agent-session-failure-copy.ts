@@ -79,6 +79,8 @@ export const AGENT_SESSION_FAILURE_COPY = {
   providerExitedRow:
     '{{agent}} stopped while this response was in progress. You can continue in this conversation.',
   providerExitedRejection: '{{agent}} stopped before this message was sent.',
+  providerExitedAnswer:
+    '{{agent}} has stopped, so your answer was not sent. Send a message to continue.',
   providerRejected: "{{agent}} didn't accept this message.",
   providerRejectedQuoted: "{{agent}} didn't accept this message: {{detail}}.",
   attachmentEmpty: 'An image on this message is empty, so the message was not sent.',
@@ -123,7 +125,11 @@ export const AGENT_SESSION_FAILURE_COPY = {
   cancelUnconfirmed: 'Cancellation was not confirmed.',
   stopRefused: "{{agent}} didn't stop.",
   stopRefusedQuoted: "{{agent}} didn't stop: {{detail}}.",
+  couldNotStop: "Couldn't stop {{agent}}.",
+  couldNotStopTheAgent: "Couldn't stop the agent.",
   noTurnToStop: '{{agent}} had no turn running to stop.',
+  backgroundTaskNotStopped: "The background task wasn't stopped.",
+  backgroundTasksNotStopped: "The background tasks weren't stopped.",
   answerUnconfirmed: 'Your answer was recorded but the agent did not confirm it.',
   hostFault: "Orca ran into a problem, so this didn't go through.",
   hostFaultTryAgain: "Orca ran into a problem, so this didn't go through. Try again.",

@@ -172,12 +172,12 @@ patchedDependencies:
   '@xterm/addon-search@0.17.0-beta.301': eee5338dd2621ece46e79c61ec06766cd7fadaf79ffdb24e2a8ab68e97ef31f0
   '@xterm/addon-serialize@0.15.0-beta.301': b35533fe252e7e45433150170348889f4e08a6c17f7017ac34ea694d831fec7f
   '@xterm/addon-webgl@0.20.0-beta.300': 5349718f2c19d9319a81552580bf9618ded9b00f3707a5c6cdbbae1910849cd9
-  '@xterm/xterm@6.1.0-beta.304': 273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb
-  i18next-cli@1.74.2: 7955b89d3aa229f477408608d331f78c85148a85a85913729f89fac65ad8b207
+  '@xterm/xterm@6.1.0-beta.304': 9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c
+  i18next-cli@1.74.2: 2ee32eef742615cd133e1a6940f027deb3723a8430bb7953bba3a6769b0aac47
   lint-staged@16.4.0: 7333b3837f80a7fbd045964db6d76ba4fc118e49134bdbabb00585b6b7b60673
   monaco-editor@0.55.1: 53b71f7d8a7c00b76ffdb73ce83d18e31692f193f5fafa6a390e48f5b3fdd636
   node-pty@1.1.0: c2fe19cde7aef223738a7503ae429dd9b03432130b064aa64a601900b33c151f
-  oxlint-plugin-anti-slop@0.1.2: c442be3f300c2d47e98af4c6347fc18cad8c13cc18913c4ee50b3720dad85753
+  oxlint-plugin-anti-slop@0.1.2: c10c871702365a0c2c59e9f1c5fb92df97cae5755d534c0a3d83c6368f6feafe
   ws@8.22.0: 9393e04dd9a90b01eb7aa35fcd5b1431b5038ce999fbbd82651136193ba51f14
 
 importers:
@@ -189,7 +189,7 @@ importers:
         version: 0.3.284(@anthropic-ai/sdk@0.122.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@7.2.0)(zod@4.6.5))(zod@4.6.5)
       '@electron-toolkit/utils':
         specifier: ^4.0.0
-        version: 4.0.0(electron@43.7.5(supports-color@7.2.0))
+        version: 4.0.0(electron@43.7.8(supports-color@7.2.0))
       '@floating-ui/dom':
         specifier: 1.8.0
         version: 1.8.0
@@ -207,7 +207,7 @@ importers:
         version: 2.5.6
       '@xterm/addon-serialize':
         specifier: 0.15.0-beta.301
-        version: 0.15.0-beta.301(patch_hash=b35533fe252e7e45433150170348889f4e08a6c17f7017ac34ea694d831fec7f)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.15.0-beta.301(patch_hash=b35533fe252e7e45433150170348889f4e08a6c17f7017ac34ea694d831fec7f)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/headless':
         specifier: 6.1.0-beta.303
         version: 6.1.0-beta.303
@@ -412,28 +412,28 @@ importers:
         version: 1.18.0
       '@xterm/addon-fit':
         specifier: 0.12.0-beta.301
-        version: 0.12.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.12.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/addon-image':
         specifier: 0.10.0-beta.301
-        version: 0.10.0-beta.301(patch_hash=cb569e3005b47547189ba473280c3ae7cf4040161da538cd998ae6e69ad403f5)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.10.0-beta.301(patch_hash=cb569e3005b47547189ba473280c3ae7cf4040161da538cd998ae6e69ad403f5)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/addon-ligatures':
         specifier: 0.11.0-beta.301
-        version: 0.11.0-beta.301(patch_hash=47405b9994b5acf1b4e90b49250358c1ca03649854d59560e7732b72fe336920)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.11.0-beta.301(patch_hash=47405b9994b5acf1b4e90b49250358c1ca03649854d59560e7732b72fe336920)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/addon-search':
         specifier: 0.17.0-beta.301
-        version: 0.17.0-beta.301(patch_hash=eee5338dd2621ece46e79c61ec06766cd7fadaf79ffdb24e2a8ab68e97ef31f0)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.17.0-beta.301(patch_hash=eee5338dd2621ece46e79c61ec06766cd7fadaf79ffdb24e2a8ab68e97ef31f0)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/addon-unicode11':
         specifier: 0.10.0-beta.301
-        version: 0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/addon-web-links':
         specifier: 0.13.0-beta.301
-        version: 0.13.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.13.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/addon-webgl':
         specifier: 0.20.0-beta.300
-        version: 0.20.0-beta.300(patch_hash=5349718f2c19d9319a81552580bf9618ded9b00f3707a5c6cdbbae1910849cd9)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))
+        version: 0.20.0-beta.300(patch_hash=5349718f2c19d9319a81552580bf9618ded9b00f3707a5c6cdbbae1910849cd9)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))
       '@xterm/xterm':
         specifier: 6.1.0-beta.304
-        version: 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+        version: 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -453,8 +453,8 @@ importers:
         specifier: 3.4.16
         version: 3.4.16
       electron:
-        specifier: 43.7.5
-        version: 43.7.5(supports-color@7.2.0)
+        specifier: 43.7.8
+        version: 43.7.8(supports-color@7.2.0)
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
@@ -487,7 +487,7 @@ importers:
         version: 9.1.7
       i18next-cli:
         specifier: 1.74.2
-        version: 1.74.2(patch_hash=7955b89d3aa229f477408608d331f78c85148a85a85913729f89fac65ad8b207)(@types/node@25.9.5)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2)
+        version: 1.74.2(patch_hash=2ee32eef742615cd133e1a6940f027deb3723a8430bb7953bba3a6769b0aac47)(@types/node@25.9.5)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2)
       katex:
         specifier: ^0.16.47
         version: 0.16.47
@@ -517,7 +517,7 @@ importers:
         version: 1.86.0(oxlint-tsgolint@7.0.2003)
       oxlint-plugin-anti-slop:
         specifier: github:dmmulroy/anti-slop#c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b
-        version: https://codeload.github.com/dmmulroy/anti-slop/tar.gz/c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b(patch_hash=c442be3f300c2d47e98af4c6347fc18cad8c13cc18913c4ee50b3720dad85753)
+        version: https://codeload.github.com/dmmulroy/anti-slop/tar.gz/c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b(patch_hash=c10c871702365a0c2c59e9f1c5fb92df97cae5755d534c0a3d83c6368f6feafe)
       oxlint-plugin-react-doctor:
         specifier: 0.9.14
         version: 0.9.14
@@ -527,6 +527,9 @@ importers:
       pdfjs-dist:
         specifier: ^6.3.289
         version: 6.3.289
+      playwright-core:
+        specifier: 1.64.0
+        version: 1.64.0
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
@@ -636,6 +639,9 @@ importers:
       '@orca/windows-registry':
         specifier: workspace:*
         version: link:native/windows-registry
+      '@orca/windows-security':
+        specifier: workspace:*
+        version: link:native/windows-security
       '@vscode/windows-process-tree':
         specifier: 0.8.0
         version: 0.8.0(patch_hash=9da74aa3d17243aa53dcdc95c9f06e97437e7fbccf098aeb017579e2d24cbac2)
@@ -656,6 +662,12 @@ importers:
         version: 1.12.37
 
   native/windows-registry:
+    dependencies:
+      node-addon-api:
+        specifier: ^8.5.0
+        version: 8.9.2
+
+  native/windows-security:
     dependencies:
       node-addon-api:
         specifier: ^8.5.0
@@ -5099,8 +5111,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@43.7.5:
-    resolution: {integrity: sha512-AR+OLH/8QAwx6Lz6mhaDQhesbjC/Xh2WOiFSI/CDFU6FKX/qJdBg65bEUn+MLvbvIi/LlaRQeLljnUcKb1KS0A==}
+  electron@43.7.8:
+    resolution: {integrity: sha512-h9qnttBn9b+pmnJjagrpjvK97Wb9WbsyIB03BV6NnhnPqSq1Jw7500hNkqHPkosHCE0zL/806v4zf9d3VrII0w==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -6826,6 +6838,11 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
+  playwright-core@1.64.0:
+    resolution: {integrity: sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   playwright@1.63.0:
     resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
     engines: {node: '>=20'}
@@ -8400,9 +8417,9 @@ snapshots:
     dependencies:
       '@types/node': 25.9.5
 
-  '@electron-toolkit/utils@4.0.0(electron@43.7.5(supports-color@7.2.0))':
+  '@electron-toolkit/utils@4.0.0(electron@43.7.8(supports-color@7.2.0))':
     dependencies:
-      electron: 43.7.5(supports-color@7.2.0)
+      electron: 43.7.8(supports-color@7.2.0)
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -11341,43 +11358,43 @@ snapshots:
 
   '@xmldom/xmldom@0.8.15': {}
 
-  '@xterm/addon-fit@0.12.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-fit@0.12.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
-  '@xterm/addon-image@0.10.0-beta.301(patch_hash=cb569e3005b47547189ba473280c3ae7cf4040161da538cd998ae6e69ad403f5)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-image@0.10.0-beta.301(patch_hash=cb569e3005b47547189ba473280c3ae7cf4040161da538cd998ae6e69ad403f5)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
-  '@xterm/addon-ligatures@0.11.0-beta.301(patch_hash=47405b9994b5acf1b4e90b49250358c1ca03649854d59560e7732b72fe336920)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-ligatures@0.11.0-beta.301(patch_hash=47405b9994b5acf1b4e90b49250358c1ca03649854d59560e7732b72fe336920)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
       lru-cache: 11.5.1
       opentype.js: 2.0.0
 
-  '@xterm/addon-search@0.17.0-beta.301(patch_hash=eee5338dd2621ece46e79c61ec06766cd7fadaf79ffdb24e2a8ab68e97ef31f0)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-search@0.17.0-beta.301(patch_hash=eee5338dd2621ece46e79c61ec06766cd7fadaf79ffdb24e2a8ab68e97ef31f0)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
-  '@xterm/addon-serialize@0.15.0-beta.301(patch_hash=b35533fe252e7e45433150170348889f4e08a6c17f7017ac34ea694d831fec7f)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-serialize@0.15.0-beta.301(patch_hash=b35533fe252e7e45433150170348889f4e08a6c17f7017ac34ea694d831fec7f)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
-  '@xterm/addon-unicode11@0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-unicode11@0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
-  '@xterm/addon-web-links@0.13.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-web-links@0.13.0-beta.301(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
-  '@xterm/addon-webgl@0.20.0-beta.300(patch_hash=5349718f2c19d9319a81552580bf9618ded9b00f3707a5c6cdbbae1910849cd9)(@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb))':
+  '@xterm/addon-webgl@0.20.0-beta.300(patch_hash=5349718f2c19d9319a81552580bf9618ded9b00f3707a5c6cdbbae1910849cd9)(@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)
+      '@xterm/xterm': 6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)
 
   '@xterm/headless@6.1.0-beta.303': {}
 
-  '@xterm/xterm@6.1.0-beta.304(patch_hash=273b687a9c4b571f2f6f4eb4a2da1f651300065500bc30b4df2e911827e9c7eb)': {}
+  '@xterm/xterm@6.1.0-beta.304(patch_hash=9e1c200b2332745ef9e01e64696e9cda6f629937c37a0ee652323f25ccc8df5c)': {}
 
   abbrev@4.0.0: {}
 
@@ -12236,7 +12253,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@43.7.5(supports-color@7.2.0):
+  electron@43.7.8(supports-color@7.2.0):
     dependencies:
       '@electron-internal/extract-zip': 1.0.4
       '@electron/get': 5.0.0(supports-color@7.2.0)
@@ -13046,7 +13063,7 @@ snapshots:
 
   husky@9.1.7: {}
 
-  i18next-cli@1.74.2(patch_hash=7955b89d3aa229f477408608d331f78c85148a85a85913729f89fac65ad8b207)(@types/node@25.9.5)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2):
+  i18next-cli@1.74.2(patch_hash=2ee32eef742615cd133e1a6940f027deb3723a8430bb7953bba3a6769b0aac47)(@types/node@25.9.5)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@7.0.2):
     dependencies:
       '@croct/json5-parser': 0.2.2
       '@swc/core': 1.16.2
@@ -14286,7 +14303,7 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.71.0
       '@oxfmt/binding-win32-x64-msvc': 0.71.0
 
-  oxlint-plugin-anti-slop@https://codeload.github.com/dmmulroy/anti-slop/tar.gz/c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b(patch_hash=c442be3f300c2d47e98af4c6347fc18cad8c13cc18913c4ee50b3720dad85753):
+  oxlint-plugin-anti-slop@https://codeload.github.com/dmmulroy/anti-slop/tar.gz/c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b(patch_hash=c10c871702365a0c2c59e9f1c5fb92df97cae5755d534c0a3d83c6368f6feafe):
     dependencies:
       '@oxlint/plugins': 1.78.0
 
@@ -14444,6 +14461,8 @@ snapshots:
       tslib: 2.8.1
 
   playwright-core@1.63.0: {}
+
+  playwright-core@1.64.0: {}
 
   playwright@1.63.0:
     dependencies:

@@ -1,5 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
-import { OrcaRuntimeWithHasLiveOrPersistedServeOrSshOwnedPtyBinding } from './orca-runtime-has-live-or-persisted-serve-or-ssh-owned-pty-binding'
+import { OrcaRuntimeWithHasLiveOrPersistedServeOrSshOwnedPtyBinding } from './session-lifecycle/close/has-live-or-persisted-serve-or-ssh-owned-pty-binding'
 import type { RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 import { normalizeCompatibleAgentTitleForOwner } from '../../shared/agent-title-owner'
 import { getLatestPtyTitle } from './runtime-worktree-status-projection'
@@ -153,6 +153,9 @@ export class OrcaRuntimeWithPublishPtyBackedMobileSessionTerminal extends OrcaRu
     ptyId: string,
     options: { immediate?: boolean } = {}
   ): void {
+    // Why here: every change to what a PTY shows (a title past the spinner gate or the foreground
+    // probe's hold, a bind) lands here, so live pane titles follow the phones' title rules.
+    this.markPaneLiveTitlesDirty()
     for (const [worktreeId, snapshot] of this.mobileSessionTabsByWorktree) {
       const hasPtyBackedTab = snapshot.tabs.some(
         (tab) =>
