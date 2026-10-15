@@ -114,7 +114,10 @@ export class RuntimeBrowserTabQueries {
     }
     if (selected.loaded === false) {
       try {
-        await this.targets.ensureBrowserPageActive(selected.worktreeId ?? undefined, selected.browserPageId)
+        await this.targets.ensureBrowserPageActive(
+          selected.worktreeId ?? undefined,
+          selected.browserPageId
+        )
       } catch {
         // The switch below reports browser_tab_not_found if the page could not load.
       }
