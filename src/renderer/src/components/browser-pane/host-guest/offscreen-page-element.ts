@@ -12,6 +12,10 @@ import {
   renderOffscreenPageDatalist
 } from './offscreen-page-datalist-overlay'
 
+// Why: replacing a tab's element (a profile switch) reuses its page id in the same task, so only
+// the element that last asked for the page may close it.
+const pageOwners = new Map<string, OrcaOffscreenPageElement>()
+
 const EMPTY_STATE: OffscreenPageGuestState = {
   url: '',
   title: '',
@@ -98,7 +102,10 @@ export class OrcaOffscreenPageElement extends HTMLElement {
       if (!this.isConnected) {
         this.unbindInput?.()
         this.unbindInput = null
-        window.api.offscreenPage.close(this.browserPageId)
+        if (pageOwners.get(this.browserPageId) === this) {
+          pageOwners.delete(this.browserPageId)
+          window.api.offscreenPage.close(this.browserPageId)
+        }
       }
     }, 0)
   }
@@ -261,6 +268,12 @@ export class OrcaOffscreenPageElement extends HTMLElement {
     }
     this.creating = true
     const src = this.pendingSrc
+    const previousOwner = pageOwners.get(this.browserPageId)
+    pageOwners.set(this.browserPageId, this)
+    if (previousOwner && previousOwner !== this) {
+      // Why now: the old element's deferred close would land after create and kill this page.
+      window.api.offscreenPage.close(this.browserPageId)
+    }
     window.api.offscreenPage.attach(this.browserPageId, this.canvas, {
       onEvent: (event) => this.onGuestEvent(event),
       onCursor: (cursor) => {
@@ -277,12 +290,14 @@ export class OrcaOffscreenPageElement extends HTMLElement {
         })
       }
     })
-    const webContentsId = await window.api.offscreenPage.create({
-      browserPageId: this.browserPageId,
-      partition: this.getAttribute('partition') ?? '',
-      src,
-      viewport: this.viewport()
-    })
+    const webContentsId = await window.api.offscreenPage
+      .create({
+        browserPageId: this.browserPageId,
+        partition: this.getAttribute('partition') ?? '',
+        src,
+        viewport: this.viewport()
+      })
+      .catch(() => null)
     this.creating = false
     if (webContentsId === null) {
       this.dispatchGuestEvent('did-fail-load', {
