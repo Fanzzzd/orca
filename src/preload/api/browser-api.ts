@@ -124,6 +124,11 @@ export type BrowserApi = BrowserExtensionsApi & {
   onCapturePaintHold: (
     callback: (data: { browserPageId: string; held: boolean }) => void
   ) => () => void
+  /** Main asks the pane to keep the user's focus through an agent press; `ready` answers it. */
+  onAgentInputFocusGuard: (
+    callback: (data: { browserPageId: string; token: string; active: boolean }) => void
+  ) => () => void
+  agentInputFocusGuardReady: (token: string) => void
   onPaneFocus: (
     callback: (data: { worktreeId: string | null; browserPageId: string }) => void
   ) => () => void

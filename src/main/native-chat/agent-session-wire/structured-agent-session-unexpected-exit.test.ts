@@ -99,9 +99,9 @@ describe('provider-exit settlement', () => {
           items: [lifecycleItem('turn-1', 1, { state: 'running', startedAt: 1_000 })]
         }),
         itemFence: () => 7,
+        lastProviderActivityAt: () => undefined,
         stopMarks: { latest: () => null, personStopDecides: () => false },
-        appendLifecycleBatch,
-        markPendingSubmissionsUnknown: vi.fn(async () => [])
+        appendLifecycleBatch
       }
     } as unknown as StructuredAgentSessionHostSession
 
@@ -115,7 +115,7 @@ describe('provider-exit settlement', () => {
           now = 60_000
           return { ok: false, error: new Error('sink unavailable') }
         },
-        publishFence: vi.fn(),
+        generationEnded: vi.fn(),
         serialize: async (_sessionId, task) => task(),
         now: () => now
       } as never,
@@ -173,8 +173,7 @@ describe('provider-exit settlement', () => {
         itemBody: () => null,
         itemFence: () => undefined,
         snapshot: () => ({ items }),
-        appendLifecycleBatch,
-        markPendingSubmissionsUnknown: vi.fn(async () => [])
+        appendLifecycleBatch
       }
     } as unknown as StructuredAgentSessionHostSession
     const store = {
@@ -192,11 +191,12 @@ describe('provider-exit settlement', () => {
     }
 
     await settleStructuredAgentSessionChildExit(
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the exit settlement reads only these members of its context; the store double is partial.
       {
         store,
         sessions: new Map([[SESSION, session]]),
         flushLifecycle: async () => ({ ok: true }),
-        publishFence: vi.fn(),
+        generationEnded: vi.fn(),
         serialize: async (_sessionId, task) => task(),
         now: () => 1_234
       } as never,
@@ -210,16 +210,13 @@ describe('provider-exit settlement', () => {
       }
     )
 
-    expect(session.journal.markPendingSubmissionsUnknown).toHaveBeenCalledWith(
-      7,
-      'provider_exited_before_acknowledgement'
-    )
     expect(session.child).toBeNull()
     // The running row is revised to interrupted at exit receipt, never tombstoned.
     expect(appendLifecycleBatch).toHaveBeenCalledExactlyOnceWith({
       settlementId: `dead-generation:provider-exit:${SESSION}:7:${GENERATION}`,
       fence: 7,
       recovered: true,
+      dispatches: [],
       mutations: [
         {
           kind: 'item',
@@ -246,7 +243,7 @@ describe('provider-exit settlement', () => {
         },
         {
           kind: 'item',
-          identity: { provider: 'codex', threadId: 'thread-1', turnId: 'turn-2', ordinal: 0 },
+          itemId: 'codex:thread-1:turn-2:0',
           body: {
             kind: 'turn',
             turnId: 'turn-2',
@@ -293,9 +290,7 @@ describe('provider-exit settlement', () => {
           itemBody: () => null,
           itemFence: () => undefined,
           snapshot: () => ({ items }),
-          appendLifecycleBatch,
-          markPendingSubmissionsUnknown: vi.fn(async () => []),
-          rejectPendingSubmissions: vi.fn(async () => [])
+          appendLifecycleBatch
         }
       }
 
@@ -314,7 +309,7 @@ describe('provider-exit settlement', () => {
           ]
           return { ok: true }
         },
-        publishFence: vi.fn(),
+        generationEnded: vi.fn(),
         serialize: async <T>(_sessionId: string, task: () => Promise<T>) => task(),
         now: () => 1_234
       }
@@ -345,7 +340,6 @@ describe('provider-exit settlement', () => {
   )
 
   it('settles a submission the dead child never acknowledged', async () => {
-    const markPendingSubmissionsUnknown = vi.fn(async () => ['client-1'])
     const session: StructuredAgentSessionChildExitSession = {
       child: { generation: GENERATION, fence: 7, phase: 'ready' },
       journal: {
@@ -354,8 +348,6 @@ describe('provider-exit settlement', () => {
         itemFence: () => undefined,
         snapshot: () => ({ items: [] }),
         appendLifecycleBatch: vi.fn(async () => ({ epoch: 'epoch-1', sequence: 1 })),
-        markPendingSubmissionsUnknown,
-        rejectPendingSubmissions: vi.fn(async () => []),
         submissions: () => [{ clientMessageId: 'client-1', dispatchState: 'pending' }]
       }
     }
@@ -366,7 +358,7 @@ describe('provider-exit settlement', () => {
       store,
       sessions: new Map([[SESSION, session]]),
       flushLifecycle: async () => ({ ok: true }),
-      publishFence: vi.fn(),
+      generationEnded: vi.fn(),
       serialize: async <T>(_sessionId: string, task: () => Promise<T>) => task(),
       now: () => 1
     }
@@ -379,12 +371,17 @@ describe('provider-exit settlement', () => {
       acquisitionGeneration: GENERATION
     })
 
-    expect(markPendingSubmissionsUnknown).toHaveBeenCalledWith(
-      7,
-      'provider_exited_before_acknowledgement'
-    )
     expect(session.journal.appendLifecycleBatch).toHaveBeenCalledWith(
       expect.objectContaining({
+        dispatches: [
+          {
+            clientMessageId: 'client-1',
+            state: 'unknown',
+            reason: 'provider_exited_before_acknowledgement',
+            fence: 7,
+            recovered: true
+          }
+        ],
         mutations: [
           expect.objectContaining({
             body: {
@@ -406,8 +403,6 @@ describe('provider-exit settlement', () => {
         cursor: () => ({ epoch: 'epoch-1', sequence: 0 }),
         itemBody: () => null,
         itemFence: () => undefined,
-        markPendingSubmissionsUnknown: vi.fn(async () => []),
-        rejectPendingSubmissions: vi.fn(async () => []),
         snapshot: () => ({
           items: [lifecycleItem('turn-failing', 1, { state: 'running', startedAt: 1 })]
         }),
@@ -417,7 +412,7 @@ describe('provider-exit settlement', () => {
       }
     }
     const log = recordingStructuredAgentSessionLogger()
-    const publishFence = vi.fn()
+    const generationEnded = vi.fn()
     const event = {
       type: 'ended' as const,
       sessionId: SESSION,
@@ -431,7 +426,7 @@ describe('provider-exit settlement', () => {
       store,
       sessions: new Map([[SESSION, session]]),
       flushLifecycle: async () => ({ ok: false, error: new Error('sink failed') }),
-      publishFence,
+      generationEnded,
       serialize: async (_sessionId, task) => task(),
       now: () => 1,
       logger: log.logger
@@ -439,7 +434,9 @@ describe('provider-exit settlement', () => {
     await settleStructuredAgentSessionChildExit(context, event)
 
     expect(session.child).toBeNull()
-    expect(publishFence).toHaveBeenCalledTimes(1)
+    expect(generationEnded).toHaveBeenCalledTimes(2)
+    expect(generationEnded).toHaveBeenNthCalledWith(1, SESSION)
+    expect(generationEnded).toHaveBeenLastCalledWith(SESSION, { restate: true })
     expect(log.scopes()).toEqual(['exit-lifecycle-barrier', 'exit-settlement'])
   })
 })

@@ -36,6 +36,7 @@ export type AiVaultResumeCommandSession = Pick<
   >
 
 export type AiVaultResumeStartup = {
+  agent?: AiVaultSession['agent']
   command: string
   cwd?: string
   env?: Record<string, string>
@@ -59,6 +60,7 @@ export type AiVaultResumeWorktreeArgs = {
   worktreeId?: string | null
   session: AiVaultResumeCommandSession
   commandOverride?: string | null
+  agentArgs?: string
 }
 
 export function buildAiVaultResumeCopyCommandForWorktree(args: AiVaultResumeWorktreeArgs): string {
@@ -143,6 +145,11 @@ function buildAiVaultResumeForWorktree(
   }
   const { platform, codexHome, liveShell } = resolveAiVaultResumeHost(args)
   const resumeFilePath = normalizeAiVaultResumeFilePath(args.session.filePath, platform)
+  // Why: Pi resumes by transcript path, spelled for the shell it runs in (#24408).
+  const localProviderSession = getAiVaultAgentProviderSession({
+    ...args.session,
+    filePath: resumeFilePath
+  })
   const cwd = embedCwd ? args.session.cwd : null
   const startupCwd = !embedCwd && args.session.cwd ? { cwd: args.session.cwd } : {}
   if (isAntigravityReferenceSession(args.session)) {
@@ -158,20 +165,19 @@ function buildAiVaultResumeForWorktree(
       return { ...reference, ...startupCwd }
     }
   }
-  if (providerSession && isResumableTuiAgent(args.session.agent)) {
+  if (localProviderSession && isResumableTuiAgent(args.session.agent)) {
     const startupPlan = buildAgentResumeStartupPlan({
       agent: args.session.agent,
-      providerSession,
+      providerSession: localProviderSession,
       cmdOverrides: {
         ...args.state.settings?.agentCmdOverrides,
         ...(args.commandOverride?.trim() ? { [args.session.agent]: args.commandOverride } : {})
       },
       platform,
       shell: liveShell,
-      agentArgs: resolveTuiAgentLaunchArgs(
-        args.session.agent,
-        args.state.settings?.agentDefaultArgs
-      ),
+      agentArgs:
+        args.agentArgs ??
+        resolveTuiAgentLaunchArgs(args.session.agent, args.state.settings?.agentDefaultArgs),
       agentEnv: resolveTuiAgentLaunchEnv(args.session.agent, args.state.settings?.agentDefaultEnv),
       resumeInLaunchCwd: true,
       ...(args.session.agent === 'omp' && resumeFilePath
@@ -205,7 +211,7 @@ function buildAiVaultResumeForWorktree(
         ...realHomeCodexResumeEnvDeletion(args.session),
         ...startupCwd,
         launchConfig: startupPlan.launchConfig,
-        providerSession
+        providerSession: localProviderSession
       }
     }
   }

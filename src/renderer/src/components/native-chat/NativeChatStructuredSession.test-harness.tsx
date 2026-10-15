@@ -134,6 +134,7 @@ export function createStructuredSessionMocks() {
       structuredTransport?: Record<string, unknown> & {
         queueResume?: QueueResumeMock
         onError?: NativeChatStructuredComposerTransport['onError']
+        optionPickerRequest?: NativeChatStructuredComposerTransport['optionPickerRequest']
       }
       isWorking?: boolean
       isStopping?: boolean
@@ -167,6 +168,7 @@ export function createStructuredSessionMocks() {
     threadGoal: nullable<StructuredAgentSessionThreadGoal>(),
     stopBackgroundTask: vi.fn<StopBackgroundTaskSpy>(),
     hasOlder: false,
+    readCurrent: false,
     loadingOlder: false,
     olderHistoryGeneration: 0,
     loadOlder: vi.fn<() => Promise<NativeChatOlderPageResult>>(),
@@ -216,6 +218,7 @@ export function createStructuredSessionMocks() {
             error: null,
             readRefusal: mocks.readRefusal,
             hasOlder: mocks.hasOlder,
+            readCurrent: mocks.readCurrent,
             loadingOlder: mocks.loadingOlder,
             olderHistoryGeneration: mocks.olderHistoryGeneration,
             loadOlder: mocks.loadOlder,
@@ -230,7 +233,8 @@ export function createStructuredSessionMocks() {
               tasks: mocks.backgroundTasks,
               settledTasks: mocks.settledBackgroundTasks,
               supportsStop: mocks.supportsBackgroundTaskStop,
-              supportsStopAll: mocks.supportsBackgroundTaskStopAll
+              offersStopAll:
+                !mocks.supportsBackgroundTaskStop && mocks.supportsBackgroundTaskStopAll
             },
             turnId: mocks.turnId,
             commandRefusalCauses: {
@@ -360,6 +364,7 @@ export function createStructuredSessionMocks() {
 
   const resetStructuredSessionMocks = (): void => {
     mocks.call.mockReset()
+    mocks.fileLinkClick.mockClear()
     mocks.launchLifecycle = null
     mocks.ownerWorktreeId = 'wt-1'
     mocks.fileLinkContext = DEFAULT_FILE_LINK_CONTEXT
@@ -399,9 +404,14 @@ export function createStructuredSessionMocks() {
     mocks.settledBackgroundTasks = []
     mocks.threadGoal = null
     mocks.hasOlder = false
+    mocks.readCurrent = false
     mocks.loadingOlder = false
     mocks.olderHistoryGeneration = 0
     mocks.loadOlder.mockReset()
+    mocks.queuedCards = []
+    mocks.queuedSteer.mockClear()
+    mocks.queuedRemove.mockClear()
+    mocks.queuedEdit.mockClear()
     Object.assign(mocks, { queuedResumable: false, queueSendsNext: false, unavailable: null })
     mocks.queuedResume.mockReset()
     mocks.revealLatest.mockReset()

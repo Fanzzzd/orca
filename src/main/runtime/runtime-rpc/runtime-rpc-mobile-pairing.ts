@@ -7,6 +7,7 @@ import {
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../../shared/pairing'
 import { NETWORK_EXPOSURE_FAILED_GUIDANCE } from '../network-exposure-guidance'
 import { RuntimeRpcPairing } from './runtime-rpc-pairing'
+import { withTimeout } from '../../../shared/promise-timeout-fallback'
 import {
   DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE,
   pairingUnavailable,
@@ -14,6 +15,9 @@ import {
   type MobileRelayPairingProvider,
   type PairingOfferUnavailable
 } from './runtime-rpc-pairing-types'
+
+// How long an automatic mint waits for an on-demand Relay install before reporting it missing.
+const RELAY_PROVIDER_INSTALL_WAIT_MS = 15_000
 
 export class RuntimeRpcMobilePairing extends RuntimeRpcPairing {
   async createMobilePairingOffer(args: {
@@ -158,6 +162,14 @@ export class RuntimeRpcMobilePairing extends RuntimeRpcPairing {
         relayFailure
       }
     }
+    if (!this.mobileRelayPairingProvider && this.mobileRelayPairingProviderInstaller) {
+      // Bounded: the install waits for the persisted proxy, which has no time limit of its own.
+      await withTimeout(
+        this.mobileRelayPairingProviderInstaller(),
+        RELAY_PROVIDER_INSTALL_WAIT_MS,
+        undefined
+      )
+    }
     const relayProvider = this.mobileRelayPairingProvider
     if (!relayProvider) {
       return refuseAutomaticWithoutRelay({
@@ -168,7 +180,7 @@ export class RuntimeRpcMobilePairing extends RuntimeRpcPairing {
     }
     const device = this.deviceRegistry?.getDevice(direct.deviceId)
     const publicKeyB64 = this.getE2EEPublicKey()
-    if (!device || !publicKeyB64) {
+    if (!device?.token || !publicKeyB64) {
       return refuseAutomaticWithoutRelay({
         code: 'e2ee_key_unavailable',
         stage: 'e2ee_missing',

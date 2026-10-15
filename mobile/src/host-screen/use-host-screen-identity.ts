@@ -18,14 +18,15 @@ export function useHostScreenIdentity(args: {
     setCatalogError,
     setError,
     setHostLabelById,
+    setServedProjectSections,
+    setDesktopRepos,
+    setHostHealthById,
     setHostName,
     setHostPlatform,
     setHostStoredDescriptor,
     setLastKnownWorktrees,
     setPinnedIds,
-    setRepoColorsByName,
     setRepoHostIdByRepoId,
-    setRepoIconsByName,
     setShowPinnedInGroups,
     setWorktrees,
     setWorktreesLoaded
@@ -58,10 +59,11 @@ export function useHostScreenIdentity(args: {
     setHostName('')
     setHostStoredDescriptor(null)
     setError('')
-    setRepoColorsByName(new Map())
-    setRepoIconsByName(new Map())
     setRepoHostIdByRepoId(new Map())
     setHostLabelById(new Map())
+    setServedProjectSections(null)
+    setDesktopRepos([])
+    setHostHealthById(new Map())
     setHostPlatform(null)
     setShowPinnedInGroups(false)
     repoMetadataFetchedAtRef.current = 0

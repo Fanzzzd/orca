@@ -1,4 +1,4 @@
-import { Check, Ellipsis, Import, Monitor, Plus, Puzzle, Settings } from 'lucide-react'
+import { Check, Ellipsis, FileCode2, Import, Monitor, Plus, Puzzle, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -51,6 +51,7 @@ type BrowserToolbarMenuDropdownProps = {
   onGetExtensions?: () => void
   viewportPresetId: BrowserViewportPresetId | null
   onApplyViewportPreset: (nextId: BrowserViewportPresetId | null) => void
+  onOpenSourceFile?: (() => void) | null
   overflow: BrowserChromeOverflowMenuProps
 }
 
@@ -69,6 +70,7 @@ export function BrowserToolbarMenuDropdown({
   onGetExtensions,
   viewportPresetId,
   onApplyViewportPreset,
+  onOpenSourceFile = null,
   overflow
 }: BrowserToolbarMenuDropdownProps): React.JSX.Element {
   return (
@@ -96,6 +98,18 @@ export function BrowserToolbarMenuDropdown({
           tools={overflow.tools}
           deferUntilClose={overflow.deferUntilClose}
         />
+        {onOpenSourceFile ? (
+          <>
+            <DropdownMenuItem onSelect={onOpenSourceFile}>
+              <FileCode2 className="mr-2 size-3.5" />
+              {translate(
+                'auto.components.editor.HtmlDocPreview.openSourceControl',
+                'Open source file'
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {allProfiles.map((profile) => {
           const isSelectedProfile = profile.id === effectiveProfileId
           return (

@@ -1,10 +1,21 @@
-import type { ExecutionHostId } from '../../../shared/execution-host'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../shared/execution-host'
 import type { PersistedState } from '../../../shared/persisted-state-types'
 import type {
   TerminalLeafMoveRequest,
   TerminalLeafMoveResult
 } from '../../../shared/terminal-leaf-move'
 import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
+import type {
+  CommandOf,
+  LayoutRefusalCode
+} from '../../../shared/workspace-layout/workspace-layout-command-types'
+import {
+  admitPaneToSession,
+  withdrawPaneFromSession,
+  type PaneLayoutChange,
+  type TerminalPaneAdmission,
+  type TerminalPaneAdmissionOutcome
+} from './terminal-pane-admission'
 import { startSpan } from '../../observability/tracer'
 import {
   terminalSurfaceCloseMutation,
@@ -13,12 +24,18 @@ import {
 import type { DurableProfileStateMutation } from '../loading-store/store-runtime-state'
 import { planTerminalLeafMove, rekeyMovedLeafProfileRecords } from './terminal-leaf-move'
 import { assignWorkspaceSessionPartition } from './terminal-topology-membership'
+import { keepWslMoveFrozenSessionsForStore } from '../moving-wsl-projects/wsl-move-session-freeze'
 
 // The commit boundary for terminal layout (tabs, panes, pane-to-PTY bindings). Wraps the close and
 // the pane move; the close transform still lives in runtime/ and other writers move here later.
 
 /** Bindings are not listed: `persistPtyBinding` already records `persistence.pty-binding`. */
-type TerminalTopologyCommitKind = 'close_leaf' | 'close_tab' | 'move_leaf'
+type TerminalTopologyCommitKind =
+  | 'close_leaf'
+  | 'close_tab'
+  | 'move_leaf'
+  | 'admit_pane'
+  | 'withdraw_pane'
 
 export function closeLeafOrTab(
   commit: TerminalSurfaceCloseCommit
@@ -40,6 +57,45 @@ export function moveLeaf(
     'move_leaf',
     () => commitLeafMove(request, context),
     (result) => (result.status === 'refused' ? result.reason : undefined)
+  )
+}
+
+/**
+ * Writes the pane, its tab-bar entry and group before its terminal starts (design 4.1), through the
+ * layout module.
+ */
+export function admitPane(
+  hostId: ExecutionHostId,
+  admission: TerminalPaneAdmission,
+  context: TerminalTopologyCommitContext
+): () => DurableProfileStateMutation<TerminalPaneAdmissionOutcome> {
+  return traced(
+    'admit_pane',
+    () =>
+      commitPaneChange(
+        hostId,
+        admitPaneToSession(hostId, context.getSession(hostId), admission),
+        context
+      ),
+    (outcome) => (outcome === 'admitted' || outcome === 'exists' ? undefined : outcome)
+  )
+}
+
+/** Removes a pane `admitPane` wrote whose start then failed, so a failed create leaves no tab. */
+export function withdrawPane(
+  hostId: ExecutionHostId,
+  pane: CommandOf<'closePane'>,
+  context: TerminalTopologyCommitContext
+): () => DurableProfileStateMutation<LayoutRefusalCode | null> {
+  return traced(
+    'withdraw_pane',
+    () =>
+      commitPaneChange(
+        hostId,
+        withdrawPaneFromSession(hostId, context.getSession(hostId), pane),
+        context
+      ),
+    (code) => code ?? undefined
   )
 }
 
@@ -82,7 +138,7 @@ type TopologyState = Pick<
   'workspaceSession' | 'workspaceSessionsByHostId' | 'ui' | 'sshRemotePtyLeases'
 >
 
-type TerminalTopologyCommitContext = {
+export type TerminalTopologyCommitContext = {
   state: TopologyState
   hostIds: () => ExecutionHostId[]
   getSession: (hostId: ExecutionHostId) => WorkspaceSessionState
@@ -92,6 +148,17 @@ type TerminalTopologyCommitContext = {
 }
 
 /** Writes `next`, returning a restore that puts the prior value back unless a later write replaced it. */
+// A paused WSL move keeps its local rows as the quiesce left them.
+function keepFrozen(
+  hostId: ExecutionHostId,
+  session: WorkspaceSessionState,
+  context: TerminalTopologyCommitContext
+): WorkspaceSessionState {
+  return hostId === LOCAL_EXECUTION_HOST_ID
+    ? keepWslMoveFrozenSessionsForStore(session, context.getSession(hostId))
+    : session
+}
+
 function writeRestorable<V>(read: () => V, write: (value: V) => void, next: V): () => void {
   const prior = read()
   write(next)
@@ -118,7 +185,7 @@ function commitLeafMove(
     writeRestorable(
       () => context.getSession(hostId),
       (value) => context.markDirty(assignWorkspaceSessionPartition(state, hostId, value)),
-      session
+      keepFrozen(hostId, session, context)
     )
   )
   const rekeyed = rekeyMovedLeafProfileRecords(state, request)
@@ -146,4 +213,20 @@ function commitLeafMove(
     value: planned.result,
     rollback: () => restores.forEach((restore) => restore())
   }
+}
+
+function commitPaneChange<T>(
+  hostId: ExecutionHostId,
+  change: PaneLayoutChange<T>,
+  context: TerminalTopologyCommitContext
+): DurableProfileStateMutation<T> {
+  if (!change.session) {
+    return { value: change.value, persist: false }
+  }
+  const restore = writeRestorable(
+    () => context.getSession(hostId),
+    (value) => context.markDirty(assignWorkspaceSessionPartition(context.state, hostId, value)),
+    keepFrozen(hostId, change.session, context)
+  )
+  return { value: change.value, rollback: restore }
 }

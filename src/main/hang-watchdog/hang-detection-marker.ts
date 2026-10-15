@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // Why: written by the watchdog worker when main-thread heartbeats stop, and rewritten if
@@ -21,27 +21,37 @@ export function hangDetectionMarkerPath(userDataPath: string): string {
 }
 
 export function writeHangDetectionMarker(markerPath: string, marker: HangDetectionMarker): void {
-  writeFileSync(markerPath, JSON.stringify(marker))
+  writeFileSync(markerPath, JSON.stringify(marker), { mode: 0o600 })
 }
 
-export function consumeHangDetectionMarker(markerPath: string): HangDetectionMarker | null {
+function readAvailableHangDetectionMarker(
+  markerPath: string
+): HangDetectionMarker | null | undefined {
   let raw: string
   try {
+    if (statSync(markerPath).size > 64 * 1024) {
+      return null
+    }
     raw = readFileSync(markerPath, 'utf8')
   } catch {
-    return null
+    return undefined
   }
   try {
-    rmSync(markerPath, { force: true })
-  } catch {
-    // Why: a marker that cannot be deleted must not block startup; worst case is one duplicate breadcrumb.
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<HangDetectionMarker>
+    const parsed: unknown = JSON.parse(raw)
     if (
+      typeof parsed !== 'object' ||
+      !parsed ||
+      !('detectedAt' in parsed) ||
       typeof parsed.detectedAt !== 'number' ||
+      !Number.isFinite(parsed.detectedAt) ||
+      !('parentPid' in parsed) ||
       typeof parsed.parentPid !== 'number' ||
-      typeof parsed.unresponsiveMs !== 'number'
+      !Number.isInteger(parsed.parentPid) ||
+      parsed.parentPid <= 0 ||
+      !('unresponsiveMs' in parsed) ||
+      typeof parsed.unresponsiveMs !== 'number' ||
+      !Number.isFinite(parsed.unresponsiveMs) ||
+      parsed.unresponsiveMs < 0
     ) {
       return null
     }
@@ -50,11 +60,12 @@ export function consumeHangDetectionMarker(markerPath: string): HangDetectionMar
       parentPid: parsed.parentPid,
       unresponsiveMs: parsed.unresponsiveMs,
       // Why: a marker left by the detect leg and never rewritten means the stall never cleared.
-      selfRecovered: parsed.selfRecovered === true,
-      ...(typeof parsed.stackCaptureAttempts === 'number'
+      selfRecovered: 'selfRecovered' in parsed && parsed.selfRecovered === true,
+      ...('stackCaptureAttempts' in parsed && typeof parsed.stackCaptureAttempts === 'number'
         ? { stackCaptureAttempts: parsed.stackCaptureAttempts }
         : {}),
-      ...(Array.isArray(parsed.mainThreadStack) &&
+      ...('mainThreadStack' in parsed &&
+      Array.isArray(parsed.mainThreadStack) &&
       parsed.mainThreadStack.every((frame) => typeof frame === 'string')
         ? { mainThreadStack: parsed.mainThreadStack }
         : {})
@@ -62,4 +73,18 @@ export function consumeHangDetectionMarker(markerPath: string): HangDetectionMar
   } catch {
     return null
   }
+}
+
+export function consumeHangDetectionMarker(markerPath: string): HangDetectionMarker | null {
+  const marker = readAvailableHangDetectionMarker(markerPath)
+  // Retry unavailable reads next startup; only successfully inspected files are consumable.
+  if (marker === undefined) {
+    return null
+  }
+  try {
+    rmSync(markerPath, { force: true })
+  } catch {
+    // A marker that cannot be deleted may produce a duplicate breadcrumb, but cannot block startup.
+  }
+  return marker
 }

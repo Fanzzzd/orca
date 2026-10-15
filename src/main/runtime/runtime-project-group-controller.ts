@@ -8,12 +8,23 @@ import type {
 } from '../../shared/folder-workspace-path-status'
 import {
   assertFolderWorkspacePathUsable,
+  folderWorkspacePathRefusal,
   getFolderWorkspacePathStatus,
   getFolderWorkspacePathStatusForPath
 } from '../project-groups/folder-workspace-path-status'
-import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
+import { FolderWorkspaceCreateRefusedError } from '../project-groups/folder-workspace-create-refusal'
 import type { RuntimeStore } from './runtime-store-contract'
+import {
+  runtimeVisibleFolderWorkspaces,
+  runtimeVisibleProjectGroups
+} from './runtime-visible-catalog'
 import { folderWorkspaceKey } from '../../shared/workspace-scope'
+import {
+  assertWslMoveProjectWritable,
+  assertWslMoveRepoWritable,
+  isLocalWslMoveRow,
+  shouldDropWslMoveProjectUpdate
+} from '../persistence/moving-wsl-projects/wsl-move-scope-guard'
 
 type RuntimeProjectGroupDependencies = {
   getStore: () => RuntimeStore | null
@@ -57,6 +68,15 @@ export class RuntimeProjectGroupController {
 
   listFolderWorkspaces(): FolderWorkspace[] {
     return this.deps.getStore()?.getFolderWorkspaces?.() ?? []
+  }
+
+  /** What a client may list; `listGroups`/`listFolderWorkspaces` keep the full store. */
+  listVisibleGroups(): ProjectGroup[] {
+    return runtimeVisibleProjectGroups(this.deps.getStore())
+  }
+
+  listVisibleFolderWorkspaces(): FolderWorkspace[] {
+    return runtimeVisibleFolderWorkspaces(this.deps.getStore())
   }
 
   async createGroup(input: {
@@ -114,6 +134,7 @@ export class RuntimeProjectGroupController {
       throw new Error('runtime_unavailable')
     }
     const repo = await this.deps.resolveRepo(repoSelector)
+    assertWslMoveRepoWritable(store, repo)
     const moved = store.moveProjectToGroup(repo.id, groupId, order)
     if (!moved) {
       throw new Error('repo_not_found')
@@ -134,9 +155,10 @@ export class RuntimeProjectGroupController {
     createdWithAgent?: FolderWorkspace['createdWithAgent']
     pendingFirstAgentMessageRename?: boolean
   }): Promise<FolderWorkspace> {
+    // Every refusal below comes before the store write, so it proves nothing was created.
     const store = this.deps.getStore()
     if (!store?.createFolderWorkspace) {
-      throw new Error('runtime_unavailable')
+      throw new FolderWorkspaceCreateRefusedError('runtime_unavailable')
     }
     const projectGroups = store.getProjectGroups?.() ?? []
     const group = projectGroups.find((entry) => entry.id === input.projectGroupId)
@@ -145,19 +167,19 @@ export class RuntimeProjectGroupController {
         ? input.folderPath
         : group?.parentPath
     if (!group || !folderPath) {
-      throw new Error('folder_workspace_project_group_not_found')
+      throw new FolderWorkspaceCreateRefusedError('folder_workspace_project_group_not_found')
     }
-    const status = await getFolderWorkspacePathStatusForPath(
-      {
-        folderPath,
-        projectGroupId: group.id,
-        connectionId: input.connectionId ?? group.connectionId ?? null,
-        projectGroups,
-        repos: store.getRepos()
-      },
-      { getSshFilesystemProvider }
-    )
-    assertFolderWorkspacePathUsable(status)
+    const status = await getFolderWorkspacePathStatusForPath({
+      folderPath,
+      projectGroupId: group.id,
+      connectionId: input.connectionId ?? group.connectionId ?? null,
+      projectGroups,
+      repos: store.getRepos()
+    })
+    const pathRefusal = folderWorkspacePathRefusal(status)
+    if (pathRefusal) {
+      throw new FolderWorkspaceCreateRefusedError(pathRefusal)
+    }
     const workspace = store.createFolderWorkspace({
       ...input,
       creatorProvenance: input.creatorProvenance ?? { kind: 'host' }
@@ -173,7 +195,7 @@ export class RuntimeProjectGroupController {
     if (!store) {
       throw new Error('runtime_unavailable')
     }
-    return getFolderWorkspacePathStatus(store, request, { getSshFilesystemProvider })
+    return getFolderWorkspacePathStatus(store, request)
   }
 
   async updateFolderWorkspace(
@@ -184,6 +206,14 @@ export class RuntimeProjectGroupController {
     if (!store?.updateFolderWorkspace) {
       throw new Error('runtime_unavailable')
     }
+    const existing = store.getFolderWorkspaces?.().find((entry) => entry.id === folderWorkspaceId)
+    if (
+      existing &&
+      isLocalWslMoveRow(existing) &&
+      shouldDropWslMoveProjectUpdate(store, { folderWorkspaceId }, updates)
+    ) {
+      return existing
+    }
     if (typeof updates.folderPath === 'string' && updates.folderPath.trim().length > 0) {
       const workspace = store
         .getFolderWorkspaces?.()
@@ -192,19 +222,16 @@ export class RuntimeProjectGroupController {
         return null
       }
       const projectGroups = store.getProjectGroups?.() ?? []
-      const status = await getFolderWorkspacePathStatusForPath(
-        {
-          folderPath: updates.folderPath,
-          projectGroupId: workspace.projectGroupId,
-          connectionId:
-            workspace.connectionId ??
-            projectGroups.find((entry) => entry.id === workspace.projectGroupId)?.connectionId ??
-            null,
-          projectGroups,
-          repos: store.getRepos()
-        },
-        { getSshFilesystemProvider }
-      )
+      const status = await getFolderWorkspacePathStatusForPath({
+        folderPath: updates.folderPath,
+        projectGroupId: workspace.projectGroupId,
+        connectionId:
+          workspace.connectionId ??
+          projectGroups.find((entry) => entry.id === workspace.projectGroupId)?.connectionId ??
+          null,
+        projectGroups,
+        repos: store.getRepos()
+      })
       assertFolderWorkspacePathUsable(status)
     }
     const updated = store.updateFolderWorkspace(folderWorkspaceId, updates)
@@ -220,6 +247,9 @@ export class RuntimeProjectGroupController {
       throw new Error('runtime_unavailable')
     }
     const workspace = store.getFolderWorkspaces?.().find((entry) => entry.id === folderWorkspaceId)
+    if (workspace && isLocalWslMoveRow(workspace)) {
+      assertWslMoveProjectWritable(store, { folderWorkspaceId })
+    }
     if (workspace) {
       const worktreeId = folderWorkspaceKey(folderWorkspaceId)
       // Why: a mixed-host group has no single PTY target; forgetting the

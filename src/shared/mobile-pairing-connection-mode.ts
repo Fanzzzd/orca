@@ -13,16 +13,23 @@ export function parseMobilePairingConnectionMode(value: unknown): MobilePairingC
 }
 
 /**
- * Resolve the pairing path to show / remember.
+ * Resolve the pairing path to preselect.
  *
- * - Explicit saved preference wins (user already chose).
- * - Otherwise default to Anywhere (`automatic`). Relay still requires sign-in
- *   at QR time; the UI can keep Anywhere selected while signed out.
+ * A signed-out desktop starts on LAN: Relay's one-click sign-in links this
+ * desktop to an Orca account, so it must be an explicit choice. The saved value
+ * cannot tell us that, because the settings default persists `automatic`.
+ * A click on Relay still selects it; signing in restores a saved Anywhere.
  */
 export function resolveMobilePairingConnectionMode(
-  saved: MobilePairingConnectionMode | null | undefined
+  saved: MobilePairingConnectionMode | null | undefined,
+  context: { signedIn: boolean }
 ): MobilePairingConnectionMode {
-  return parseMobilePairingConnectionMode(saved)
+  const mode = parseMobilePairingConnectionMode(saved ?? 'automatic')
+  // Why: Iroh needs no account, so the signed-out LAN fallback does not apply.
+  if (mode === 'iroh') {
+    return 'iroh'
+  }
+  return mode === 'local-only' || !context.signedIn ? 'local-only' : 'automatic'
 }
 
 /** Modes that must never receive Relay credentials or splices. */

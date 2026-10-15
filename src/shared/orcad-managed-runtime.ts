@@ -3,6 +3,7 @@ import type { OrcadTerminalCensus } from './orcad-terminal-census'
 import type { OrcadMigrationBlocker } from './orcad-migration-preflight'
 import type { OrcadMigrationSourceCutoverPhase } from './orcad-migration-source-cutover'
 import type { OrcadDaemonRetirementVerdict } from './orcad-stop-request'
+import type { SshManagedServerLinkedProject } from './ssh-types'
 
 export const ORCAD_MANAGED_REMOTE_PORT = 6_768
 
@@ -66,6 +67,20 @@ export type OrcadManagedStopResult =
     }
   | OrcadManagedRefusal
 
+/**
+ * Unlinks the server from this desktop without reaching its host, for a host that is gone or
+ * unreachable. Never a claim of exit: the server may still run there, so the verdict stays
+ * `unverifiable`.
+ */
+export type OrcadManagedForgetResult =
+  | {
+      outcome: 'forgotten'
+      verdict: 'unverifiable'
+      environmentId: string
+      sshTargetId: string
+    }
+  | OrcadManagedRefusal
+
 export type OrcadManagedCancelStopResult =
   | { outcome: 'none' }
   /** The stop was withdrawn before orcad acted on it; the server keeps serving. */
@@ -124,6 +139,8 @@ export type OrcadManagedConversionResult =
       outcome: 'converted'
       environment: PublicKnownRuntimeEnvironment
       migrationId: string
+      /** Projects the server already held, so this desktop's own state for them did not move. */
+      linkedProjects?: SshManagedServerLinkedProject[]
     }
   | OrcadManagedDeferral
   | OrcadManagedRefusal

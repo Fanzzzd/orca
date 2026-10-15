@@ -27,6 +27,8 @@ type BrowserToolbarMenuProps = {
   viewportPresetId: BrowserViewportPresetId | null
   onDestroyWebview: () => void
   isActive: boolean
+  /** Set only on a local HTML page whose file the editor can open. */
+  onOpenSourceFile?: (() => void) | null
   overflow: BrowserChromeOverflowMenuProps
 }
 
@@ -37,6 +39,7 @@ export function BrowserToolbarMenu({
   viewportPresetId,
   onDestroyWebview,
   isActive,
+  onOpenSourceFile,
   overflow
 }: BrowserToolbarMenuProps): React.JSX.Element {
   const browserSessionProfiles = useAppStore((s) => s.browserSessionProfiles)
@@ -257,6 +260,7 @@ export function BrowserToolbarMenu({
         onImportFromFile={() => void handleImportFromFile()}
         viewportPresetId={viewportPresetId}
         onApplyViewportPreset={applyViewportPreset}
+        onOpenSourceFile={onOpenSourceFile}
         overflow={overflow}
       />
 

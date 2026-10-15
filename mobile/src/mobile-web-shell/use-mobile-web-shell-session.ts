@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MobileWebShellFailureReason } from '../../modules/orca-mobile-web-shell/src/load-state'
-import { useHostProtocolGates } from '../components/HostProtocolGate'
+import { useHostProtocolGates } from '../components/host-protocol-gates-context'
 import { useHostClient } from '../transport/client-context'
 import type { GenerationStore } from './generation-store'
 import { deriveHostCacheKey } from './host-cache-key'
@@ -12,6 +12,14 @@ import {
 } from './mobile-web-shell-runtime'
 import { readMobileWebShellReachability } from './mobile-web-shell-reachability'
 import { shellPageBackClaimed } from './shell-page-back-claim'
+import { recordShellLifecycleLine } from './shell-lifecycle-line-recorder'
+import {
+  EMPTY_SHELL_LOG_TRACE,
+  SHELL_STALL_LOG_MS,
+  shellSessionStepLines,
+  shellStallLine,
+  traceShellStep
+} from './shell-lifecycle-log'
 import { shellPageFrame, type ShellPageFrame } from './shell-page-frame'
 import {
   createMobileWebShellSession,
@@ -30,6 +38,7 @@ export type MobileWebShellSessionView = {
   readonly pageRoutes: readonly string[]
   readonly pageRouteGrants: readonly { pathname: string; grants: readonly string[] }[]
   readonly routeGrants: readonly string[]
+  readonly ownsHostArea: boolean
   /** Non-null when this generation is a fallback from an update the shell refused, for the caller
    *  to say so beside the page rather than instead of it. */
   readonly updateNotice: MobileWebShellUpdateNotice | null
@@ -72,9 +81,12 @@ export function useMobileWebShellSession(args: {
   hostId: string
   /** The route this mount stands for, matched against the page routes the bundle declares. */
   routePathname: string
+  /** A wide layout; a change restarts the session only where it changes the answer. */
+  wide?: boolean
   runtime?: MobileWebShellRuntime
 }): MobileWebShellSessionView {
   const { hostId, routePathname } = args
+  const wide = args.wide === true
   const gates = useHostProtocolGates()
   const { client, state: connState } = useHostClient(hostId)
 
@@ -84,7 +96,7 @@ export function useMobileWebShellSession(args: {
   const storeRef = useRef<GenerationStore | null>(null)
   storeRef.current ??= runtime.createStore()
 
-  const sessionRef = useRef(createMobileWebShellSession(routePathname))
+  const sessionRef = useRef(createMobileWebShellSession(routePathname, wide))
   const [state, setState] = useState(sessionRef.current.state)
   const [pageReady, setPageReady] = useState(sessionRef.current.pageReady)
   const [pageFrame, setPageFrame] = useState(() => shellPageFrame(sessionRef.current))
@@ -98,6 +110,9 @@ export function useMobileWebShellSession(args: {
   // Cancelled on the same bump, for the same reason: an armed deadline belongs to the generation it
   // was armed under, and the epoch check alone would leave a real timer alive until it fired.
   const timersRef = useRef<Set<() => void>>(new Set())
+  // The log's host for `dispatch`, which is stable; moved with the session rebuild below.
+  const hostIdRef = useRef(hostId)
+  const logTraceRef = useRef(EMPTY_SHELL_LOG_TRACE)
   const runEffectRef = useRef<
     ((epoch: number, flow: number, effect: MobileWebShellSessionEffect) => void) | null
   >(null)
@@ -107,6 +122,11 @@ export function useMobileWebShellSession(args: {
       return
     }
     const stepped = reduceMobileWebShellSession(sessionRef.current, event)
+    const trace = traceShellStep(logTraceRef.current, sessionRef.current, event, stepped.session)
+    logTraceRef.current = trace
+    for (const line of shellSessionStepLines(sessionRef.current, event, stepped.session, trace)) {
+      recordShellLifecycleLine(hostIdRef.current, line)
+    }
     sessionRef.current = stepped.session
     setState(stepped.session.state)
     setPageReady(stepped.session.pageReady)
@@ -214,13 +234,33 @@ export function useMobileWebShellSession(args: {
   useEffect(() => {
     // A new host is a new session: the old one's latches, cache handle and in-flight work all go.
     invalidate()
-    sessionRef.current = createMobileWebShellSession(routePathname)
+    hostIdRef.current = hostId
+    logTraceRef.current = EMPTY_SHELL_LOG_TRACE
+    sessionRef.current = createMobileWebShellSession(routePathname, wide)
     startedAtRef.current = runtime.now()
     setState(sessionRef.current.state)
     setPageReady(sessionRef.current.pageReady)
     setPageFrame(shellPageFrame(sessionRef.current))
     return invalidate
   }, [hostId, invalidate, routePathname, runtime])
+
+  // Log-only: one warning per parked state object, cancelled by any state, paint, host or route change.
+  // `CHECKING` is one shared object, so checking-to-checking steps keep the first open's timer.
+  useEffect(() => {
+    if (shellStallLine(state, sessionRef.current, logTraceRef.current) === null) {
+      return
+    }
+    return runtime.setTimer(() => {
+      const line = shellStallLine(state, sessionRef.current, logTraceRef.current)
+      if (line !== null) {
+        recordShellLifecycleLine(hostIdRef.current, line)
+      }
+    }, SHELL_STALL_LOG_MS)
+  }, [hostId, pageFrame, routePathname, runtime, state])
+
+  useEffect(() => {
+    dispatch(epochRef.current, { type: 'layout-changed', wide })
+  }, [dispatch, wide])
 
   const { statusPending, statusReadable, hostCapabilities, hostProtocolWindow } = gates
   const reachability = readMobileWebShellReachability(connState, client)
@@ -293,6 +333,7 @@ export function useMobileWebShellSession(args: {
     pageRoutes: sessionRef.current.pageRoutes,
     pageRouteGrants: sessionRef.current.pageRouteGrants,
     routeGrants: sessionRef.current.routeGrants,
+    ownsHostArea: sessionRef.current.ownsHostArea,
     updateNotice: sessionRef.current.updateNotice,
     retry,
     reportShellFailure,

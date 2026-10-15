@@ -1,6 +1,7 @@
 import type { ExecutionHostId } from '../../../src/shared/execution-host'
 import type { AgentWorkingMode } from '../../../src/shared/agent-status-types'
 import type { RuntimeWorktreeAgentRow } from '../../../src/shared/runtime-types'
+import type { ProjectSectionRepo } from '../../../src/shared/project-section-grouping'
 
 export type Worktree = {
   sectionListKey?: string
@@ -13,6 +14,8 @@ export type Worktree = {
   hostContextLabel?: string
   /** Resolved host for the display label; present when legacy rows omit hostId. */
   hostContextHostId?: ExecutionHostId
+  /** Display-only; the host's health word beside its label, absent while the host is healthy. */
+  hostContextHealthLabel?: string
   repo: string
   branch: string
   displayName: string
@@ -27,6 +30,8 @@ export type Worktree = {
   isArchived?: boolean
   isMainWorktree?: boolean
   hasHostSidebarActivity?: boolean
+  /** The paired desktop's "Hide other-client workspaces" hides this row. */
+  desktopOtherClient?: true
   worktreeInstanceId?: string
   lineageWorktreeInstanceId?: string
   parentWorktreeInstanceId?: string
@@ -38,7 +43,6 @@ export type Worktree = {
   isLastLineageChild?: boolean
   liveTerminalCount: number
   hasAttachedPty: boolean
-  preview: string
   unread: boolean
   lastOutputAt?: number
   isPinned: boolean
@@ -62,4 +66,15 @@ export type FilterState = {
   alwaysShowDefaultBranch?: boolean
 }
 
-export type Section = { key: string; title: string; icon?: 'pin'; data: Worktree[] }
+/** A repo as Project sections read it: the desktop's catalog record, or one a row stands in for. */
+// repoIcon stays unread wire data until drawn (readMobileRepoIcon).
+export type SectionRepo = ProjectSectionRepo & { badgeColor?: string; repoIcon?: unknown }
+
+export type Section = {
+  key: string
+  title: string
+  icon?: 'pin'
+  /** Under Project grouping, the repo whose colour and icon the header shows, as on the desktop. */
+  repo?: SectionRepo
+  data: Worktree[]
+}

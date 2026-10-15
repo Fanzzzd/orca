@@ -128,6 +128,9 @@ export class StructuredAgentSessionAdapterRouter implements StructuredAgentSessi
     this.liveOwnerOrNull(sessionId)?.holdsLiveProviderProcess?.(sessionId, acquisitionGeneration) ??
     false
 
+  startUnavailable: NonNullable<StructuredAgentSessionAdapter['startUnavailable']> = (sessionId) =>
+    this.liveOwnerOrNull(sessionId)?.startUnavailable?.(sessionId)
+
   stopEndsSession = (sessionId: string): boolean =>
     this.liveOwnerOrNull(sessionId)?.stopEndsSession?.(sessionId) ?? false
 
@@ -196,6 +199,14 @@ export class StructuredAgentSessionAdapterRouter implements StructuredAgentSessi
   }) =>
     this.requireAgent(input.identity).adapter.providerHistoryWindow?.(input) ??
     Promise.resolve(null)
+
+  copyConversation: NonNullable<StructuredAgentSessionAdapter['copyConversation']> = (input) => {
+    const { adapter } = this.requireAgent(input.identity)
+    if (!adapter.copyConversation) {
+      return Promise.reject(new Error(`${input.identity.agent} cannot copy a conversation`))
+    }
+    return adapter.copyConversation(input)
+  }
 
   closeSession = (sessionId: string): Promise<boolean> =>
     this.stopSession(sessionId, (adapter) => adapter.closeSession)

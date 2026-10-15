@@ -1,7 +1,7 @@
 import { app, webContents } from 'electron'
 import { dirname } from 'node:path'
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
-import { spawnProcess } from '../../../shared/child-process/run-process'
+import type { PipedChildProcess } from '@orca/process-host/process-spec'
+import { spawnProcess } from '@orca/process-host'
 import {
   emitToExtensionCaller,
   handleExtensionApi,
@@ -11,16 +11,13 @@ import { numberArg, stringArg } from './extension-api-args'
 import { findNativeMessagingHost } from './native-messaging-host-manifest'
 import { createNativeMessageReader, encodeNativeMessage } from './native-message-codec'
 
-type Port = { host: ChildProcessWithoutNullStreams; caller: ExtensionCaller; cleanup: () => void }
+type Port = { host: PipedChildProcess; caller: ExtensionCaller; cleanup: () => void }
 
 const ports = new Map<number, Port>()
 let nextPortId = 1
 
 /** Starts host `name` for the caller's extension, if the host lets that extension in. */
-async function startHost(
-  caller: ExtensionCaller,
-  name: string
-): Promise<ChildProcessWithoutNullStreams> {
+async function startHost(caller: ExtensionCaller, name: string): Promise<PipedChildProcess> {
   const host = await findNativeMessagingHost(name, app.getPath('userData'))
   const origin = `chrome-extension://${caller.extension.id}/`
   if (!host || !host.allowedOrigins.includes(origin)) {

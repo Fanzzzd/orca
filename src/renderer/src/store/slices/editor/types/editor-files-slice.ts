@@ -1,8 +1,11 @@
 import type { HttpLinkSourceOwner } from '@/lib/http-link-routing'
+import type { CheckRunDetailsTabPatch } from '@/components/editor/check-run-details-tab'
 import type {
-  CheckRunDetailsTabPatch,
+  CombinedDiffAlternate,
+  ConflictReviewEntry,
+  ConflictReviewState,
   OpenCheckRunDetailsState
-} from '@/components/editor/check-run-details-tab'
+} from '../../../../../../shared/editor-tab-view-types'
 import type {
   GitBranchChangeEntry,
   GitBranchCompareSummary,
@@ -13,10 +16,7 @@ import type { WorkspaceVisibleTabType } from '../../../../../../shared/tab-types
 import type {
   BranchCompareLike,
   ClosedEditorTabSnapshot,
-  CombinedDiffAlternate,
   CommitCompareLike,
-  ConflictReviewEntry,
-  ConflictReviewState,
   EditorOpenTargetOptions,
   EditorTabSelection,
   OpenFile

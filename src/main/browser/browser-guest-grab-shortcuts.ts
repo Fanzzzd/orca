@@ -1,4 +1,5 @@
 import { keybindingMatchesAction, type KeybindingOverrides } from '../../shared/keybindings'
+import { isAgentInjectingInput } from './agent-input-injection'
 import type { ResolveRenderer } from './browser-guest-renderer-target'
 
 export type GrabShortcutContext = {
@@ -24,7 +25,8 @@ export function handleGrabShortcutInput(
   claimToggle?: () => void
 ): boolean {
   const { browserTabId, guest, resolveRenderer, hasActiveGrabOp, getKeybindings } = ctx
-  if (input.type !== 'keyDown') {
+  // Why: agent-injected keys must not run Orca shortcuts or grab actions (#20595).
+  if (isAgentInjectingInput(guest) || input.type !== 'keyDown') {
     return false
   }
   const bareKey = input.key.toLowerCase()

@@ -162,6 +162,7 @@ export function createBrowserTabActions(
           entityId: workspaceId,
           label: browserTab.title,
           targetGroupId: options?.targetGroupId,
+          ...(options?.split ? { split: options.split } : {}),
           ...(options?.afterTabId ? { afterTabId: options.afterTabId } : {}),
           // Why no routing-host default: a substituted host would disown the wrapper from its worktree.
           ...(options?.executionHostId ? { executionHostId: options.executionHostId } : {}),
@@ -225,7 +226,7 @@ export function createBrowserTabActions(
       get().createBrowserTab(worktreeId, defaultUrl, {
         title: translate('auto.store.slices.browser.d175274b6d', 'New Browser Tab'),
         focusAddressBar: true,
-        ...(runtimeEnvironmentId ? { browserRuntimeEnvironmentId: null } : {}),
+        browserRuntimeEnvironmentId: null,
         targetGroupId: groupId
       })
       get().recordFeatureInteraction('browser-tab-created')
@@ -268,7 +269,7 @@ export function createBrowserTabActions(
       get().createBrowserTab(worktreeId, url, {
         activate: true,
         sessionProfileId: profileId,
-        ...(runtimeEnvironmentId ? { browserRuntimeEnvironmentId: null } : {})
+        browserRuntimeEnvironmentId: null
       })
       return true
     }

@@ -1,4 +1,4 @@
-import { OrcaRuntimeWithGetRuntimeId } from './orca-runtime-get-runtime-id'
+import { OrcaRuntimeWithGetRuntimeId } from './workspaces/session-hosts/get-runtime-id'
 import type { RuntimeDegradation, RuntimeStatus } from '../../shared/runtime-types'
 import {
   runtimeBrowserCommandsFactoryIsHeadless,
@@ -6,6 +6,9 @@ import {
   runtimeBrowserUnavailableCause
 } from './runtime-browser-commands-factory'
 import { isBrowserIdentityModeStoreInitialized } from '../browser/browser-identity-mode-store'
+import { servesLocalWslMigrationSource } from '../orcad/orcad-migration-wsl-destination'
+import { ORCAD_MIGRATION_LOCAL_WSL_SOURCE_RUNTIME_CAPABILITY } from '../../shared/orcad-runtime-capabilities'
+import { advertisedOrcadMigrationBlobCapabilities } from '../../shared/orcad-migration-blob-transfer'
 import type { RuntimeCapability } from '../../shared/protocol-version'
 import {
   BROWSER_CERTIFICATE_TRUST_RUNTIME_CAPABILITY,
@@ -33,6 +36,10 @@ import { isWindowsProcessStartTimeAvailable } from '../windows/windows-process-t
 import type { RuntimeWorktreeLifecycleEvent } from './orca-runtime-core'
 import { WORKTREE_CREATE_RESULT_TTL_MS } from './orca-runtime-core'
 import type { RuntimePtyController } from './runtime-pty-controller-contract'
+import type {
+  AutomaticWorkResumeOutcome,
+  AutomaticWorkStatus
+} from '../../shared/host-spawn-admission'
 import type { RuntimeNotifier } from './runtime-notifier-contract'
 import type {
   AutomationsChangedPayload,
@@ -63,7 +70,7 @@ function supportsDurableTerminalPromptDelivery(): boolean {
   }
 }
 
-export class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntimeId {
+export abstract class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntimeId {
   private asRuntimeStatusHost(): RuntimeStatusHost {
     return this as unknown as RuntimeStatusHost
   }
@@ -113,6 +120,13 @@ export class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntimeId {
     if (isBrowserIdentityModeStoreInitialized()) {
       capabilities.push(BROWSER_IDENTITY_RUNTIME_CAPABILITY)
     }
+    // Why not static: only the orcad inside a distro can receive that distro's projects.
+    if (servesLocalWslMigrationSource()) {
+      capabilities.push(ORCAD_MIGRATION_LOCAL_WSL_SOURCE_RUNTIME_CAPABILITY)
+    }
+    // Why not static: a blob kind is advertised only once this build installs it, since an
+    // unadvertised kind is refused by the sender rather than staged and silently never applied.
+    capabilities.push(...advertisedOrcadMigrationBlobCapabilities())
     // Why: certificate proceed is owned by the browser-hosting process for both
     // desktop webviews and offscreen pages. Advertise whenever either backend
     // can host a page so remote clients can surface Proceed Anyway (Unsafe).
@@ -192,6 +206,15 @@ export class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntimeId {
     this.ptyController = controller
   }
 
+  /** Null when the local terminal owner has no fork gate (in-process fallback, older daemon). */
+  async getAutomaticWorkStatus(): Promise<AutomaticWorkStatus | null> {
+    return (await this.ptyController?.getAutomaticWorkStatus?.()) ?? null
+  }
+
+  async resumeAutomaticWork(): Promise<AutomaticWorkResumeOutcome> {
+    return (await this.ptyController?.resumeAutomaticWork?.()) ?? null
+  }
+
   setNotifier(notifier: RuntimeNotifier | null): void {
     this.notifier = notifier
     if (notifier) {
@@ -267,12 +290,24 @@ export class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntimeId {
     return { tabId, worktreeId: pty.worktreeId }
   }
 
-  protected notifyWorktreesChanged(repoId: string): void {
-    // Why here: the listing re-runs a scan this generation overtook, and a headless host has no
-    // window notifier to bump it, so the runtime's own change event bumps before it is sent.
-    runWorktreeChangeInvalidators(repoId)
-    this.notifier?.worktreesChanged(repoId)
-    this.emitClientEvent({ type: 'worktreesChanged', repoId })
+  notifyWorktreesChanged(
+    repoId: string,
+    options?: { invalidateGitScans?: boolean; sortOrderOnly?: boolean }
+  ): void {
+    // Headless hosts invalidate here unless only metadata changed.
+    if (options?.invalidateGitScans !== false) {
+      runWorktreeChangeInvalidators(repoId)
+    }
+    if (options) {
+      this.notifier?.worktreesChanged(repoId, undefined, options)
+    } else {
+      this.notifier?.worktreesChanged(repoId)
+    }
+    this.emitClientEvent({
+      type: 'worktreesChanged',
+      repoId,
+      ...(options?.sortOrderOnly === true ? { sortOrderOnly: true } : {})
+    })
   }
 
   /** Detail-level worktree lifecycle tap (plugin event bus). The coarse

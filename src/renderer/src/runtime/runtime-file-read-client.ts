@@ -3,7 +3,8 @@ import type {
   RuntimeFileReadChunkResult,
   RuntimeFileReadResult
 } from '../../../shared/runtime-types'
-import { callRuntimeRpc, getActiveRuntimeTarget, RuntimeRpcCallError } from './runtime-rpc-client'
+import { callRuntimeRpc } from './runtime-rpc-client'
+import { RuntimeRpcCallError } from './runtime-rpc-result'
 import type {
   RuntimeFileDownloadResult,
   RuntimeFileOperationArgs,
@@ -17,8 +18,10 @@ import {
   hasRemoteRuntimeOwner
 } from './runtime-file-routing'
 import { toRuntimeWorktreeSelector } from './runtime-worktree-selector'
+import { chatScratchFileAddress } from './runtime-chat-scratch-file-address'
 import { isAgentSessionAttachmentStorePath } from '../../../shared/agent-session-attachments'
 import type { LocalFileAccess } from '../../../shared/local-file-access'
+import { readRuntimeTerminalArtifactContent } from './runtime-terminal-artifact-read'
 
 const REMOTE_DOWNLOAD_CHUNK_BYTES = 384 * 1024
 const REMOTE_DOWNLOAD_UPDATE_REQUIRED_MESSAGE =
@@ -35,17 +38,17 @@ export function localAccess(
 }
 
 export async function readRuntimeFileContent({
-  settings,
+  target,
   filePath,
   relativePath,
   worktreeId,
   connectionId,
   expectedExternalSshTargetId,
   includeLocalLogMetadata,
-  access
+  access,
+  terminalArtifactGrantId
 }: RuntimeFileReadArgs): Promise<RuntimeReadableFileContent> {
-  assertExternalSshReadOwnership(settings, connectionId, expectedExternalSshTargetId)
-  const target = getActiveRuntimeTarget(settings)
+  assertExternalSshReadOwnership(target, connectionId, expectedExternalSshTargetId)
   if (target.kind !== 'environment' || !worktreeId) {
     return window.api.fs.readFile({
       filePath,
@@ -54,17 +57,28 @@ export async function readRuntimeFileContent({
       ...localAccess(connectionId, access)
     })
   }
-  if (!canReadRelativeRuntimeFile(relativePath)) {
+  if (terminalArtifactGrantId) {
+    return readRuntimeTerminalArtifactContent({
+      target,
+      worktreeId,
+      absolutePath: filePath,
+      grantId: terminalArtifactGrantId
+    })
+  }
+  // A workspace path first; a chat's scratch file is the absolute path no workspace contains.
+  const scratch = canReadRelativeRuntimeFile(relativePath) ? null : chatScratchFileAddress(filePath)
+  const readPath = scratch?.relativePath ?? relativePath
+  if (!canReadRelativeRuntimeFile(readPath)) {
     throw new Error('Remote file is outside the owning runtime worktree')
   }
 
-  const worktree = toRuntimeWorktreeSelector(worktreeId)
+  const worktree = scratch?.worktreeSelector ?? toRuntimeWorktreeSelector(worktreeId)
   let result: RuntimeFileReadResult
   try {
     result = await callRuntimeRpc<RuntimeFileReadResult>(
       target,
       'files.read',
-      { worktree, relativePath },
+      { worktree, relativePath: readPath },
       { timeoutMs: 15_000 }
     )
   } catch (err) {
@@ -75,7 +89,7 @@ export async function readRuntimeFileContent({
       return callRuntimeRpc<RuntimeFilePreviewResult>(
         target,
         'files.readPreview',
-        { worktree, relativePath },
+        { worktree, relativePath: readPath },
         { timeoutMs: 15_000 }
       )
     }
@@ -95,12 +109,12 @@ export async function readRuntimeFilePreview(
   access?: LocalFileAccess
 ): Promise<RuntimeFilePreviewResult> {
   assertExternalSshReadOwnership(
-    context.settings,
+    context.target,
     context.connectionId,
     context.expectedExternalSshTargetId
   )
   const remoteArgs = getRemoteFileArgs(context, filePath)
-  const runtimeTarget = getActiveRuntimeTarget(context.settings)
+  const runtimeTarget = context.target
   // A chat attachment lives in the paired server's store, outside every worktree; that server
   // reads it back itself (an older one answers method_not_found, and the preview falls back).
   if (
@@ -139,7 +153,7 @@ export async function downloadRuntimeFile(
   suggestedName: string
 ): Promise<RuntimeFileDownloadResult> {
   assertExternalSshReadOwnership(
-    context.settings,
+    context.target,
     context.connectionId,
     context.expectedExternalSshTargetId
   )

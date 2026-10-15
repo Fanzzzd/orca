@@ -7,12 +7,15 @@ import { isStructuredAgentSessionMainAgentWorking } from '../../../src/shared/st
 import { isFinalAgentSessionReadRefusal } from '../../../src/shared/structured-agent-session-read-refusal'
 import {
   isStructuredAgentSessionThinking,
-  runningStructuredAgentSessionTurnId
+  runningStructuredAgentSessionTurnId,
+  structuredAgentSessionHostSaysWorking
 } from '../../../src/shared/structured-agent-session-live-turn'
 import { selectStructuredAgentTurnActivity } from '../../../src/shared/native-chat-turn-activity'
 import {
-  pendingStructuredApproval,
-  pendingStructuredQuestion,
+  actionableStructuredApproval,
+  actionableStructuredQuestion
+} from './mobile-structured-actionable-prompt'
+import {
   projectStructuredPermission,
   projectStructuredQuestion
 } from './mobile-structured-agent-prompts'
@@ -25,6 +28,7 @@ import { useMobileStructuredSessionHostStopping } from './use-mobile-structured-
 import { useMobileStructuredPromptResponses } from './use-mobile-structured-prompt-responses'
 import type { StructuredAgentSessionHostSupport } from './mobile-structured-agent-session-host-support'
 import { useMobileStructuredAgentOptions } from './use-mobile-structured-agent-options'
+import { useMobileStructuredSessionOptionStamp } from './use-mobile-structured-session-option-stamp'
 import { useMobileStructuredAgentTurnTiming } from './use-mobile-structured-agent-turn-timing'
 import {
   pendingStructuredPromptIdentity,
@@ -39,6 +43,7 @@ import {
 import type { MobileNativeChatSendErrorReporter } from './use-mobile-native-chat-send-error'
 import { useMobileStructuredQueuedMessageControls } from './use-mobile-structured-queued-message-controls'
 import { useMobileStructuredBackgroundTasks } from './use-mobile-structured-background-tasks'
+import { useMobileStructuredSends } from './use-mobile-structured-sends'
 
 export function useMobileStructuredAgentSession(args: {
   client: RpcClient | null
@@ -75,6 +80,7 @@ export function useMobileStructuredAgentSession(args: {
   const commandsWait = queueCapable && hostSupport?.queuedCommands === true
   const promptCancelSupported = hostSupport?.promptCancel ?? null
   const hostAnswersRepeatedStops = hostSupport?.quietRepeatedStop ?? null
+  const hostStopsConversation = hostSupport?.conversationStop ?? null
   const sessionKey = encodeNativeChatTranscriptIdentity([sourceIdentity, agent, sessionId])
   const commandPendingRef = useRef(false)
   // Against a host that predates the quiet repeated Stop, a Stop of a turn still being stopped joins it.
@@ -88,16 +94,24 @@ export function useMobileStructuredAgentSession(args: {
     sessionId,
     enabled,
     stateRef,
-    onSendError
+    onSendError,
+    ...(agent ? { agentName: tuiAgentDisplayName(agent) ?? agent } : {})
   })
 
+  const optionStamp = useMobileStructuredSessionOptionStamp({
+    client,
+    sessionId,
+    enabled: enabled && connected && hostSupport?.statusFeed === true
+  })
   const options = useMobileStructuredAgentOptions({
     agent,
     client,
     sessionId,
     enabled,
     fence: state.fence,
-    mutate
+    mutate,
+    optionStamp,
+    takesSendOptions: hostSupport?.sendOptions === true
   })
   const { conversationCommands, invokeStructuredOption, optionSnapshot, setStructuredOption } =
     options
@@ -112,18 +126,6 @@ export function useMobileStructuredAgentSession(args: {
     [conversationCommands, invokeStructuredOption, optionSnapshot, setStructuredOption]
   )
 
-  const sendWithOutcome = useMobileStructuredSendWithOutcome({
-    agent,
-    client,
-    sessionId,
-    enabled,
-    queueCapable,
-    commandsWait,
-    stateRef,
-    commandPending: commandPendingRef,
-    controller: sendController,
-    onSendError
-  })
   const { groupedDraft, respondPermission, respondQuestion } = useMobileStructuredPromptResponses({
     stateRef,
     sessionKey,
@@ -141,13 +143,17 @@ export function useMobileStructuredAgentSession(args: {
       }),
     [agent, state.items]
   )
+  const sends = useMobileStructuredSends({
+    sessionKey,
+    submissions: state.submissions,
+    queuedMessages,
+    onSendError
+  })
   const messages = useMemo(
-    // Off: the phone hands a rejected message back to its composer, so a row would show it twice.
+    // A message the host recorded and then rejected stays where it was sent, as not sent.
     () =>
-      projectStructuredAgentSessionMessages(transcriptItems, [], state.submissions, {
-        rejectedInPlace: false
-      }),
-    [transcriptItems, state.submissions]
+      projectStructuredAgentSessionMessages(transcriptItems, sends.optimistic, state.submissions),
+    [transcriptItems, sends.optimistic, state.submissions]
   )
   const turnId = runningStructuredAgentSessionTurnId(state)
   const turnTiming = useMobileStructuredAgentTurnTiming(
@@ -157,7 +163,10 @@ export function useMobileStructuredAgentSession(args: {
   const activityText =
     selectStructuredAgentTurnActivity(state.items, turnId, state.activity)?.text ?? null
   const thinking = isStructuredAgentSessionThinking(state)
-  const isWorking = isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence)
+  // The host's answer counts only the agent running now; an older host gives none.
+  const isWorking = structuredAgentSessionHostSaysWorking(state.working, () =>
+    isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence)
+  )
   const backgroundTasks = useMobileStructuredBackgroundTasks({
     sessionKey,
     state,
@@ -179,6 +188,22 @@ export function useMobileStructuredAgentSession(args: {
       stopPressed: stopPress.pressed
     }) === 'stopping'
   const stopRequestInFlight = isWorking && stopPress.pressed
+  const sendWithOutcome = useMobileStructuredSendWithOutcome({
+    agent,
+    client,
+    sessionId,
+    enabled,
+    queueCapable,
+    commandsWait,
+    stateRef,
+    stopping,
+    accept: sends.accept,
+    hold: sends.hold,
+    commandPending: commandPendingRef,
+    controller: sendController,
+    onSendError,
+    carriesOptions: hostSupport?.sendOptions === true
+  })
   const turnIndicator = useMemo(
     () => ({
       thinking,
@@ -196,14 +221,11 @@ export function useMobileStructuredAgentSession(args: {
     [thinking, activityText, stopping, stopRequestInFlight, queueCapable, state.items]
   )
   const status = state.status === 'idle' ? 'idle' : state.status
-  const approvalPrompt = useMemo(
-    () => state.items.find(pendingStructuredApproval) ?? null,
-    [state.items]
-  )
-  const questionPrompt = useMemo(
-    () => state.items.find(pendingStructuredQuestion) ?? null,
-    [state.items]
-  )
+  // The host's answer where it gives one: a prompt an agent that ended raised takes no answer.
+  const [approvalPrompt, questionPrompt] = useMemo(() => {
+    const prompts = { items: state.items, actionablePromptIds: state.actionablePromptIds }
+    return [actionableStructuredApproval(prompts), actionableStructuredQuestion(prompts)] as const
+  }, [state.items, state.actionablePromptIds])
   // What a refused command's line on the phone stands on.
   const commandRefusalCauses = useMemo(
     () => ({
@@ -219,8 +241,7 @@ export function useMobileStructuredAgentSession(args: {
     queuedMessages,
     queuePause,
     submissions: state.submissions,
-    pendingPrompt: approvalPrompt !== null || questionPrompt !== null,
-    agentWorking: isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence),
+    agentWorking: isWorking,
     mutate,
     appendComposerText,
     onSendError,
@@ -234,6 +255,7 @@ export function useMobileStructuredAgentSession(args: {
         client,
         enabled,
         hostAnswersRepeatedStops,
+        hostStopsConversation,
         inFlight: inFlightStopsRef.current,
         onSendError,
         prompt,
@@ -245,6 +267,7 @@ export function useMobileStructuredAgentSession(args: {
       client,
       enabled,
       hostAnswersRepeatedStops,
+      hostStopsConversation,
       onSendError,
       promptCancelSupported,
       sessionId,
@@ -260,6 +283,7 @@ export function useMobileStructuredAgentSession(args: {
   return {
     ...options,
     visualSource,
+    imagePreviewsByMessageId: sends.imagePreviewsByMessageId,
     session: {
       messages,
       status,
@@ -279,7 +303,7 @@ export function useMobileStructuredAgentSession(args: {
       void stopPress.track(() => requestCancel())
     },
     cancelPrompt: (prompt?: { itemId: string; expectedRevision: number }) =>
-      requestCancel(prompt ?? pendingStructuredPromptIdentity(stateRef.current.items)),
+      requestCancel(prompt ?? pendingStructuredPromptIdentity(stateRef.current)),
     permission: projectStructuredPermission(approvalPrompt),
     question: projectStructuredQuestion(questionPrompt, groupedDraft),
     respondPermission,

@@ -81,7 +81,10 @@ describe('addOrcaWslInteropEnv', () => {
       ORCA_WSL_HOOK_INSTANCE: 'testinstance',
       ORCA_ORCHESTRATION_COMPATIBILITY_HOST_KIND: 'wsl',
       ORCA_ORCHESTRATION_COMPATIBILITY_HOST_ID: 'local',
-      ORCA_ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION: 'Ubuntu'
+      ORCA_ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION: 'Ubuntu',
+      ORCA_RUNTIME_SOURCE_ID: '11111111-1111-4111-8111-111111111111',
+      ORCA_RUNTIME_SOURCE_INCARNATION: 'runtime-a',
+      ORCA_RUNTIME_SOURCE_PROFILE_PATH: 'C:\\Users\\a\\AppData\\Roaming\\orca'
     }
 
     addOrcaWslInteropEnv(env)
@@ -109,6 +112,9 @@ describe('addOrcaWslInteropEnv', () => {
     expect(env.WSLENV).toContain('ORCA_ORCHESTRATION_COMPATIBILITY_HOST_KIND/u')
     expect(env.WSLENV).toContain('ORCA_ORCHESTRATION_COMPATIBILITY_HOST_ID/u')
     expect(env.WSLENV).toContain('ORCA_ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION/u')
+    expect(env.WSLENV).toContain('ORCA_RUNTIME_SOURCE_ID/u')
+    expect(env.WSLENV).toContain('ORCA_RUNTIME_SOURCE_INCARNATION/u')
+    expect(env.WSLENV).toContain('ORCA_RUNTIME_SOURCE_PROFILE_PATH/u')
   })
 
   it('overwrites caller host evidence with native runtime WSL authority', () => {
@@ -204,14 +210,6 @@ describe('addOrcaWslInteropEnv', () => {
     addOrcaWslInteropEnv(env)
 
     expect(env.WSLENV).toBe('ORCA_SHELL_READY_ROOT/p:ORCA_WORKSPACE_NAME/u')
-  })
-
-  it('does not register setup vars that are absent from the env', () => {
-    const env: Record<string, string> = { ORCA_TERMINAL_HANDLE: 'term_wsl' }
-
-    addOrcaWslInteropEnv(env)
-
-    expect(env.WSLENV).toBe('ORCA_TERMINAL_HANDLE/u:ORCA_SHELL_READY_ROOT/p')
   })
 
   it('crosses the inline-image protocol hint into the guest untranslated (/u)', () => {

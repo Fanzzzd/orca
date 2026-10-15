@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   TerminalStreamOpcode,
   decodeTerminalStreamFrame,
@@ -10,6 +10,19 @@ import {
   type MultiplexSubscriptionCallbacks
 } from './remote-runtime-pty-transport-test-harness'
 import { REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS } from './remote-runtime-pty-recovery-state'
+
+// These transport fixtures never read abandoned-launch ownership from the app store.
+const appStore = vi.hoisted(() => ({
+  getState: vi.fn(() => {
+    throw new Error('These transport fixtures must not read app-store ownership')
+  })
+}))
+
+vi.mock('@/store', () => ({ useAppStore: { getState: appStore.getState } }))
+
+afterEach(() => {
+  expect(appStore.getState).not.toHaveBeenCalled()
+})
 
 let subscriptionCallbacks: MultiplexSubscriptionCallbacks = null
 let resolvedPaneHandle = 'terminal-1'
@@ -528,9 +541,12 @@ describe('createRemoteRuntimePtyTransport', () => {
       expect(disconnectedState?.phase).toBe('disconnected')
       expect(transport.getPtyId()).toBe('remote:env-1@@terminal-1')
       expect(transport.isConnected()).toBe(false)
-      expect(transport.sendInput('must not reach a stale socket', 'driving')).toBe(false)
+      const inputFramesAtCutoff = inputFrameTexts().length
+      // Held for this same terminal within the grace, never written to the stale socket.
+      expect(transport.sendInput('typed while disconnected', 'driving')).toBe(true)
+      expect(inputFrameTexts()).toHaveLength(inputFramesAtCutoff)
       expect(onError).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(5 * 60_000)
+      await vi.advanceTimersByTimeAsync(4 * 60_000)
       expect(runtimeSubscribe).toHaveBeenCalledTimes(callsAtCutoff)
 
       partitioned = false
@@ -541,6 +557,8 @@ describe('createRemoteRuntimePtyTransport', () => {
       const manualStream = latestSubscribePayload()
       expect(manualStream.terminal).toBe('terminal-1')
       emitSnapshot(manualStream.streamId, 'after manual reconnect')
+      await vi.advanceTimersByTimeAsync(50)
+      expect(inputFrameTexts().slice(inputFramesAtCutoff)).toEqual(['typed while disconnected'])
 
       expect(transport.isConnected()).toBe(true)
       expect(transport.getRecoveryState?.().phase).toBe('connected')

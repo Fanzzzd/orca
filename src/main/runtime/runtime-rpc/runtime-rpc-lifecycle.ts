@@ -1,3 +1,4 @@
+import { ALLOW_INSECURE_WEB_PAIRING_ENV } from '../../../shared/web-origin-security'
 import { AGENT_LAUNCH_RUNTIME_CAPABILITY } from '../../../shared/agent-launch-runtime-capability'
 import { IrohTransport } from '../rpc/iroh-transport'
 import type { RuntimeTransportMetadata } from '../../../shared/runtime-bootstrap'
@@ -5,7 +6,12 @@ import { watchRuntimeMetadataOwnership } from '../runtime-metadata-ownership-wat
 import type { RpcTransport } from '../rpc/transport'
 import { UnixSocketTransport } from '../rpc/unix-socket-transport'
 import { WebSocketTransport } from '../rpc/ws-transport'
-import { readWsFallbackPort, writeWsFallbackPort } from '../rpc/ws-fallback-port-store'
+import {
+  clearWsFallbackPort,
+  readWsFallbackPort,
+  wsFallbackPortLadder,
+  writeWsFallbackPort
+} from '../rpc/ws-fallback-port-store'
 import type { DeviceRegistry } from '../device-registry'
 import type { E2EEKeypair } from '../e2ee-keypair'
 import { UnpairedDeviceAuthThrottle } from '../rpc/unpaired-device-auth-throttle'
@@ -20,6 +26,8 @@ import {
   createRuntimeTransportMetadata,
   sweepOrphanedRuntimeSockets
 } from './runtime-rpc-socket-metadata'
+import { errorMessage } from '../../../shared/error-message'
+import { loadHostDescriptor, publishHostDescriptor } from '../host-descriptor'
 
 export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
   private shouldStartIrohTransport(): boolean {
@@ -59,7 +67,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
           reply(JSON.stringify(response))
         })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = errorMessage(error)
           // Why: best-effort id recovery so the client can correlate the error frame to its pending request.
           let id = 'unknown'
           try {
@@ -92,6 +100,10 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
         this.deviceRegistry = pairingIdentity.deviceRegistry
         this.e2eeKeypair = pairingIdentity.e2eeKeypair
         this.pairingInitializationFailure = null
+        this.hostDescriptor = await loadHostDescriptor(this.userDataPath)
+        publishHostDescriptor(this.runtime.getRuntimeId(), this.hostDescriptor)
+        let webSocketStarted = false
+        let irohStarted = false
         try {
           const host = this.resolveInitialWebSocketBindHost()
           const { transport, endpoint } = await this.startWebSocketTransport({
@@ -103,9 +115,12 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
           })
           if (this.wsPort !== 0 && transport.resolvedPort !== this.wsPort) {
             writeWsFallbackPort(this.userDataPath, transport.resolvedPort)
+          } else if (transport.persistedFallbackFailed) {
+            clearWsFallbackPort(this.userDataPath)
           }
           activeTransports.push(transport)
           transportsMeta.push({ kind: 'websocket', endpoint })
+          webSocketStarted = true
         } catch (error) {
           // Why: WebSocket transport is supplementary; on failure (e.g. port in use)
           // continue with Unix socket (and, below, iroh — it needs no ws listener).
@@ -125,12 +140,18 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
             this.irohTransport = irohTransport
             // Why: include in activeTransports so stop() closes the endpoint; not advertised as CLI bootstrap.
             activeTransports.push(irohTransport)
+            irohStarted = true
           } catch (irohError) {
             console.error('[runtime] Failed to start iroh transport:', irohError)
             this.irohTransport = null
             // Why: a throw after start() leaves a bound endpoint + accept loop behind.
             await irohTransport?.stop().catch(() => {})
           }
+        }
+        // Why: the wiring only serves mobile transports; with neither WebSocket nor iroh up, release it.
+        if (!webSocketStarted && !irohStarted) {
+          this.mobileSocketWiring?.dispose()
+          this.mobileSocketWiring = null
         }
       }
     }
@@ -205,10 +226,14 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
       port: options.port,
       staticRoot: this.webClientRoot,
       ...(options.fallbackPort !== undefined ? { fallbackPort: options.fallbackPort } : {}),
-      ...(options.preferPinnedPort ? { preferPinnedPort: true } : {})
+      ...(options.preferPinnedPort ? { preferPinnedPort: true } : {}),
+      fallbackLadder: wsFallbackPortLadder(this.wsPort)
     })
     const mobileSocketWiring = this.ensureMobileSocketWiring(deviceRegistry, e2eeKeypair)
-    this.detachWebSocketWiring = mobileSocketWiring.attachTransport(wsTransport)
+    this.detachWebSocketWiring = mobileSocketWiring.attachTransport(wsTransport, (ws) => ({
+      transport: 'direct',
+      ...wsTransport.webPageOf(ws)
+    }))
 
     try {
       await wsTransport.start()
@@ -252,7 +277,7 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
             sendBinary,
             undefined,
             socket.ws,
-            socket.device.deviceToken,
+            socket.device.deviceToken ?? null,
             socket
           )
         )
@@ -278,14 +303,16 @@ export class RuntimeRpcLifecycle extends RuntimeRpcWebSocketDispatch {
           return
         }
         this.abortWebSocketDispatches(socket.ws)
+        this.mobileDesktopRelay?.closePhoneConnection(socket.connectionId)
         // Why: subscriptions and binary streams are socket-scoped, but disconnect state is device-scoped across transports.
         this.runtime.cleanupSubscriptionsForConnection(socket.connectionId)
         this.runtime.cancelMobileDictationForConnection(socket.connectionId)
         this.binaryMessageRouter.deleteConnection(socket.connectionId)
         if (!hasOtherConnections) {
-          this.runtime.onClientDisconnected(socket.device.deviceToken)
+          this.runtime.onClientDisconnected(socket.device.clientId)
         }
       },
+      allowInsecureWebPairing: () => process.env[ALLOW_INSECURE_WEB_PAIRING_ENV] === '1',
       // Why: relay attempts are authorized upstream; only direct failures should prompt local re-pairing.
       onUnpairedDeviceAuthFailure: (metadata) => {
         if (metadata.transport === 'direct') {

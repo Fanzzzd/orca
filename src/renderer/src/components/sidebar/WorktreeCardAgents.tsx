@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
+import { activateTerminalTabOnOwner } from '@/lib/terminal-tab-owner-activation'
 import DashboardAgentRow from '@/components/dashboard/DashboardAgentRow'
 import { useNow } from '@/hooks/use-now'
 import { deriveRunningAgentSendTargets } from '@/lib/running-agent-targets'
@@ -178,10 +179,12 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
           flashFocusedPane: true,
           scrollToBottomIfOutputSinceLastView: true
         })
+        activateTerminalTabOnOwner(worktreeId, tabId, parsed.leafId)
       } else if (!activateStructuredAgentSessionTab({ worktreeId, tabId })) {
         const liveEntry = useAppStore.getState().agentStatusByPaneKey[paneKey]
         if (liveEntry?.worktreeId === worktreeId) {
           // Why: orchestration worker status can be worktree-attributed before the renderer knows its tab; keep the live row instead of dismissing as stale.
+          activateTerminalTabOnOwner(worktreeId, tabId, parsed.leafId)
           return
         }
         dismissStaleAgentRowByKey(paneKey)
@@ -264,7 +267,7 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
             agent.rowSource === 'retained' ? handleActivateRetainedAgent : handleActivateAgentTab
           }
           now={now}
-          // Why: bold the row until the user visits its tab (useAutoAckViewedAgent auto-acks on focus, muting it).
+          // Why: bold the row until the user visits its tab (useReadOnScreenAttention auto-acks on focus, muting it).
           isUnvisited={unvisitedByPaneKey[agent.paneKey] ?? false}
           // Why: inline rows are tight; 'md' reads as a second glyph users confuse with the adjacent identity icon, so use 'sm'.
           stateDotSize="sm"
