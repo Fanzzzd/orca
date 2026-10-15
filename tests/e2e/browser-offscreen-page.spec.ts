@@ -609,6 +609,22 @@ test.describe('offscreen browser pages', () => {
     await expect.poll(frameState).toBe('inner:hi')
   })
 
+  test('a tab switched to another profile loads the page again', async ({ orcaPage }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, server.url)
+    await expect.poll(() => evalInPage(orcaPage, pageId, 'document.title')).toBe('Offscreen probe')
+    const created = await rpc(orcaPage, 'browser.profileCreate', {
+      label: 'Second',
+      scope: 'isolated'
+    })
+    const profileId = String(Reflect.get(Object(Reflect.get(Object(created), 'profile')), 'id'))
+    await rpc(orcaPage, 'browser.tabSetProfile', { page: pageId, profileId })
+    await expect
+      .poll(() => evalInPage(orcaPage, pageId, 'document.title').catch(() => null), {
+        timeout: 20_000
+      })
+      .toBe('Offscreen probe')
+  })
+
   test('datalist suggestions show over the page and take keys', async ({ orcaPage }) => {
     const { pageId } = await openOffscreenTab(orcaPage, server.url)
     const popup = pageElement(orcaPage, pageId).locator('.datalist')
