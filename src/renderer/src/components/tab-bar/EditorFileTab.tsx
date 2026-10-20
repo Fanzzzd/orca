@@ -32,6 +32,7 @@ import { TAB_LABEL_WIDTH_CLASSES } from './tab-width-rules'
 import { useTabStripSlotProps } from './use-tab-strip-slot-props'
 import { EditorFileTabCloseButton } from './EditorFileTabCloseButton'
 import { useTabStripPointerActivation } from './tab-strip-pointer-activation'
+import type { TabStripSelection } from './tab-strip-selection'
 import { editorTabDocumentFolderAccess } from '@/lib/local-file-access'
 
 export default function EditorFileTab({
@@ -53,7 +54,8 @@ export default function EditorFileTab({
   onTogglePin,
   dragData,
   dropIndicator,
-  includeTopTabBorder = true
+  includeTopTabBorder = true,
+  selection
 }: {
   file: OpenFile & { tabId?: string }
   isActive: boolean
@@ -74,6 +76,7 @@ export default function EditorFileTab({
   dragData: TabDragItemData
   dropIndicator?: DropIndicator
   includeTopTabBorder?: boolean
+  selection?: TabStripSelection
 }): React.JSX.Element {
   const worktree = useWorktreeById(file.worktreeId)
   const repo = useRepoById(worktree?.repoId ?? null)
@@ -235,6 +238,7 @@ export default function EditorFileTab({
   // another pane / split) does not switch the active tab mid-gesture.
   const { onPointerDown: onTabPointerDown } = useTabStripPointerActivation({
     onActivate,
+    onSelect: selection?.onSelect,
     disabled: isRenaming
   })
   const slotProps = useTabStripSlotProps(file.tabId ?? file.id, isActive)
@@ -244,10 +248,11 @@ export default function EditorFileTab({
       ref={setNodeRef}
       data-tab-id={file.tabId ?? file.id}
       data-active={isActive ? 'true' : 'false'}
+      data-selected={selection?.isSelected ? 'true' : undefined}
       data-pinned={isPinned ? 'true' : 'false'}
       {...attributes}
       {...dragListeners}
-      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive)}`}
+      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive, selection?.isSelected)}`}
       onPointerDown={(e) => {
         onTabPointerDown(
           e,
@@ -431,6 +436,7 @@ export default function EditorFileTab({
         onTogglePin={onTogglePin}
         onClose={onClose}
         onCloseOthers={onCloseOthers}
+        selection={selection}
         onCloseAll={onCloseAll}
         onCloseToRight={onCloseToRight}
         onCloseToLeft={onCloseToLeft}

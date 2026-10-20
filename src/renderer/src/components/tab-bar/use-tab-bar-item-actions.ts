@@ -4,6 +4,7 @@ import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switc
 import type { TabBarItem } from './tab-bar-item-model'
 import type { TabBarProps } from './tab-bar-props'
 import { withLayoutOwnerTabProps } from './tab-bar-layout-owner-props'
+import type { TabStripSelectMode } from './tab-strip-selection'
 
 type TabBarItemActionSource = {
   props: Pick<
@@ -29,6 +30,11 @@ type TabBarItemActionSource = {
   >
   togglePinned: (item: TabBarItem) => void
   toggleTabViewMode: (tabId: string) => void
+  selection: {
+    select: (visibleId: string, mode: TabStripSelectMode) => void
+    clear: () => void
+    closeSelected: () => void
+  }
 }
 
 export type TabBarItemActions = {
@@ -51,6 +57,8 @@ export type TabBarItemActions = {
   makePreviewFilePermanent: (fileId: string, tabId?: string) => void
   togglePinned: (item: TabBarItem) => void
   toggleViewMode: (tabId: string) => void
+  select: (visibleId: string, mode: TabStripSelectMode) => void
+  closeSelected: () => void
 }
 
 /** Actions that read the strip's handlers when called, so their own identity never has to change. */
@@ -66,6 +74,7 @@ export function useTabBarItemActions(source: TabBarItemActionSource): TabBarItem
     // group's activeTabId never moves for.
     function activateRealTab(activate: () => void): void {
       clearClientHostedBrowserRowSelection()
+      latest.current.selection.clear()
       activate()
     }
     const actions: TabBarItemActions = {
@@ -92,7 +101,9 @@ export function useTabBarItemActions(source: TabBarItemActionSource): TabBarItem
       makePreviewFilePermanent: (fileId, tabId) =>
         latest.current.props.onMakePreviewFilePermanent?.(fileId, tabId),
       togglePinned: (item) => latest.current.togglePinned(item),
-      toggleViewMode: (tabId) => latest.current.toggleTabViewMode(tabId)
+      toggleViewMode: (tabId) => latest.current.toggleTabViewMode(tabId),
+      select: (visibleId, mode) => latest.current.selection.select(visibleId, mode),
+      closeSelected: () => latest.current.selection.closeSelected()
     }
     // Switch point: pin goes to main first (rename, color and view do from their store actions).
     return ORCA_LAYOUT_OWNER_IS_MAIN

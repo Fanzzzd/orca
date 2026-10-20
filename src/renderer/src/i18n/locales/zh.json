@@ -18805,7 +18805,8 @@
           "editors": "关闭所有编辑器标签页？",
           "description": "选中的标签页将关闭。固定的标签页将保持打开。",
           "confirm": "关闭标签页"
-        }
+        },
+        "closeSelectedTabs": "关闭所选标签页"
       }
     },
     "workspace": {

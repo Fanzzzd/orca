@@ -201,7 +201,8 @@ function Strip({
       onTogglePaneExpand: NOOP
     },
     togglePinned: NOOP,
-    toggleTabViewMode: NOOP
+    toggleTabViewMode: NOOP,
+    selection: { select: NOOP, clear: NOOP, closeSelected: NOOP }
   })
   return (
     <>
@@ -212,7 +213,9 @@ function Strip({
         actions,
         dropIndicatorByVisibleId: new Map(),
         includeTopTabBorder: true,
-        activeClientHostedBrowserRowId
+        activeClientHostedBrowserRowId,
+        selectedIds: new Set(),
+        canSelect: false
       })}
     </>
   )

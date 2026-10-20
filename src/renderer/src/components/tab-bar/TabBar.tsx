@@ -10,6 +10,7 @@ import { renderTabBarSurface } from './tab-bar-surface'
 import { useTabBarItemActions } from './use-tab-bar-item-actions'
 import { useActiveClientHostedBrowserRowId } from '@/lib/pane-manager/client-hosted-browser-row-state'
 import { useEditorGroupFileDropOwner } from '../editor/use-editor-group-file-drop-owner'
+import { useTabStripSelection } from './tab-strip-selection'
 
 function TabBarInner(props: TabBarProps): React.JSX.Element {
   const {
@@ -67,10 +68,23 @@ function TabBarInner(props: TabBarProps): React.JSX.Element {
     }
     runtime.pinTab(item.unifiedTabId)
   }
+  const selection = useTabStripSelection({
+    orderedIds: itemProjection.sortableIds,
+    activeId: itemProjection.activeVisibleTabId
+  })
+  const closeSelected = (): void => {
+    const unifiedTabIds = itemProjection.orderedItems
+      // Pinned tabs stay open, as with every other bulk close in the strip.
+      .filter((item) => selection.selectedIds.has(item.id) && !item.isPinned)
+      .map((item) => item.unifiedTabId)
+    selection.clear()
+    props.onCloseTabs?.(unifiedTabIds)
+  }
   const itemActions = useTabBarItemActions({
     props,
     togglePinned,
-    toggleTabViewMode: runtime.toggleTabViewMode
+    toggleTabViewMode: runtime.toggleTabViewMode,
+    selection: { select: selection.select, clear: selection.clear, closeSelected }
   })
   // Read here, not just where the rows render: the real tabs have to know when a row took over.
   const activeClientHostedBrowserRowId = useActiveClientHostedBrowserRowId({
@@ -110,6 +124,7 @@ function TabBarInner(props: TabBarProps): React.JSX.Element {
     tabStripDragScroll,
     activeClientHostedBrowserRowId,
     itemActions,
+    selectedTabIds: selection.selectedIds,
     surfaceRef
   })
 }

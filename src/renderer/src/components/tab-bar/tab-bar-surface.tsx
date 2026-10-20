@@ -38,6 +38,7 @@ export function renderTabBarSurface({
   tabStripDragScroll,
   activeClientHostedBrowserRowId,
   itemActions,
+  selectedTabIds,
   surfaceRef
 }: {
   props: TabBarProps
@@ -48,6 +49,7 @@ export function renderTabBarSurface({
   tabStripDragScroll: ReturnType<typeof useTabStripDragScrollHandlers>
   activeClientHostedBrowserRowId: string | null
   itemActions: TabBarItemActions
+  selectedTabIds: ReadonlySet<string>
   surfaceRef: (node: HTMLDivElement | null) => void
 }): React.JSX.Element {
   const {
@@ -106,7 +108,9 @@ export function renderTabBarSurface({
     actions: itemActions,
     dropIndicatorByVisibleId,
     includeTopTabBorder,
-    activeClientHostedBrowserRowId
+    activeClientHostedBrowserRowId,
+    selectedIds: selectedTabIds,
+    canSelect: props.onCloseTabs !== undefined
   })
 
   return (

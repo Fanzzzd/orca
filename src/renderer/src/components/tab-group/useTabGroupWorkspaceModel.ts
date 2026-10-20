@@ -97,6 +97,7 @@ export function useTabGroupWorkspaceModel({
       closeAllEditorTabsInGroup,
       closeGroup,
       closeItem,
+      closeMany,
       closeOthers,
       closeToRight,
       closeToLeft,

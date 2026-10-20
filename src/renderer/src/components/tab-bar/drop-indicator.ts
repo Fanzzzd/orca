@@ -27,8 +27,9 @@ export function getDropIndicatorClasses(dropIndicator: DropIndicator): string {
 export const ACTIVE_TAB_INDICATOR_CLASSES =
   'pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-foreground z-20'
 
-export function getTabRootStateClasses(isActive: boolean): string {
-  return isActive
+// A multi-selected tab shares the active wash but not the bottom bar, so the active tab stays distinct.
+export function getTabRootStateClasses(isActive: boolean, isSelected = false): string {
+  return isActive || isSelected
     ? 'bg-[color-mix(in_srgb,var(--foreground)_6%,var(--card))] text-foreground'
     : 'bg-card text-muted-foreground hover:text-foreground'
 }

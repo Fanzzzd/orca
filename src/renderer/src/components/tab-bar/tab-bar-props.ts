@@ -51,6 +51,8 @@ export type TabBarProps = {
   onCloseBrowserTab?: (tabId: string) => void
   onDuplicateBrowserTab?: (tabId: string, unifiedTabId: string) => void
   onCloseAllFiles?: () => void
+  /** Closes the multi-selected tabs by unified tab id; multi-select is off when unset. */
+  onCloseTabs?: (unifiedTabIds: string[]) => void
   onMakePreviewFilePermanent?: (fileId: string, tabId?: string) => void
   onPinFile?: (fileId: string, tabId?: string) => void
   tabBarOrder?: string[]

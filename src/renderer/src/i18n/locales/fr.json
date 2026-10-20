@@ -18909,7 +18909,8 @@
           "editors": "Fermer tous les onglets de l’éditeur ?",
           "description": "Les onglets sélectionnés seront fermés. Les onglets épinglés resteront ouverts.",
           "confirm": "Fermer les onglets"
-        }
+        },
+        "closeSelectedTabs": "Fermer les onglets sélectionnés"
       }
     },
     "workspace": {

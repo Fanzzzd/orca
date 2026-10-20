@@ -18840,7 +18840,8 @@
           "editors": "모든 편집기 탭을 닫을까요?",
           "description": "선택한 탭을 닫습니다. 고정된 탭은 열린 상태로 유지됩니다.",
           "confirm": "탭 닫기"
-        }
+        },
+        "closeSelectedTabs": "선택한 탭 닫기"
       }
     },
     "workspace": {

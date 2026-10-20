@@ -19094,7 +19094,8 @@
           "editors": "Close all editor tabs?",
           "description": "The selected tabs will be closed. Pinned tabs will stay open.",
           "confirm": "Close tabs"
-        }
+        },
+        "closeSelectedTabs": "Close Selected Tabs"
       }
     },
     "workspace": {

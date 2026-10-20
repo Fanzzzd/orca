@@ -37,6 +37,8 @@ import { TAB_LABEL_WIDTH_CLASSES } from './tab-width-rules'
 import { useTabStripSlotProps } from './use-tab-strip-slot-props'
 import { TabWorkspaceLayoutMenuSection } from './TabWorkspaceLayoutMenuSection'
 import { useTabStripPointerActivation } from './tab-strip-pointer-activation'
+import type { TabStripSelection } from './tab-strip-selection'
+import { CloseSelectedTabsMenuItem } from './CloseSelectedTabsMenuItem'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
 import { cn } from '@/lib/utils'
 import { BrowserFavicon } from '@/components/browser-favicon'
@@ -88,7 +90,8 @@ export default function BrowserTab({
   onTogglePin,
   dragData,
   dropIndicator,
-  includeTopTabBorder = true
+  includeTopTabBorder = true,
+  selection
 }: {
   tab: BrowserTabState
   isActive: boolean
@@ -107,6 +110,7 @@ export default function BrowserTab({
   dragData: TabDragItemData
   dropIndicator?: DropIndicator
   includeTopTabBorder?: boolean
+  selection?: TabStripSelection
 }): React.JSX.Element {
   // Why: no transform/transition/isDragging styling — the drag design is
   // that tabs stay visually anchored; only the blue insertion bar moves.
@@ -152,7 +156,10 @@ export default function BrowserTab({
 
   // Why: defer activation to pointer-up so dragging the tab (reorder / move into
   // another pane / split) does not switch the active tab mid-gesture.
-  const { onPointerDown: onTabPointerDown } = useTabStripPointerActivation({ onActivate })
+  const { onPointerDown: onTabPointerDown } = useTabStripPointerActivation({
+    onActivate,
+    onSelect: selection?.onSelect
+  })
   const slotProps = useTabStripSlotProps(tab.id, isActive)
 
   const tabRoot = (
@@ -160,10 +167,11 @@ export default function BrowserTab({
       ref={setNodeRef}
       data-tab-id={tab.id}
       data-active={isActive ? 'true' : 'false'}
+      data-selected={selection?.isSelected ? 'true' : undefined}
       data-pinned={isPinned ? 'true' : 'false'}
       {...attributes}
       {...listeners}
-      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive)}`}
+      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive, selection?.isSelected)}`}
       onPointerDown={(e) => {
         onTabPointerDown(
           e,
@@ -293,6 +301,7 @@ export default function BrowserTab({
             <X className="size-3.5" />
             {translate('auto.components.tab.bar.BrowserTab.1611a1324b', 'Close')}
           </DropdownMenuItem>
+          <CloseSelectedTabsMenuItem selection={selection} />
           <DropdownMenuItem onSelect={onCloseOthers} disabled={tabCount <= 1}>
             <CopyX className="size-3.5" />
             {translate('components.tab.bar.BrowserTab.closeOthers', 'Close Others')}

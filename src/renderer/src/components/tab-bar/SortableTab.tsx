@@ -34,6 +34,7 @@ import {
 import { useTerminalTabActivity } from './use-terminal-tab-activity'
 import { CLOSE_ALL_CONTEXT_MENUS_EVENT } from '@/lib/close-all-context-menus'
 import type { NativeChatTabSession } from './tab-session-history-switch'
+import type { TabStripSelection } from './tab-strip-selection'
 
 /** What the strip draws for a terminal or native chat tab; never a source of agent identity. */
 type SortableTabModel = Pick<
@@ -75,6 +76,7 @@ export type SortableTabProps = {
   canSplitTerminal?: boolean
   /** Set only for a native chat tab. */
   nativeChat?: NativeChatTabSession
+  selection?: TabStripSelection
 }
 
 export default function SortableTab({
@@ -105,7 +107,8 @@ export default function SortableTab({
   isChatView = false,
   onToggleViewMode,
   canSplitTerminal = true,
-  nativeChat
+  nativeChat,
+  selection
 }: SortableTabProps): React.JSX.Element {
   // Why: agent-completion unread exists even with terminal-attention off; collapse both sources to one primitive so unrelated tabs don't re-render.
   const hasUnreadActivity = useAppStore((s) =>
@@ -180,6 +183,7 @@ export default function SortableTab({
   // Why: defer activation to pointer-up so a drag doesn't switch tabs or steal focus mid-gesture (tab-strip-pointer-activation).
   const { onPointerDown: onTabPointerDown } = useTabStripPointerActivation({
     onActivate: handleActivate,
+    onSelect: selection?.onSelect,
     disabled: isEditing
   })
   const slotProps = useTabStripSlotProps(tab.id, isActive)
@@ -193,11 +197,12 @@ export default function SortableTab({
       data-pinned={isPinned ? 'true' : 'false'}
       // Why: DOM attribute lets E2E assert real selection state; a store-only check would miss render breaks (PR #1186 shipped in #1193).
       data-active={isActive ? 'true' : 'false'}
+      data-selected={selection?.isSelected ? 'true' : undefined}
       data-agent-activity-status={activityStatus}
       {...attributes}
       {...dragListeners}
       // Why: subtle amber wash flags unread activity at a glance, layered over the active highlight so it still reads selected.
-      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive)}`}
+      className={`group relative flex items-center h-full px-1.5 text-xs cursor-pointer select-none outline-none focus:outline-none focus-visible:outline-none ${getTabStripBorderClasses(hasTabsToRight, { includeTopBorder: includeTopTabBorder })} ${getDropIndicatorClasses(dropIndicator ?? null)} ${getTabRootStateClasses(isActive, selection?.isSelected)}`}
       onDoubleClick={(e) => {
         if (isEditing) {
           return
@@ -409,6 +414,7 @@ export default function SortableTab({
         onActivate={onActivate}
         onClose={onClose}
         onCloseOthers={onCloseOthers}
+        selection={selection}
         onCloseToRight={onCloseToRight}
         onCloseToLeft={onCloseToLeft}
         onCloseSplitPane={onCloseSplitPane}
