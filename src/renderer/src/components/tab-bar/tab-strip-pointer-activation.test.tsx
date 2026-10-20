@@ -158,3 +158,33 @@ describe('useTabStripPointerActivation', () => {
     guest.remove()
   })
 })
+
+describe('useTabStripPointerActivation with onSelect', () => {
+  function click(onPointerDown: (event: React.PointerEvent) => void, init: PointerEventInit) {
+    act(() => onPointerDown(pointerDownEvent(5, 5)))
+    act(() => {
+      window.dispatchEvent(new PointerEvent('pointerup', { clientX: 5, clientY: 5, ...init }))
+    })
+  }
+
+  it('selects on a Shift click and activates on a plain click', () => {
+    const onActivate = vi.fn()
+    const onSelect = vi.fn()
+    const { result } = renderHook(() => useTabStripPointerActivation({ onActivate, onSelect }))
+
+    click(result.current.onPointerDown, { shiftKey: true })
+    expect(onSelect).toHaveBeenCalledWith('range')
+    expect(onActivate).not.toHaveBeenCalled()
+
+    click(result.current.onPointerDown, {})
+    expect(onActivate).toHaveBeenCalledTimes(1)
+  })
+
+  it('activates a Shift click when the strip has no multi-select', () => {
+    const onActivate = vi.fn()
+    const { result } = renderHook(() => useTabStripPointerActivation({ onActivate }))
+
+    click(result.current.onPointerDown, { shiftKey: true })
+    expect(onActivate).toHaveBeenCalledTimes(1)
+  })
+})

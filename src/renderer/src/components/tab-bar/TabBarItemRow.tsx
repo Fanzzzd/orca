@@ -11,6 +11,7 @@ import type { DropIndicator } from './drop-indicator'
 import type { TabDragItemData } from '../tab-group/useTabDragSplit'
 import { getTabDragLabel, resolveTerminalItemTab, type TabBarItem } from './tab-bar-item-model'
 import type { TabBarItemActions } from './use-tab-bar-item-actions'
+import type { TabStripSelectMode } from './tab-strip-selection'
 import { useStructuredChatTabConversationName } from '@/runtime/structured-conversation-name'
 import { agentTypeToIconAgent } from '@/lib/agent-status'
 
@@ -35,6 +36,8 @@ type TabBarItemRowProps = {
   canDuplicate: boolean
   /** This editor tab's own status, so a git status write re-renders only the tabs it changed. */
   gitStatus: GitFileStatus | null
+  isSelected: boolean
+  canSelect: boolean
 }
 
 function TabBarItemRow({
@@ -54,7 +57,9 @@ function TabBarItemRow({
   isChatView,
   viewModeTabId,
   canDuplicate,
-  gitStatus
+  gitStatus,
+  isSelected,
+  canSelect
 }: TabBarItemRowProps): React.JSX.Element {
   // Why: the tabs' labels come from `translate()`, which a skipped render would leave in the old language.
   useTranslation()
@@ -81,7 +86,14 @@ function TabBarItemRow({
     onTogglePin: () => actions.togglePinned(item),
     dragData,
     dropIndicator,
-    includeTopTabBorder
+    includeTopTabBorder,
+    selection: canSelect
+      ? {
+          isSelected,
+          onSelect: (mode: TabStripSelectMode) => actions.select(item.id, mode),
+          onCloseSelected: actions.closeSelected
+        }
+      : undefined
   }
   const sortableTabProps = {
     ...shared,

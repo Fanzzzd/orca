@@ -18719,7 +18719,8 @@
           "copied": "ID de pestaña copiado",
           "failed": "No se pudo copiar el ID de pestaña",
           "copy": "Copiar ID de pestaña"
-        }
+        },
+        "closeSelectedTabs": "Cerrar pestañas seleccionadas"
       }
     },
     "workspace": {

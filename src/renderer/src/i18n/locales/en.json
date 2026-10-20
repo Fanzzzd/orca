@@ -18946,7 +18946,8 @@
           "copied": "Tab ID copied",
           "failed": "Could not copy tab ID",
           "copy": "Copy Tab ID"
-        }
+        },
+        "closeSelectedTabs": "Close Selected Tabs"
       }
     },
     "workspace": {

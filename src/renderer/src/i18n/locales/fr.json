@@ -18820,7 +18820,8 @@
           "copied": "ID de l'onglet copié",
           "failed": "Impossible de copier l'ID de l'onglet",
           "copy": "Copier l'ID de l'onglet"
-        }
+        },
+        "closeSelectedTabs": "Fermer les onglets sélectionnés"
       }
     },
     "workspace": {

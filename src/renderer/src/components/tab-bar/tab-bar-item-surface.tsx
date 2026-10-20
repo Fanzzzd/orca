@@ -42,7 +42,9 @@ export function renderTabBarItems({
   actions,
   dropIndicatorByVisibleId,
   includeTopTabBorder,
-  activeClientHostedBrowserRowId
+  activeClientHostedBrowserRowId,
+  selectedIds,
+  canSelect
 }: {
   items: TabBarItem[]
   props: TabBarItemSurfaceProps
@@ -51,6 +53,8 @@ export function renderTabBarItems({
   dropIndicatorByVisibleId: Map<string, DropIndicator>
   includeTopTabBorder: boolean
   activeClientHostedBrowserRowId: string | null
+  selectedIds: ReadonlySet<string>
+  canSelect: boolean
 }): React.ReactNode[] {
   const {
     worktreeId,
@@ -144,6 +148,8 @@ export function renderTabBarItems({
         gitStatus={
           item.type === 'editor' ? resolveEditorTabGitStatus(item.data, statusByRelativePath) : null
         }
+        isSelected={selectedIds.has(item.id)}
+        canSelect={canSelect}
       />
     )
   })

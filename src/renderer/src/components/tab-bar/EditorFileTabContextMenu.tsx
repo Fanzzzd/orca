@@ -34,6 +34,8 @@ import { TabWorkspaceLayoutMenuSection } from './TabWorkspaceLayoutMenuSection'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
 import { CopyTabIdMenuItem } from './CopyTabIdMenuItem'
 import { isVirtualEditorFile } from '@/store/slices/editor/tabs/editor-tab-content-type'
+import { CloseSelectedTabsMenuItem } from './CloseSelectedTabsMenuItem'
+import type { TabStripSelection } from './tab-strip-selection'
 
 type EditorFileTabContextMenuProps = {
   open: boolean
@@ -60,6 +62,7 @@ type EditorFileTabContextMenuProps = {
   onCloseAll: () => void
   onCloseToRight: () => void
   onCloseToLeft: () => void
+  selection?: TabStripSelection
   onOpenMarkdownPreview: (
     file: {
       filePath: string
@@ -97,6 +100,7 @@ export function EditorFileTabContextMenu({
   onCloseAll,
   onCloseToRight,
   onCloseToLeft,
+  selection,
   onOpenMarkdownPreview
 }: EditorFileTabContextMenuProps): React.JSX.Element {
   const renameShortcut = useOptionalShortcutLabel('tab.rename')
@@ -165,6 +169,7 @@ export function EditorFileTabContextMenu({
           {translate('auto.components.tab.bar.EditorFileTabContextMenu.1ba8492c5b', 'Close')}
           {closeShortcut ? <DropdownMenuShortcut>{closeShortcut}</DropdownMenuShortcut> : null}
         </DropdownMenuItem>
+        <CloseSelectedTabsMenuItem selection={selection} />
         <DropdownMenuItem onSelect={onCloseOthers} disabled={tabCount <= 1}>
           <CopyX className="size-3.5" />
           {translate('components.tab.bar.EditorFileTabContextMenu.closeOthers', 'Close Others')}

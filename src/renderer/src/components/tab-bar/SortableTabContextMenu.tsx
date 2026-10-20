@@ -25,6 +25,8 @@ import { TabSessionSurfaceSwitchMenuItems } from './TabSessionSurfaceSwitchMenuI
 import type { NativeChatTabSession } from './tab-session-history-switch'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
 import { CopyTabIdMenuItem } from './CopyTabIdMenuItem'
+import { CloseSelectedTabsMenuItem } from './CloseSelectedTabsMenuItem'
+import type { TabStripSelection } from './tab-strip-selection'
 
 const TAB_COLORS = [
   {
@@ -121,6 +123,7 @@ type SortableTabContextMenuProps = {
   canSplitTerminal?: boolean
   /** Set only for a native chat tab. */
   nativeChat?: NativeChatTabSession
+  selection?: TabStripSelection
 }
 
 export function SortableTabContextMenu({
@@ -147,7 +150,8 @@ export function SortableTabContextMenu({
   isChatView = false,
   onToggleViewMode,
   canSplitTerminal = true,
-  nativeChat
+  nativeChat,
+  selection
 }: SortableTabContextMenuProps): React.JSX.Element {
   const keybindings = useAppStore((state) => state.keybindings)
   const splitRightShortcut = formatShortcutLabel('terminal.splitRight', keybindings)
@@ -215,6 +219,7 @@ export function SortableTabContextMenu({
           {translate('auto.components.tab.bar.SortableTabContextMenu.89359a36f7', 'Close')}
           {closeShortcut ? <DropdownMenuShortcut>{closeShortcut}</DropdownMenuShortcut> : null}
         </DropdownMenuItem>
+        <CloseSelectedTabsMenuItem selection={selection} />
         <DropdownMenuItem onSelect={() => onCloseOthers(tab.id)} disabled={tabCount <= 1}>
           <ListX className="size-3.5" />
           {translate('auto.components.tab.bar.SortableTabContextMenu.8d16f9cd30', 'Close Others')}

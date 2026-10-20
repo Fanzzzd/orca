@@ -18754,7 +18754,8 @@
           "copied": "タブ ID をコピーしました",
           "failed": "タブ ID をコピーできませんでした",
           "copy": "タブ ID をコピー"
-        }
+        },
+        "closeSelectedTabs": "選択したタブを閉じる"
       }
     },
     "workspace": {

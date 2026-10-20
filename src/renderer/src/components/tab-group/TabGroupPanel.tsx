@@ -221,6 +221,7 @@ export default function TabGroupPanel({
       }}
       onDuplicateBrowserTab={commands.duplicateBrowserTab}
       onCloseAllFiles={commands.closeAllEditorTabsInGroup}
+      onCloseTabs={commands.closeMany}
       onMakePreviewFilePermanent={(_fileId, tabId) => {
         if (!tabId) {
           return

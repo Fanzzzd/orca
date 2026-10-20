@@ -18719,7 +18719,8 @@
           "copied": "已复制标签页 ID",
           "failed": "无法复制标签页 ID",
           "copy": "复制标签页 ID"
-        }
+        },
+        "closeSelectedTabs": "关闭所选标签页"
       }
     },
     "workspace": {

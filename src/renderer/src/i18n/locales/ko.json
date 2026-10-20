@@ -18754,7 +18754,8 @@
           "copied": "탭 ID 복사됨",
           "failed": "탭 ID를 복사할 수 없습니다",
           "copy": "탭 ID 복사"
-        }
+        },
+        "closeSelectedTabs": "선택한 탭 닫기"
       }
     },
     "workspace": {

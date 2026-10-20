@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { TAB_DRAG_ACTIVATION_DISTANCE_PX } from '../tab-group/useTabDragSplit'
 import { beginTabStripPointerGesture } from './tab-strip-pointer-gesture'
+import { resolveTabStripSelectMode, type TabStripSelectMode } from './tab-strip-selection'
 
 /**
  * Defer tab activation to pointer-up and suppress it when the press turns into a
@@ -24,9 +25,12 @@ function isGuestHoldingKeyboard(): boolean {
 
 export function useTabStripPointerActivation({
   onActivate,
+  onSelect,
   disabled = false
 }: {
   onActivate: () => void
+  /** Set when the strip supports multi-select; a Shift or Cmd/Ctrl click selects instead of activating. */
+  onSelect?: (mode: TabStripSelectMode) => void
   disabled?: boolean
 }): {
   onPointerDown: (
@@ -36,6 +40,8 @@ export function useTabStripPointerActivation({
 } {
   const onActivateRef = useRef(onActivate)
   onActivateRef.current = onActivate
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
   const cleanupRef = useRef<(() => void) | null>(null)
 
   // Why: a press still holding when the tab unmounts (tab closed mid-drag, group
@@ -76,9 +82,15 @@ export function useTabStripPointerActivation({
         cleanup()
         // Why: packaged Chromium can deliver a stale first pointermove after
         // focus; the final release position is the click/drag authority.
-        if (!wasDrag) {
-          onActivateRef.current()
+        if (wasDrag) {
+          return
         }
+        const selectMode = onSelectRef.current ? resolveTabStripSelectMode(upEvent) : null
+        if (selectMode) {
+          onSelectRef.current?.(selectMode)
+          return
+        }
+        onActivateRef.current()
       }
       const onPointerCancel = (): void => {
         cleanup()
