@@ -6,6 +6,7 @@ import {
 } from './browser-guest-grab-shortcuts'
 import {
   forwardGuestViewportWheel,
+  resolveGuestMouseWheelZoomDirection,
   setupGuestMouseWheelZoomForwarding
 } from './browser-guest-wheel-zoom'
 import {
@@ -84,6 +85,10 @@ export abstract class BrowserManagerBindings extends BrowserManagerGrab {
     guest: Electron.WebContents,
     wheel: Electron.MouseWheelInputEvent
   ): boolean {
+    // Why: a pinch (ctrl+wheel) goes to the page, never pans an emulated viewport.
+    if (resolveGuestMouseWheelZoomDirection(wheel)) {
+      return false
+    }
     return forwardGuestViewportWheel(this.viewportWheelArgs(browserTabId, guest), wheel)
   }
 

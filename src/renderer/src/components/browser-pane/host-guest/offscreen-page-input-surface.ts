@@ -12,7 +12,7 @@ export type OffscreenPageInputSink = {
   focusPage(): void
   /** Tells main whether Orca's keys belong to the page, so page chords act on it. */
   setKeyboardFocus(focused: boolean): void
-  /** Ctrl/Cmd+wheel zooms the page through Orca's page zoom, as it does over a <webview>. */
+  /** Cmd+wheel on macOS zooms the page through Orca's page zoom, as it does over a <webview>. */
   zoom(direction: 'in' | 'out'): void
   /** Re-reads the page caret; resolves to element-relative CSS px or null. */
   readCaret(): Promise<{ x: number; y: number; height: number } | null>
@@ -120,7 +120,7 @@ export function bindOffscreenPageInputSurface(
       event.preventDefault()
       const zoom = wheelZoomDirection(event)
       if (zoom) {
-        // Why throttle: a trackpad pinch arrives as a burst of ctrl+wheel events.
+        // Why throttle: a trackpad scroll arrives as a burst of wheel events.
         const now = performance.now()
         if (now - lastWheelZoomAt >= WHEEL_ZOOM_INTERVAL_MS) {
           lastWheelZoomAt = now
@@ -223,8 +223,9 @@ export function bindOffscreenPageInputSurface(
 
 const WHEEL_ZOOM_INTERVAL_MS = 100
 
+/** Ctrl+wheel (a macOS pinch) goes to the page first; main zooms only what the page leaves. */
 function wheelZoomDirection(event: WheelEvent): 'in' | 'out' | null {
-  const zoomModifier = event.ctrlKey || (navigator.userAgent.includes('Mac') && event.metaKey)
+  const zoomModifier = navigator.userAgent.includes('Mac') && event.metaKey && !event.ctrlKey
   if (!zoomModifier || event.altKey || event.shiftKey || event.deltaY === 0) {
     return null
   }

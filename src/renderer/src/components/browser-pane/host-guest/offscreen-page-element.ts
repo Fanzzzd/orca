@@ -281,6 +281,8 @@ export class OrcaOffscreenPageElement extends HTMLElement {
       },
       onTooltip: (text) => this.showTooltip(text),
       onDatalist: (datalist) => renderOffscreenPageDatalist(this.datalist, datalist),
+      onWheelZoom: (direction) =>
+        dispatchBrowserPageZoomEvent({ browserPageId: this.browserPageId, direction }),
       onSelect: (anchor) => {
         // Main needs window coordinates; only this side knows where the element sits.
         const box = this.getBoundingClientRect()

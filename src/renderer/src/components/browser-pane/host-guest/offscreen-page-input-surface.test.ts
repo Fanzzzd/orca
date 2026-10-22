@@ -201,21 +201,24 @@ describe('bindOffscreenPageInputSurface', () => {
     expect(inputs[0]).toMatchObject({ kind: 'wheel', deltaX: -0, deltaY: -120 })
   })
 
-  it('turns ctrl+wheel into one page zoom step per burst instead of a scroll', () => {
+  it('hands a pinch (ctrl+wheel) to the page and zooms Cmd+wheel itself on macOS', () => {
     const { canvas, sink, inputs } = setup()
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Macintosh')
     const now = vi.spyOn(performance, 'now')
-    const wheel = (deltaY: number, at: number) => {
+    const wheel = (deltaY: number, at: number, modifier: 'ctrlKey' | 'metaKey') => {
       now.mockReturnValue(at)
       const event = new WheelEvent('wheel', { deltaY, cancelable: true })
       // Why: happy-dom's WheelEvent drops modifier init fields.
-      Object.defineProperty(event, 'ctrlKey', { value: true })
+      Object.defineProperty(event, modifier, { value: true })
       canvas.dispatchEvent(event)
     }
-    wheel(-10, 1000)
-    wheel(-10, 1020)
-    wheel(10, 1200)
+    wheel(-3, 1000, 'ctrlKey')
+    expect(inputs[0]).toMatchObject({ kind: 'wheel', deltaY: 3, modifiers: ['control'] })
+    wheel(-10, 1000, 'metaKey')
+    wheel(-10, 1020, 'metaKey')
+    wheel(10, 1200, 'metaKey')
     expect(sink.zoom.mock.calls).toEqual([['in'], ['out']])
-    expect(inputs).toEqual([])
+    expect(inputs).toHaveLength(1)
   })
 
   it('reports keyboard focus to main while the page owns it, and clears it on unbind', () => {

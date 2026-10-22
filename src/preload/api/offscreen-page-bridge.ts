@@ -19,6 +19,8 @@ export type OffscreenPageListeners = {
   onTooltip: (text: string) => void
   /** The page's open datalist popup to draw, or null once it closes. */
   onDatalist: (datalist: OffscreenPageDatalist | null) => void
+  /** The page left a pinch (ctrl+wheel) unhandled, so Orca zooms it one step. */
+  onWheelZoom: (direction: 'in' | 'out') => void
 }
 
 export type OffscreenPageApi = {
@@ -100,6 +102,9 @@ function installFrameReceiver(): void {
       attachments.get(pageId)?.listeners.onDatalist(datalist)
     }
   )
+  ipcRenderer.on('offscreen-page:wheel-zoom', (_e, pageId: string, direction: 'in' | 'out') => {
+    attachments.get(pageId)?.listeners.onWheelZoom(direction)
+  })
   ipcRenderer.on(
     'offscreen-page:select',
     (_e, pageId: string, anchor: OffscreenPageSelectAnchor) => {

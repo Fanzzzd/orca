@@ -117,6 +117,47 @@ test.describe('offscreen browser pages', () => {
       .toBeGreaterThan(0)
   })
 
+  test('a trackpad pinch or scroll reaches the map or frame under it; an unhandled pinch zooms', async ({
+    orcaPage
+  }) => {
+    const { pageId } = await openOffscreenTab(orcaPage, `${server.url}map`, 'Offscreen map')
+    const pageZoom = () =>
+      pageElement(orcaPage, pageId).evaluate((element) =>
+        Reflect.get(element, 'getZoomLevel').call(element)
+      )
+    const cdp = await orcaPage.context().newCDPSession(orcaPage)
+    // Why synthesizePinchGesture: it takes Chromium's real touchpad pinch path into Orca's window.
+    const pinch = (point: { x: number; y: number }, scaleFactor: number) =>
+      cdp.send('Input.synthesizePinchGesture', {
+        ...point,
+        scaleFactor,
+        gestureSourceType: 'mouse'
+      })
+
+    await pinch(await pointOf(orcaPage, pageId, '#map'), 1.5)
+    await expect.poll(() => evalInPage(orcaPage, pageId, 'window.__mapWheels')).toBeGreaterThan(0)
+    // The frame's own map sits 40px in, so the frame's center is on it.
+    const frame = await rectOf(orcaPage, pageId, '#frame')
+    await pinch({ x: frame.left + frame.width / 2, y: frame.top + frame.height / 2 }, 1.5)
+    await expect
+      .poll(() => evalInPage(orcaPage, pageId, 'window.__frame.wheels'))
+      .toBeGreaterThan(0)
+    expect(await pageZoom()).toBe(0)
+    expect(await evalInPage(orcaPage, pageId, 'scrollY')).toBe(0)
+    // A plain two-finger scroll over the frame scrolls the frame, not the page around it.
+    await orcaPage.mouse.move(frame.left + 20, frame.top + 20)
+    await orcaPage.mouse.wheel(0, 200)
+    await expect
+      .poll(() => evalInPage(orcaPage, pageId, 'window.__frame.scrollY'))
+      .toBeGreaterThan(0)
+    expect(await evalInPage(orcaPage, pageId, 'scrollY')).toBe(0)
+
+    const box = await rectOf(orcaPage, pageId, '#map')
+    await pinch({ x: box.left + box.width + 100, y: box.top + box.height + 100 }, 1.5)
+    await expect.poll(pageZoom).toBeGreaterThan(0)
+    expect(await evalInPage(orcaPage, pageId, 'scrollY')).toBe(0)
+  })
+
   test('the page lays out at the pane size, so a click near the bottom lands where it is drawn', async ({
     orcaPage
   }) => {

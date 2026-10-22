@@ -94,6 +94,9 @@ export class OffscreenPageHost {
       webPreferences
     })
     const { contents } = surface
+    const send = (channel: string, payload: unknown): void =>
+      this.rendererFor(page)?.send(channel, params.browserPageId, payload)
+    const sendEvent = (event: OffscreenPageGuestEvent) => send(OFFSCREEN_PAGE_EVENT_CHANNEL, event)
     const page: HostedPage = {
       surface,
       rendererWebContentsId: params.rendererWebContentsId,
@@ -104,18 +107,16 @@ export class OffscreenPageHost {
         parentWindow: () => {
           const renderer = this.rendererFor(page)
           return renderer ? BrowserWindow.fromWebContents(renderer) : null
-        }
+        },
+        send
       }),
       openSelect: null,
       overlays: createOffscreenPageOverlays({
         surface,
-        send: (channel, payload) =>
-          this.rendererFor(page)?.send(channel, params.browserPageId, payload),
+        send,
         hostZoomFactor: () => hostZoomFactor(page.hostZoom)
       }),
-      stopForwardingEvents: forwardOffscreenPageGuestEvents(contents, (event) => {
-        this.rendererFor(page)?.send(OFFSCREEN_PAGE_EVENT_CHANNEL, params.browserPageId, event)
-      }),
+      stopForwardingEvents: forwardOffscreenPageGuestEvents(contents, sendEvent),
       forwarder: createOffscreenPageFrameForwarder(
         {
           deliver: (texture) =>
@@ -150,8 +151,7 @@ export class OffscreenPageHost {
       if (this.pages.get(params.browserPageId) === page) {
         this.pages.delete(params.browserPageId)
         disposeHostedPage(page)
-        const event: OffscreenPageGuestEvent = { type: 'destroyed', detail: {} }
-        this.rendererFor(page)?.send(OFFSCREEN_PAGE_EVENT_CHANNEL, params.browserPageId, event)
+        sendEvent({ type: 'destroyed', detail: {} })
       }
     })
     this.setViewport(params.browserPageId, params.viewport)

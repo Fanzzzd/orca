@@ -19,6 +19,11 @@ import {
   createOffscreenPageFrameRate,
   type OffscreenPageFrameRate
 } from './offscreen-page-frame-rate'
+import {
+  createOffscreenPageWheelZoom,
+  OFFSCREEN_PAGE_WHEEL_ZOOM_CHANNEL,
+  type OffscreenPageWheelZoom
+} from './offscreen-page-wheel-zoom'
 import { trackOffscreenPageZoom, type OffscreenPageZoom } from './offscreen-page-zoom'
 
 /** Everything an offscreen page does beyond painting, each wired to the page's one CDP session. */
@@ -28,6 +33,7 @@ export type OffscreenPageFeatures = {
   readonly frameRate: OffscreenPageFrameRate
   readonly drag: OffscreenPageDragBridge
   readonly zoom: OffscreenPageZoom
+  readonly wheelZoom: OffscreenPageWheelZoom
   /** Whether the user's keyboard focus is in this page; the page sees focus and blur from it. */
   setKeyboardFocus(focused: boolean): void
   dispose(): void
@@ -37,6 +43,8 @@ export function createOffscreenPageFeatures(args: {
   contents: WebContents
   webPreferences: WebPreferences
   parentWindow: () => BaseWindow | null
+  /** Sends to the renderer showing the page. */
+  send: (channel: string, payload: unknown) => void
 }): OffscreenPageFeatures {
   const { contents } = args
   let keyboardFocused = false
@@ -76,6 +84,10 @@ export function createOffscreenPageFeatures(args: {
     frameRate,
     drag,
     zoom,
+    wheelZoom: createOffscreenPageWheelZoom({
+      contents,
+      zoom: (direction) => args.send(OFFSCREEN_PAGE_WHEEL_ZOOM_CHANNEL, direction)
+    }),
     setKeyboardFocus(focused) {
       if (focused === keyboardFocused) {
         return

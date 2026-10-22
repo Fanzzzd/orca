@@ -7,7 +7,12 @@ export const OFFSCREEN_PAGE_GUEST_CHANNELS = {
   tooltip: 'offscreen-page:tooltip',
   /** Main asks for the open datalist's rows; the focused frame answers on datalistItems. */
   datalistQuery: 'offscreen-page:datalist-query',
-  datalistItems: 'offscreen-page:datalist-items'
+  datalistItems: 'offscreen-page:datalist-items',
+  /** Main arms every frame's pinch guard before a ctrl+wheel; each frame acks on wheelZoomArmed. */
+  wheelZoomArm: 'offscreen-page:wheel-zoom-arm',
+  wheelZoomArmed: 'offscreen-page:wheel-zoom-armed',
+  /** A frame reports a ctrl+wheel its page left unhandled, with the DOM deltaY. */
+  wheelZoomUnhandled: 'offscreen-page:wheel-zoom-unhandled'
 } as const
 
 export type OffscreenPageGuestChannels = {

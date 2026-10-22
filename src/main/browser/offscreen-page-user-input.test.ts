@@ -17,7 +17,12 @@ function fakePage(attached = true) {
     dispose: vi.fn()
   }
   const frames = createOffscreenPageFrames(session, () => [])
-  const cdp = { session, frames, zoom: { factor: () => 2, dispose() {} } }
+  const cdp = {
+    session,
+    frames,
+    zoom: { factor: () => 2, dispose() {} },
+    wheelZoom: { dispatch: (send: () => unknown) => Promise.resolve(send()).then(() => {}) }
+  }
   const dispatch = (input: OffscreenPageUserInput, platform: NodeJS.Platform = 'darwin') =>
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fake implements every WebContents member dispatch touches.
     dispatchOffscreenPageUserInput(target as never, cdp, input, platform)

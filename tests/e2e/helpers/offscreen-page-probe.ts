@@ -86,6 +86,36 @@ const FRAME_HTML = `<!doctype html>
   </script>
 </body>`
 
+// A tall page with a map that zooms itself on pinch (ctrl+wheel), as map libraries do, and the
+// same page in a cross-site frame, as an embedded map is. The frame reports by message.
+const MAP_HTML = `<!doctype html>
+<title>Offscreen map</title>
+<body style="margin:0; height:4000px">
+  <div id="map" style="position:absolute; left:40px; top:40px; width:240px; height:160px; background:#3a6"></div>
+  <iframe id="frame" style="position:absolute; left:320px; top:40px; width:240px; height:160px; border:0"></iframe>
+  <script>
+    window.__mapWheels = 0
+    const inner = location.search === '?inner'
+    const tell = () => inner && parent.postMessage({ wheels: window.__mapWheels, scrollY }, '*')
+    document.getElementById('map').addEventListener('wheel', (event) => {
+      if (event.ctrlKey) {
+        event.preventDefault()
+        window.__mapWheels += 1
+        tell()
+      }
+    }, { passive: false })
+    addEventListener('scroll', tell)
+    if (inner) {
+      document.getElementById('frame').remove()
+    } else {
+      window.__frame = { wheels: 0, scrollY: 0 }
+      addEventListener('message', (event) => (window.__frame = event.data))
+      document.getElementById('frame').src =
+        location.origin.replace('127.0.0.1', 'localhost') + '/map?inner'
+    }
+  </script>
+</body>`
+
 // A one-page PDF larger than the pane, so the viewer reports a fit zoom below 100%.
 const PROBE_PDF = (() => {
   const objects = [
@@ -121,7 +151,9 @@ export async function startProbeServer(): Promise<{ url: string; close: () => Pr
         ? '<!doctype html><title>Offscreen popup</title>'
         : request.url === '/frame'
           ? FRAME_HTML
-          : PROBE_HTML
+          : request.url?.startsWith('/map')
+            ? MAP_HTML
+            : PROBE_HTML
     )
   })
   // Why no host: dual-stack, so the localhost frame loads whether it resolves to ::1 or 127.0.0.1.

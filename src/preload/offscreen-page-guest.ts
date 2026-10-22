@@ -2,6 +2,7 @@ import type { IpcRenderer } from 'electron'
 import type { OffscreenPageGuestChannels } from '../shared/offscreen-page-guest-channels'
 import { answerDatalistQueries } from './offscreen-page-datalist'
 import { installTooltipReporter } from './offscreen-page-tooltip'
+import { installWheelZoomGuard } from './offscreen-page-wheel-zoom'
 
 // Why not imported: a sandboxed preload cannot load a chunk shared with main, so the one name it
 // needs up front is repeated here (a test pins it to main's); main replies with the rest.
@@ -28,6 +29,11 @@ export function installOffscreenPageGuest(
         (answer) => ipc.on(channels.datalistQuery, answer),
         (items) => ipc.send(channels.datalistItems, items)
       )
+      installWheelZoomGuard({
+        onArm: (arm) => ipc.on(channels.wheelZoomArm, arm),
+        armed: () => ipc.send(channels.wheelZoomArmed),
+        unhandled: (deltaY) => ipc.send(channels.wheelZoomUnhandled, deltaY)
+      })
     })
     .catch(() => {})
 }

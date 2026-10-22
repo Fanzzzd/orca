@@ -3,6 +3,7 @@ import type { OffscreenPageUserInput } from '../../shared/offscreen-page-protoco
 import type { OffscreenPageCdpSession } from './offscreen-page-cdp-session'
 import type { OffscreenPageFrames } from './offscreen-page-frames'
 import { macKeyEditingCommands } from './offscreen-page-mac-key-commands'
+import { isWheelZoomCandidate, type OffscreenPageWheelZoom } from './offscreen-page-wheel-zoom'
 import type { OffscreenPageZoom } from './offscreen-page-zoom'
 
 type Modifier = 'shift' | 'control' | 'alt' | 'meta'
@@ -54,12 +55,17 @@ export function sendOffscreenPageMouse(
  * Replays one user input event into an offscreen page, in the order it came. Mouse, keys and IME
  * go through the page's CDP session, which reaches out-of-process iframes and carries each key's
  * real code, location and, on macOS, the key-binding editing commands a native key press has.
- * Wheel goes through sendInputEvent, which Electron already routes.
+ * Wheel goes through sendInputEvent, except into an out-of-process iframe, which only CDP reaches.
  * Neither path can move the host window's focus: an offscreen page has no native view.
  */
 export async function dispatchOffscreenPageUserInput(
   target: WebContents,
-  cdp: { session: OffscreenPageCdpSession; frames: OffscreenPageFrames; zoom: OffscreenPageZoom },
+  cdp: {
+    session: OffscreenPageCdpSession
+    frames: OffscreenPageFrames
+    zoom: OffscreenPageZoom
+    wheelZoom: OffscreenPageWheelZoom
+  },
   input: OffscreenPageUserInput,
   platform: NodeJS.Platform = process.platform
 ): Promise<void> {
@@ -94,9 +100,11 @@ export async function dispatchOffscreenPageUserInput(
       }
       return
     }
-    case 'wheel':
-      target.sendInputEvent(electronWheelEvent(input))
+    case 'wheel': {
+      const sendWheel = () => sendOffscreenPageWheel(target, cdp, input)
+      await (isWheelZoomCandidate(input) ? cdp.wheelZoom.dispatch(sendWheel) : sendWheel())
       return
+    }
     case 'key': {
       const keyDown = input.type === 'keyDown'
       const commands =
@@ -146,6 +154,41 @@ export async function dispatchOffscreenPageUserInput(
         selectionEnd: 0
       })
   }
+}
+
+/**
+ * Why route: Electron's offscreen view hands every wheel to the main frame, where one over a
+ * cross-site iframe lands on the iframe element, so an embedded map or video never scrolls.
+ */
+function sendOffscreenPageWheel(
+  target: WebContents,
+  cdp: { session: OffscreenPageCdpSession; frames: OffscreenPageFrames; zoom: OffscreenPageZoom },
+  input: Extract<OffscreenPageUserInput, { kind: 'wheel' }>
+): Promise<unknown> {
+  const { session, frames } = cdp
+  return frames.inOrder(async () => {
+    const zoom = cdp.zoom.factor()
+    const point = await frames.locate(input.x / zoom, input.y / zoom)
+    if (point.sessionId === undefined) {
+      if (!target.isDestroyed()) {
+        target.sendInputEvent(electronWheelEvent(input))
+      }
+      return { reply: Promise.resolve() }
+    }
+    const reply = session.send(
+      'Input.dispatchMouseEvent',
+      {
+        type: 'mouseWheel',
+        x: point.x,
+        y: point.y,
+        deltaX: -input.deltaX,
+        deltaY: -input.deltaY,
+        modifiers: modifierMask(input.modifiers)
+      },
+      point.sessionId
+    )
+    return { reply }
+  })
 }
 
 /** The wheel as Electron's input event, which is how both the page and viewport panning take it. */
