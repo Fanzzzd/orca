@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { colors, onBrightColors } from '../theme/mobile-theme'
 import { MobileMarkdown } from './MobileMarkdown'
 
 const openURL = vi.fn((_url: string) => Promise.resolve())
@@ -15,6 +16,7 @@ vi.mock('react-native', () => ({
   View: 'View'
 }))
 vi.mock('./pr-sidebar/MermaidDiagram', () => ({ MermaidDiagram: 'MermaidDiagram' }))
+vi.mock('./MobileSourceCopyButton', () => ({ MobileSourceCopyButton: 'MobileSourceCopyButton' }))
 
 let renderer: ReactTestRenderer | null = null
 
@@ -126,6 +128,12 @@ describe('MobileMarkdown rendering', () => {
     expect(texts(render(content))).toEqual(expected)
   })
 
+  it('gives each code block its own copy button holding only that code', () => {
+    const tree = render('Run this:\n\n```sh\npnpm test\n```\n\nthen:\n\n```\nexit\n```')
+    const buttons = tree.root.findAll((node) => String(node.type) === 'MobileSourceCopyButton')
+    expect(buttons.map((button) => button.props.text)).toEqual(['pnpm test', 'exit'])
+  })
+
   it('C12: opens a link with brackets in it, and one with a title, at their own address', () => {
     const tree = render(
       '[wiki](https://en.wikipedia.org/wiki/Foo_(bar)) and [docs](https://x.com/a "The docs")'
@@ -161,4 +169,80 @@ describe('MobileMarkdown rendering', () => {
     expect(texts(tree)).toEqual(['See config loader'])
     expect(tree.root.findAll((node) => typeof node.props.onPress === 'function')).toEqual([])
   })
+})
+
+describe('MobileMarkdown tone', () => {
+  /** The style a span with exactly `text` draws with, nested arrays flattened in order. */
+  function styleOf(root: ReactTestInstance, text: string): Record<string, unknown> {
+    const flattenStyle = (style: unknown): Record<string, unknown> =>
+      Array.isArray(style)
+        ? Object.assign({}, ...style.map(flattenStyle))
+        : typeof style === 'object' && style !== null
+          ? { ...style }
+          : {}
+    const span = root.find(
+      (node) => isText(node) && node.children.length === 1 && node.children[0] === text
+    )
+    return flattenStyle(span.props.style)
+  }
+
+  it("draws your own message dark on its light fill, and leaves the agent's prose as it was", () => {
+    const content = 'Plain **bold** [docs](https://example.com) `code`'
+    act(() => {
+      renderer = create(createElement(MobileMarkdown, { content, tone: 'onBright' }))
+    })
+    const own = renderer!.root
+    expect(styleOf(own, 'bold').color).toBe(colors.bgBase)
+    expect(styleOf(own, 'docs').color).toBe(onBrightColors.link)
+    expect(styleOf(own, 'code')).toMatchObject({
+      color: colors.bgBase,
+      backgroundColor: onBrightColors.codeBackground
+    })
+
+    act(() => renderer!.update(createElement(MobileMarkdown, { content })))
+    expect(styleOf(renderer!.root, 'bold').color).toBe(colors.textPrimary)
+    expect(styleOf(renderer!.root, 'docs').color).toBe(colors.accentBlue)
+  })
+
+  it('keeps the default palette inside a table, which keeps its dark surface', () => {
+    const content = '| **Head** | [docs](https://example.com) |\n| --- | --- |\n| a | b |'
+    act(() => {
+      renderer = create(createElement(MobileMarkdown, { content, tone: 'onBright' }))
+    })
+    expect(styleOf(renderer!.root, 'Head').color).toBe(colors.textPrimary)
+    expect(styleOf(renderer!.root, 'docs').color).toBe(colors.accentBlue)
+  })
+
+  it('zooms every block with the text, not only paragraphs', () => {
+    const content = [
+      '## Title',
+      '> quoted',
+      '```ts\nconst a = 1\n```',
+      'Use `code` here.',
+      '| Cell |\n| --- |\n| x |'
+    ].join('\n\n')
+    act(() => {
+      renderer = create(createElement(MobileMarkdown, { content, textScale: 2 }))
+    })
+    expect(styleOf(renderer!.root, 'Title').fontSize).toBe(30)
+    expect(styleOf(renderer!.root, 'quoted').fontSize).toBe(26)
+    expect(styleOf(renderer!.root, 'const a = 1').fontSize).toBe(24)
+    expect(styleOf(renderer!.root, 'code').fontSize).toBe(24)
+    expect(styleOf(renderer!.root, 'Cell').fontSize).toBe(24)
+  })
+})
+
+it('renders document images through the image renderer, including reference syntax', () => {
+  const renderImage = vi.fn((href: string, alt: string) => createElement('View', { href, alt }))
+  act(() => {
+    renderer = create(
+      createElement(MobileMarkdown, {
+        content:
+          '![Architecture](assets/diagram.png)\n\n![Reference][diagram]\n\n[diagram]: assets/other.png',
+        renderImage
+      })
+    )
+  })
+  expect(renderImage).toHaveBeenCalledWith('assets/diagram.png', 'Architecture')
+  expect(renderImage).toHaveBeenCalledWith('assets/other.png', 'Reference')
 })

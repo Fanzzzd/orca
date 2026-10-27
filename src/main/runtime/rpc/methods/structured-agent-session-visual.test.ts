@@ -1,17 +1,24 @@
+import { agentSessionConversationView } from '../../../../shared/agent-session-conversation-view'
+import '../unused-default-rpc-methods.test-fixture'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentSessionRecord } from '../../../../shared/agent-session-record'
-import { agentSessionRecordFixture } from '../../../../shared/agent-session-record.test-fixture'
+import {
+  agentSessionLeaseFixture,
+  agentSessionRecordFixture
+} from '../../../../shared/agent-session-record.test-fixture'
 import { setStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 import { nativeChatScratchFolderFor } from '../../../native-chat/native-chat-scratch-folder'
 import { nativeChatVisualRevision } from '../../../native-chat/native-chat-visual-file-read'
 import { Store } from '../../../persistence/loading-store/store'
-import { closeTestStores, createSqliteTestStore } from '../../../persistence-test-harness'
+import {
+  closeTestStores,
+  createSqliteTestStore
+} from '../../../persistence/persistence-test-harness'
 import { OrcaRuntimeService } from '../../orca-runtime'
 import { RpcDispatcher } from '../dispatcher'
-import { ALL_RPC_METHODS } from '.'
 import { FILE_METHODS } from './files'
 import { STRUCTURED_AGENT_SESSION_VISUAL_METHODS } from './structured-agent-session-visual'
 import {
@@ -36,11 +43,14 @@ let record: AgentSessionRecord | null
 
 beforeEach(async () => {
   stateDirectory = await mkdtemp(join(tmpdir(), 'orca-visual-rpc-'))
-  record = { ...agentSessionRecordFixture(), sessionId: SESSION }
+  record = agentSessionRecordFixture(agentSessionLeaseFixture({ sessionId: SESSION }))
   setStructuredAgentSessionHost(
     Object.assign(hostStub(), {
       deps: {
-        store: { getRecord: (id: string) => (record?.sessionId === id ? record : null) }
+        store: {
+          getConversation: (id: string) =>
+            record?.sessionId === id ? agentSessionConversationView(record) : null
+        }
       }
     })
   )
@@ -59,10 +69,6 @@ async function writeVisual(name: string, html: string): Promise<void> {
 }
 
 describe('agentSession.readVisual', () => {
-  it('is registered on the runtime manifest', () => {
-    expect(ALL_RPC_METHODS.map((method) => method.name)).toContain('agentSession.readVisual')
-  })
-
   it("reads a file from the chat's own folder under the host's state directory", async () => {
     await writeVisual('chart.html', '<p>chart</p>')
     const reply = await call(

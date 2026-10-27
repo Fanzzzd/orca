@@ -1,6 +1,4 @@
-// A browser tab a host with no window runs, saved as a window saves its own: the tab, its page and
-// the page's last address. A restarted host lists it and starts the page when something first
-// uses it, as a window restores its browser tabs.
+// Persist headless browser tabs/pages like window-owned tabs; restart lists saved tabs but restores pages only on first use.
 
 import type { BrowserPage } from '../../shared/browser-workspace-types'
 import type { ExecutionHostId } from '../../shared/execution-host'
@@ -61,13 +59,7 @@ export function withOpenedServeBrowserTab(
   }
   const { facts } = loaded
   const state = { ...BLANK_BROWSER_TAB_STATE, url: page.url, title: page.title }
-  const savedPage: BrowserPage = {
-    ...state,
-    id: page.pageId,
-    workspaceId: page.pageId,
-    worktreeId: page.worktreeId,
-    createdAt: now
-  }
+  const savedPage = servePageRecord(page, now)
   return saveWorkspaceLayout({
     ...loaded,
     layout: applied.model,
@@ -82,10 +74,69 @@ export function withOpenedServeBrowserTab(
   })
 }
 
-/**
- * The partition with the page's last address, or null when no saved tab shows the page or it is
- * unchanged. Only address fields change, so the layout is not reloaded.
- */
+function servePageRecord(page: ServeBrowserPageState, createdAt: number): BrowserPage {
+  return {
+    ...BLANK_BROWSER_TAB_STATE,
+    url: page.url,
+    title: page.title,
+    id: page.pageId,
+    workspaceId: page.pageId,
+    worktreeId: page.worktreeId,
+    createdAt
+  }
+}
+
+/** Attach the page record/address after openBrowserTab; null if the tab vanished or its page was already saved. */
+export function withServeBrowserPageRecord(
+  session: WorkspaceSessionState,
+  page: ServeBrowserPageState
+): WorkspaceSessionState | null {
+  const tabs = session.browserTabsByWorktree?.[page.worktreeId] ?? []
+  const tab = tabs.find((entry) => entry.id === page.pageId)
+  if (!tab || findSavedBrowserPage(session, page.worktreeId, page.pageId)) {
+    return null
+  }
+  return {
+    ...session,
+    browserTabsByWorktree: {
+      ...session.browserTabsByWorktree,
+      [page.worktreeId]: tabs.map((entry) =>
+        entry === tab ? { ...entry, url: page.url, title: page.title } : entry
+      )
+    },
+    browserPagesByWorkspace: {
+      ...session.browserPagesByWorkspace,
+      [page.pageId]: [servePageRecord(page, tab.createdAt)]
+    }
+  }
+}
+
+/** The partition without a closed tab's page records; null when it holds none. */
+export function withoutServeBrowserPages(
+  session: WorkspaceSessionState,
+  browserTabId: string
+): WorkspaceSessionState | null {
+  if (!session.browserPagesByWorkspace?.[browserTabId]) {
+    return null
+  }
+  const { [browserTabId]: _closed, ...pages } = session.browserPagesByWorkspace
+  return { ...session, browserPagesByWorkspace: pages }
+}
+
+/** The tab-bar entry showing a saved browser tab: a window's has its own id, a host's the tab's. */
+export function savedBrowserTabEntryId(
+  session: WorkspaceSessionState,
+  worktreeId: string,
+  browserTabId: string
+): string {
+  return (
+    session.unifiedTabs?.[worktreeId]?.find(
+      (entry) => entry.contentType === 'browser' && entry.entityId === browserTabId
+    )?.id ?? browserTabId
+  )
+}
+
+/** Update only address fields without reloading layout; null if absent or unchanged. */
 export function withServeBrowserPageState(
   session: WorkspaceSessionState,
   page: ServeBrowserPageState
@@ -130,7 +181,13 @@ export function withClosedServeBrowserTab(
   const loaded = loadWorkspaceLayout(hostId, session, nameBasedLoadContext())
   const applied = applyLayoutCommand(
     loaded.layout,
-    { type: 'closeTabs', workspace: worktreeId, tabIds: [saved.tabId], force: true },
+    {
+      type: 'closeTabs',
+      workspace: worktreeId,
+      // Why (STA-11998): closeTabs takes the tab-bar id, which a window-saved tab keeps apart.
+      tabIds: [savedBrowserTabEntryId(session, worktreeId, saved.tabId)],
+      force: true
+    },
     { mintId: randomUUID, mintLeafId: randomUUID, now: Date.now }
   )
   if (!applied.ok) {

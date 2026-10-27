@@ -17,10 +17,11 @@ import {
   renderInline,
   type MarkdownInlineContext
 } from './mobile-markdown-inline'
-import { styles } from './mobile-markdown-styles'
+import { MARKDOWN_TONES, scaledMarkdownText, styles } from './mobile-markdown-styles'
 import { MarkdownText } from './mobile-markdown-text'
 import { codeFenceClosed, plainText } from './mobile-markdown-tree'
 import { MermaidDiagram } from './pr-sidebar/MermaidDiagram'
+import { MobileSourceCopyButton } from './MobileSourceCopyButton'
 
 /** Prose base size — passed to MermaidDiagram fallback mono text. */
 const MERMAID_BASE = 13
@@ -35,6 +36,7 @@ export type MarkdownBlockContext = MarkdownInlineContext & {
   /** Interactive children own their touches and must forward the row action. */
   rowLongPress?: () => void
   directives: readonly NativeChatVisualDirective[]
+  renderImage?: (href: string, alt: string) => ReactNode
   renderVisual?: (directive: NativeChatVisualDirective, index: number) => ReactNode
   mermaidOccurrences: Map<string, number>
 }
@@ -43,9 +45,7 @@ export type MarkdownBlockContext = MarkdownInlineContext & {
 export type ParagraphText = { style: StyleProp<TextStyle>; selectable: boolean }
 
 function renderCode(node: Code, key: number, ctx: MarkdownBlockContext): ReactNode {
-  // Mermaid fences render as diagrams (WebView), not as raw code — same as PR sidebar.
-  // Growing or unclosed fences are still streaming: mounting the WebView per tick would
-  // reload its document up to 20x/sec, so they stay raw code until done.
+  // Keep streaming/unclosed Mermaid fences as code; per-tick WebView mounts would reload document up to 20x/sec. Render diagram only once complete.
   if (isMobileMermaidLanguage(node.lang ?? undefined) && !ctx.growing && codeFenceClosed(node)) {
     const occurrence = ctx.mermaidOccurrences.get(node.value) ?? 0
     ctx.mermaidOccurrences.set(node.value, occurrence + 1)
@@ -55,10 +55,18 @@ function renderCode(node: Code, key: number, ctx: MarkdownBlockContext): ReactNo
   }
   return (
     <View key={key} style={styles.codeBlock}>
-      {node.lang ? <NativeText style={styles.codeLanguage}>{node.lang}</NativeText> : null}
-      <MarkdownText selectable style={styles.codeText}>
-        {node.value}
-      </MarkdownText>
+      <View style={styles.codeBody}>
+        {node.lang ? <NativeText style={styles.codeLanguage}>{node.lang}</NativeText> : null}
+        <MarkdownText
+          selectable
+          style={[styles.codeText, scaledMarkdownText(styles.codeText, ctx.textScale)]}
+        >
+          {node.value}
+        </MarkdownText>
+      </View>
+      {node.value ? (
+        <MobileSourceCopyButton text={node.value} accessibilityLabel="Copy code" />
+      ) : null}
     </View>
   )
 }
@@ -69,7 +77,7 @@ function renderList(node: List, key: number, ctx: MarkdownBlockContext, depth: n
     <View key={key} style={styles.list}>
       {node.children.map((item, itemIndex) => (
         <View key={itemIndex} style={styles.listItem}>
-          <NativeText style={styles.listMarker}>
+          <NativeText style={[styles.listMarker, ctx.tone.secondary]}>
             {item.checked == null
               ? node.ordered
                 ? `${(node.start ?? 1) + itemIndex}.`
@@ -93,6 +101,8 @@ function renderTable(node: Table, key: number, ctx: MarkdownBlockContext): React
   const columnWidths = mobileMarkdownTableColumnWidths(
     rows.map((cells) => cells.map((cell) => plainText(cell)))
   )
+  // A table keeps its own dark surface, so its spans keep the default palette.
+  const cellCtx = { ...ctx, tone: MARKDOWN_TONES.default }
   return (
     <ScrollView key={key} horizontal showsHorizontalScrollIndicator={false}>
       <View style={styles.table}>
@@ -105,10 +115,11 @@ function renderTable(node: Table, key: number, ctx: MarkdownBlockContext): React
                 style={[
                   styles.tableCell,
                   rowIndex === 0 ? styles.tableHeader : null,
-                  { width, textAlign: node.align?.[cellIndex] ?? 'left' }
+                  scaledMarkdownText(styles.tableCell, ctx.textScale),
+                  { width: width * ctx.textScale, textAlign: node.align?.[cellIndex] ?? 'left' }
                 ]}
               >
-                {renderInline(cells[cellIndex]?.children ?? [], ctx)}
+                {renderInline(cells[cellIndex]?.children ?? [], cellCtx)}
               </MarkdownText>
             ))}
           </View>
@@ -147,6 +158,9 @@ function renderBlock(
           </Fragment>
         ) : null
       }
+      if (node.children.length === 1 && only?.type === 'image' && ctx.renderImage) {
+        return <Fragment key={key}>{ctx.renderImage(only.url, only.alt ?? '')}</Fragment>
+      }
       if (node.children.length === 1 && only?.type === 'image' && /^https?:\/\//i.test(only.url)) {
         return (
           <Pressable
@@ -173,7 +187,15 @@ function renderBlock(
         <MarkdownText
           key={key}
           selectable
-          style={[styles.heading, node.depth <= 2 ? styles.headingLarge : null]}
+          style={[
+            styles.heading,
+            node.depth <= 2 ? styles.headingLarge : null,
+            scaledMarkdownText(
+              node.depth <= 2 ? styles.headingLarge : styles.heading,
+              ctx.textScale
+            ),
+            ctx.tone.text
+          ]}
         >
           {renderInline(node.children, ctx)}
         </MarkdownText>
@@ -184,7 +206,14 @@ function renderBlock(
           {renderBlocks(
             node.children,
             ctx,
-            { style: styles.quoteText, selectable: true },
+            {
+              style: [
+                styles.quoteText,
+                scaledMarkdownText(styles.quoteText, ctx.textScale),
+                ctx.tone.secondary
+              ],
+              selectable: true
+            },
             depth + 1
           )}
         </View>
@@ -200,7 +229,9 @@ function renderBlock(
     case 'footnoteDefinition':
       return (
         <View key={key} style={styles.listItem}>
-          <NativeText style={styles.listMarker}>{`[${node.label ?? node.identifier}]`}</NativeText>
+          <NativeText style={[styles.listMarker, ctx.tone.secondary]}>
+            {`[${node.label ?? node.identifier}]`}
+          </NativeText>
           <View style={styles.listItemBody}>
             {renderBlocks(node.children, ctx, { style: ctx.listText, selectable: true }, depth + 1)}
           </View>

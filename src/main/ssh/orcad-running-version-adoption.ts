@@ -1,13 +1,11 @@
-/**
- * A first deploy onto a host whose orcad another Orca version already runs. Its terminal count
- * needs a paired connection, so the update would always wait; instead this client pairs with the
- * running build as it is, and the linked update check decides whether it may replace it.
- */
+/** Pair with an already-running foreign build before considering update; an unpaired first deploy cannot census its terminals. */
 import type { ServeReadiness } from '../server/serve-readiness'
+import type { OrcadManagedDeferral } from '../../shared/orcad-managed-runtime'
+import { orcadActivationFenceRefusal } from '../managed-server/activation/orcad-activation-fence-hold'
 import { OrcadActiveReadinessError, probeActiveOrcadReadiness } from './orcad-active-readiness'
-import type { OrcadActivationRecord } from './orcad-activation-record'
-import { readOrcadActivationRecord } from './orcad-activation-record-store'
-import { wakeStoppedManagedOrcad } from './orcad-managed-wake'
+import type { OrcadActivationRecord } from '../managed-server/activation/orcad-activation-record'
+import { readOrcadActivationRecord } from '../managed-server/activation/orcad-activation-record-store'
+import { wakeStoppedManagedOrcad } from '../managed-server/lifecycle/orcad-managed-wake'
 import { resolveOrcadSlotIdentity, type OrcadSlotOptions } from './orcad-recovery-slot'
 
 export type OrcadRunningAdoption = {
@@ -17,22 +15,30 @@ export type OrcadRunningAdoption = {
   reprobe: () => Promise<ServeReadiness>
 }
 
-/** Null when no other version is activated, so the caller deploys its own as usual. */
+/** No foreign activation returns null for normal deploy. A held peer fence defers: deploying without pairing would only fail census (#28833). */
 export async function adoptRunningOrcadVersion(
   slot: OrcadSlotOptions,
   record: OrcadActivationRecord,
-  localVersion: string
-): Promise<OrcadRunningAdoption | null> {
+  localVersion: string,
+  retryClearedFence = true
+): Promise<OrcadRunningAdoption | OrcadManagedDeferral | null> {
   if (!record.active || record.active === localVersion) {
     return null
   }
-  // Starts it only on proven exit: an idle stop leaves its daemon's terminals running.
+  // Wake only on proven server exit; idle stops leave daemon terminals alive.
   const wake = await wakeStoppedManagedOrcad(slot)
   switch (wake.outcome) {
-    // Another desktop stopped it meanwhile, or holds the fence; the deploy's own gates decide.
+    // Another desktop stopped it meanwhile; the deploy's own gates decide.
     case 'not-activated':
-    case 'fenced':
       return null
+    case 'fenced': {
+      // E.g. another desktop starting it after a reboot; a later connect pairs with it.
+      const { cleared, ...refusal } = await orcadActivationFenceRefusal(slot, 'server start')
+      if (cleared && retryClearedFence) {
+        return adoptRunningOrcadVersion(slot, record, localVersion, false)
+      }
+      return { outcome: 'deferred', candidateVersion: localVersion, ...refusal, forceable: false }
+    }
     case 'unverifiable':
       throw new OrcadActiveReadinessError(
         'unverifiable',
@@ -45,7 +51,7 @@ export async function adoptRunningOrcadVersion(
     case 'started':
       break
   }
-  // Re-read: the wake follows whatever the record names now, which another desktop may change.
+  // Re-read activation because wake follows peer changes to the current record.
   const active = (await readOrcadActivationRecord(slot)).active
   if (!active || active === localVersion) {
     return null

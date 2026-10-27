@@ -1,10 +1,10 @@
 import type {
   OrcadMigrationCatalogPayload,
   OrcadMigrationManifestSource
-} from '../../../shared/orcad-migration-manifest'
+} from '../../../shared/orcad-migration/orcad-migration-manifest'
 import type { PersistedState } from '../../../shared/persisted-state-types'
 import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
-import type { OrcadMigrationTerminalScrollbackSnapshot } from '../../../shared/orcad-migration-scrollback'
+import type { OrcadMigrationTerminalScrollbackSnapshot } from '../../../shared/orcad-migration/orcad-migration-scrollback'
 import {
   extractSessionOwnersForTransfer,
   hasTransferredSessionState
@@ -20,6 +20,7 @@ import {
   collectUnsupportedSessionItems,
   projectDormantSessionFocus,
   projectSessionToDestination,
+  isUnsavedDraftItem,
   transferableSleepingAgentSession,
   worktreeLabel
 } from './orcad-source-workspace-session-eligibility'
@@ -29,8 +30,17 @@ import {
   dropOrcadMigrationTerminalBindings
 } from './orcad-source-workspace-session-layout'
 import { mergeSessionFragments } from './orcad-source-workspace-session-fragments'
+import {
+  desktopDrafts,
+  resolveCopiesForHost,
+  type SessionFragment
+} from './orcad-source-session-copy-resolution'
+import { withoutOrcadMigrationDrafts } from './orcad-source-draft-rename'
 import { hasClosedTerminalTabRecord } from '../../../shared/closed-terminal-tab-tombstones'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
+import { normalizeWorkspaceSessionKeyToWorkspaceId } from '../../../shared/workspace-scope'
 import { orcadMigrationSessionPartitions } from './orcad-source-session-partitions'
+import { collectDuplicateOrcadMigrationSessionIdentities } from './orcad-source-duplicate-session-identities'
 import {
   hasDuplicateOrcadMigrationScrollbackDescriptors,
   projectOrcadMigrationSessionScrollback
@@ -39,58 +49,103 @@ import {
 export type OrcadMigrationSourceWorkspaceSessionInspection = {
   payload: WorkspaceSessionState | undefined
   snapshots: OrcadMigrationTerminalScrollbackSnapshot[]
-  /** Each names what blocks and how to clear it. */
+  /** Blocker names and remedies. */
   blockedItems: string[]
+  /** Retained on this desktop after confirmed "Move anyway". */
+  leftBehindItems: string[]
 }
 
 const UNREADABLE_SESSION = 'saved tabs Orca could not read'
 
-/** Fails closed: a session shape no collector expects blocks the move instead of failing connect. */
+/** Unrecognized session shapes block the move rather than failing connection. */
 export function collectOrcadMigrationSourceWorkspaceSession(
   state: PersistedState,
   source: OrcadMigrationManifestSource,
   catalog: OrcadMigrationCatalogPayload,
-  storage?: TerminalScrollbackSnapshotStorage
+  storage?: TerminalScrollbackSnapshotStorage,
+  leaveBehind = false
 ): OrcadMigrationSourceWorkspaceSessionInspection {
+  let collected: OrcadMigrationSourceWorkspaceSessionInspection
   try {
-    return collectWorkspaceSession(state, source, catalog, storage)
+    collected = collectWorkspaceSession(state, source, catalog, storage, leaveBehind)
   } catch (error) {
     console.warn('[migration] Unreadable workspace session blocks the move:', error)
-    return { payload: undefined, snapshots: [], blockedItems: [UNREADABLE_SESSION] }
+    collected = {
+      payload: undefined,
+      snapshots: [],
+      blockedItems: [UNREADABLE_SESSION],
+      leftBehindItems: []
+    }
   }
+  if (!leaveBehind || collected.blockedItems.length === 0) {
+    return collected
+  }
+  // "Move anyway" can retain sessions, but desktop drafts would lose their copy and must still block.
+  const drafts = desktopDrafts(state, source, catalog)
+  return drafts.length > 0 || collected.blockedItems.includes(UNREADABLE_SESSION)
+    ? { ...collected, blockedItems: drafts.length > 0 ? drafts : collected.blockedItems }
+    : {
+        payload: undefined,
+        snapshots: [],
+        blockedItems: [],
+        leftBehindItems: [...collected.leftBehindItems, ...collected.blockedItems]
+      }
 }
 
 function collectWorkspaceSession(
   state: PersistedState,
   source: OrcadMigrationManifestSource,
   catalog: OrcadMigrationCatalogPayload,
-  storage?: TerminalScrollbackSnapshotStorage
+  storage: TerminalScrollbackSnapshotStorage | undefined,
+  leaveBehind: boolean
 ): OrcadMigrationSourceWorkspaceSessionInspection {
   const sourceScope = createOrcadMigrationSourceScope({ source, catalog, repos: state.repos })
-  const fragments: WorkspaceSessionState[] = []
-  const snapshots: OrcadMigrationTerminalScrollbackSnapshot[] = []
+  const fragments: SessionFragment[] = []
   const blockedItems: string[] = []
+  const leftBehindItems: string[] = []
   const partitions = orcadMigrationSessionPartitions(state, sourceScope).map(
     ([partitionId, saved]) => {
       const scope = orcadMigrationPartitionScope(sourceScope, partitionId)
-      const session = withoutLeftBehindSessionRows(saved, scope)
-      return { session, scope, terminalTabIds: collectOwnedTerminalTabIds(session, scope) }
+      // Only host-partition rows retain a copy after the move; desktop drafts cannot stay behind.
+      const session = withoutLeftBehindSessionRows(saved, scope, leaveBehind, {
+        leaveDrafts: partitionId !== LOCAL_EXECUTION_HOST_ID
+      })
+      return {
+        saved,
+        session,
+        scope,
+        terminalTabIds: collectOwnedTerminalTabIds(session, scope)
+      }
     }
   )
   const sourceTerminalTabIds = new Set(
     partitions.flatMap(({ terminalTabIds }) => [...terminalTabIds])
   )
-  for (const { session, scope, terminalTabIds } of partitions) {
+  for (const { saved, session, scope, terminalTabIds } of partitions) {
     const sourceHostPartition = scope.partitionHostId === scope.hostId
-    blockedItems.push(
-      ...collectUnsupportedSessionItems(
-        session,
-        scope,
-        sourceHostPartition,
-        terminalTabIds,
-        sourceTerminalTabIds
-      )
+    const unsupported = collectUnsupportedSessionItems(
+      session,
+      scope,
+      sourceHostPartition,
+      terminalTabIds,
+      sourceTerminalTabIds
     )
+    if (leaveBehind) {
+      // Retained rows no longer block, but unsaved desktop drafts still do.
+      const kept = new Set(unsupported.filter(isUnsavedDraftItem))
+      blockedItems.push(...kept)
+      leftBehindItems.push(
+        ...collectUnsupportedSessionItems(
+          withoutLeftBehindSessionRows(saved, scope),
+          scope,
+          sourceHostPartition,
+          terminalTabIds,
+          sourceTerminalTabIds
+        ).filter((item) => !kept.has(item))
+      )
+    } else {
+      blockedItems.push(...unsupported)
+    }
     const fragment = extractSessionOwnersForTransfer(session, {
       mapOwnerKey: (ownerKey) =>
         orcadMigrationOwnerMatchesScope(ownerKey, scope)
@@ -111,7 +166,7 @@ function collectWorkspaceSession(
           : null
     })
     if (!sourceHostPartition) {
-      // Client focus is not host state, so the destination never carries it.
+      // Global client focus does not belong on the destination host.
       fragment.activeWorktreeId = null
       delete fragment.activeWorkspaceKey
     }
@@ -119,18 +174,21 @@ function collectWorkspaceSession(
     if (hasTransferredSessionState(fragment)) {
       const projected = projectOrcadMigrationSessionScrollback(
         projectSessionToDestination(fragment, scope),
-        storage
+        storage,
+        leaveBehind
       )
       blockedItems.push(...projected.blockedItems)
-      snapshots.push(...projected.snapshots)
-      fragments.push(projected.session)
+      leftBehindItems.push(...projected.leftBehindItems)
+      fragments.push({
+        session: projected.session,
+        snapshots: projected.snapshots,
+        local: scope.partitionHostId === LOCAL_EXECUTION_HOST_ID,
+        sourceHost: sourceHostPartition
+      })
     }
   }
-  if (hasDuplicateOrcadMigrationScrollbackDescriptors(snapshots)) {
-    blockedItems.push('terminal history saved twice for one pane')
-  }
   if (blockedItems.length > 0 || fragments.length === 0) {
-    return { payload: undefined, snapshots: [], blockedItems }
+    return { payload: undefined, snapshots: [], blockedItems, leftBehindItems }
   }
   const closedTabIds = new Set(
     partitions.flatMap(({ session }) =>
@@ -139,14 +197,63 @@ function collectWorkspaceSession(
       )
     )
   )
-  const merged = mergeSessionFragments(fragments, closedTabIds)
+  let merged = mergeSessionFragments(
+    fragments.map((fragment) => fragment.session),
+    closedTabIds
+  )
+  let moving = fragments
+  if (!merged.session && leaveBehind) {
+    // Prefer the host copy as the app does, while preserving desktop drafts.
+    const conflicting = new Set(merged.conflicts.map(normalizeWorkspaceSessionKeyToWorkspaceId))
+    const resolved = resolveCopiesForHost(fragments, conflicting)
+    if (resolved.clashingDrafts.length > 0) {
+      return {
+        payload: undefined,
+        snapshots: [],
+        blockedItems: resolved.clashingDrafts,
+        leftBehindItems
+      }
+    }
+    leftBehindItems.push(
+      ...merged.conflicts.map(
+        (ownerKey) => `this desktop's other copy of the tabs in ${worktreeLabel(ownerKey)}`
+      )
+    )
+    moving = resolved.fragments
+    merged = mergeSessionFragments(
+      moving.map((fragment) => fragment.session),
+      closedTabIds
+    )
+  }
+  const snapshots = moving.flatMap((fragment) => fragment.snapshots)
+  if (merged.session && hasDuplicateOrcadMigrationScrollbackDescriptors(snapshots)) {
+    return {
+      payload: undefined,
+      snapshots: [],
+      blockedItems: ['terminal history saved twice for one pane'],
+      leftBehindItems
+    }
+  }
+  const duplicates = merged.session
+    ? collectDuplicateOrcadMigrationSessionIdentities(merged.session)
+    : []
+  if (duplicates.length > 0) {
+    return { payload: undefined, snapshots: [], blockedItems: duplicates, leftBehindItems }
+  }
+  // Keep draft contents desktop-side; commit retargets their records to the server.
   return merged.session
-    ? { payload: merged.session, snapshots, blockedItems: [] }
+    ? {
+        payload: withoutOrcadMigrationDrafts(merged.session),
+        snapshots,
+        blockedItems: [],
+        leftBehindItems
+      }
     : {
         payload: undefined,
         snapshots: [],
         blockedItems: merged.conflicts.map(
           (ownerKey) => `two different saved copies of the tabs in ${worktreeLabel(ownerKey)}`
-        )
+        ),
+        leftBehindItems
       }
 }

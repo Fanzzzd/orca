@@ -8,7 +8,6 @@ import {
   type MultiplexSubscriptionCallbacks
 } from './remote-runtime-pty-transport-test-harness'
 
-// These transport fixtures never read abandoned-launch ownership from the app store.
 const appStore = vi.hoisted(() => ({
   getState: vi.fn(() => {
     throw new Error('These transport fixtures must not read app-store ownership')
@@ -77,7 +76,9 @@ describe('createRemoteRuntimePtyTransport', () => {
         ackOutputSourceRanges: 1,
         desktopViewportClaims: 1,
         outputPause: 1,
+        outputPauseDropNotice: 1,
         writeUnavailable: 1,
+        endpointLossNotice: 1,
         inputAck: 1
       })
     )

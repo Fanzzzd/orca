@@ -11,6 +11,7 @@ import { skipForMissingInputs } from './orcad-node-slot-fixture'
 import {
   killChildAndWait,
   killProfileDaemons,
+  recordProfileDaemons,
   removeTestRoot
 } from './orcad-daemon-teardown-fixture'
 
@@ -135,7 +136,6 @@ it.skipIf(skip)(
       })
       expect(version.code, version.stderr).toBe(0)
       expect(version.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/u)
-      // A person's own selector on the server is honoured, as on any machine.
       const person = await runProcess({
         program: launcher,
         args: ['status', '--json'],
@@ -148,6 +148,7 @@ it.skipIf(skip)(
         'Unknown environment: stale-shell-selection'
       )
     } finally {
+      await recordProfileDaemons(userData)
       await killChildAndWait(child)
       await killProfileDaemons(userData)
       await removeTestRoot(root)

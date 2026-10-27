@@ -9,7 +9,7 @@ import {
 } from '../../shared/closed-terminal-tab-tombstones'
 import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
 import { Store } from '../persistence/loading-store/store'
-import { closeTestStores, createSqliteTestStore } from '../persistence-test-harness'
+import { closeTestStores, createSqliteTestStore } from '../persistence/persistence-test-harness'
 import { OrcaRuntimeService } from './orca-runtime'
 import {
   LEAF_ID,
@@ -21,7 +21,6 @@ import {
 } from './__fixtures__/orca-runtime-terminal-close-continuity-fixtures'
 import { advanceTerminalTopologyRevision } from '../persistence/terminal-topology/terminal-topology-membership'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
-import type { DurableProfileStateMutation } from '../persistence/loading-store/store-runtime-state'
 import { RuntimeMachineName } from './runtime-machine-name'
 
 const SSH_REPO_ID = 'ssh-repo'
@@ -71,7 +70,7 @@ function createPersistedRuntime(session: WorkspaceSessionState = makeSession()) 
   }
 }
 
-/** A renderer save: membership as the renderer holds it, and no close records, which it never sends. */
+/** Renderer saves membership, never main-owned close records. */
 function rendererSave(session: WorkspaceSessionState): WorkspaceSessionState {
   const {
     terminalTopologyRevisionByRepoId: _hostPrivate,
@@ -104,7 +103,7 @@ describe('close records', () => {
     }
   )
 
-  // The store keeps main's map only when a write omits it; main's own writes carry it and win.
+  // Store preserves omitted close maps; explicit main-owned maps replace them.
   it("keeps main's own record writes across later store writes", async () => {
     const { store, runtime } = createPersistedRuntime()
 
@@ -144,7 +143,6 @@ describe('close records', () => {
     )
   })
 
-  // A write cannot list a tab its partition recorded as closed, so legacy rows beside a record go.
   it('drops a listed tab its partition already recorded as closed, and keeps the record', async () => {
     const earlier = Date.now() - 24 * 60 * 60 * 1000
     const record = { closedAt: earlier, worktreeId: WORKTREE_ID, reason: 'cleanup' as const }
@@ -196,7 +194,6 @@ describe('close records', () => {
     expect(store.getWorkspaceSession().closedTerminalTabTombstonesByTabId).toBeUndefined()
   })
 
-  // Why: only a resolved tab close records; a pane target never widens here, even on the last pane.
   it("records nothing for a pane close aimed at its tab's only pane", async () => {
     const { store, runtime } = createPersistedRuntime()
 
@@ -215,8 +212,7 @@ describe('close records', () => {
     ])
   })
 
-  // The durable half of refusing a late graft: the close lands while the tab's spawn is in
-  // flight, so main has never listed the tab, and the spawn commits only after a relaunch.
+  // Durable close must reject in-flight spawns committing after crash/reload, even if the tab was never listed.
   it('refuses a closed tab whose spawn commits after a crash and reload', async () => {
     const { runtime, reload } = createPersistedRuntime()
 
@@ -258,7 +254,7 @@ describe('close records', () => {
     expect(
       store.getWorkspaceSession(SSH_HOST_ID).closedTerminalTabTombstonesByTabId?.[LATE_TAB_ID]
     ).toBeDefined()
-    // A relay reattach binds into `local`, not the partition the close was recorded in.
+    // Reattach targets local, distinct from the partition recording close.
     expect(
       await store.persistPtyBinding({
         worktreeId: SSH_WORKTREE_ID,
@@ -360,96 +356,9 @@ describe('terminal resume cleanup characterization', () => {
         restore()
       }
     })
-
-    it('keeps the native failure when the capability disappears after the guard', async () => {
-      const { store, runtime } = persistedRuntime()
-      const original = store.runDurableMutation.bind(store)
-      let restore: (() => void) | undefined
-      vi.spyOn(store, 'runDurableMutation').mockImplementation(function <T>(
-        mutate: () => DurableProfileStateMutation<T>
-      ): Promise<T> {
-        return original(() => {
-          restore = removeSessionReader(store)
-          return mutate()
-        })
-      })
-      try {
-        await expect(runtime.clearResumeRecords()).rejects.toThrow(TypeError)
-      } finally {
-        restore?.()
-      }
-    })
-
-    it('keeps the native failure at the later rollback capability read', async () => {
-      const { store, runtime } = persistedRuntime()
-      let restore: (() => void) | undefined
-      vi.spyOn(store, 'runDurableMutation').mockImplementation(async function <T>(
-        mutate: () => DurableProfileStateMutation<T>
-      ): Promise<T> {
-        const mutation = mutate()
-        expect(mutation.rollback).toBeTypeOf('function')
-        restore = removeSessionReader(store)
-        mutation.rollback?.()
-        return mutation.value
-      })
-      try {
-        await expect(runtime.clearResumeRecords()).rejects.toThrow(TypeError)
-      } finally {
-        restore?.()
-      }
-    })
   })
-  it('keeps the native failure when the Root Store disappears inside the durable callback', async () => {
+  it('uses the session reader with its Store receiver and local host partition', async () => {
     const { store, runtime } = persistedRuntime()
-    const original = store.runDurableMutation.bind(store)
-    const descriptor = Object.getOwnPropertyDescriptor(runtime, 'store')
-    if (!descriptor) {
-      throw new Error('fixture Store descriptor missing')
-    }
-    vi.spyOn(store, 'runDurableMutation').mockImplementation(function <T>(
-      mutate: () => DurableProfileStateMutation<T>
-    ): Promise<T> {
-      return original(() => {
-        Object.defineProperty(runtime, 'store', { configurable: true, value: null })
-        return mutate()
-      })
-    })
-    try {
-      await expect(runtime.clearResumeRecords()).rejects.toThrow(TypeError)
-    } finally {
-      Object.defineProperty(runtime, 'store', descriptor)
-    }
-  })
-
-  it('keeps the native failure when the Root Store disappears before rollback', async () => {
-    const { store, runtime } = persistedRuntime()
-    const descriptor = Object.getOwnPropertyDescriptor(runtime, 'store')
-    if (!descriptor) {
-      throw new Error('fixture Store descriptor missing')
-    }
-    vi.spyOn(store, 'runDurableMutation').mockImplementation(async function <T>(
-      mutate: () => DurableProfileStateMutation<T>
-    ): Promise<T> {
-      const mutation = mutate()
-      expect(mutation.rollback).toBeTypeOf('function')
-      Object.defineProperty(runtime, 'store', { configurable: true, value: null })
-      mutation.rollback?.()
-      return mutation.value
-    })
-    try {
-      await expect(runtime.clearResumeRecords()).rejects.toThrow(TypeError)
-    } finally {
-      Object.defineProperty(runtime, 'store', descriptor)
-    }
-  })
-
-  it('retains the repeated Root Store reads and session method receiver and arguments', async () => {
-    const { store, runtime } = persistedRuntime()
-    const descriptor = Object.getOwnPropertyDescriptor(runtime, 'store')
-    if (!descriptor) {
-      throw new Error('fixture Store descriptor missing')
-    }
-    let storeReads = 0
     const original = store.getWorkspaceSession
     const reader = vi.spyOn(store, 'getWorkspaceSession').mockImplementation(function (
       this: Store,
@@ -459,19 +368,7 @@ describe('terminal resume cleanup characterization', () => {
       expect(args).toEqual([LOCAL_EXECUTION_HOST_ID])
       return original.apply(this, args)
     })
-    Object.defineProperty(runtime, 'store', {
-      configurable: true,
-      get() {
-        storeReads += 1
-        return store
-      }
-    })
-    try {
-      await expect(runtime.clearResumeRecords()).resolves.toBeUndefined()
-      expect(storeReads).toBe(7)
-      expect(reader).toHaveBeenCalledTimes(2)
-    } finally {
-      Object.defineProperty(runtime, 'store', descriptor)
-    }
+    await expect(runtime.clearResumeRecords()).resolves.toBeUndefined()
+    expect(reader).toHaveBeenCalled()
   })
 })

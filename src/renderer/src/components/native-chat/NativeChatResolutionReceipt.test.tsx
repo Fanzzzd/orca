@@ -9,7 +9,7 @@ import type {
 } from '../../../../shared/agent-session-journal-types'
 import { encodeAgentSessionQuestionAnswers } from '../../../../shared/agent-session-question-answer'
 import { NativeChatResolutionReceipt } from './NativeChatResolutionReceipt'
-import { structuredQuestionTranscript } from './structured-agent-question-projection'
+import { structuredQuestionTranscript } from '../../../../shared/structured-agent-question-projection'
 import {
   NativeChatDisclosureContext,
   useNativeChatDisclosures
@@ -17,7 +17,7 @@ import {
 import {
   nativeChatReceiptAnswers,
   type NativeChatResolvedPrompt
-} from './native-chat-resolution-receipt'
+} from '../../../../shared/native-chat-resolution-receipt'
 
 afterEach(async () => {
   cleanup()
@@ -313,7 +313,6 @@ describe('resolution receipts', () => {
 
       fireEvent.click(toggle)
       expect(toggle).toHaveAttribute('aria-expanded', 'true')
-      // The count stays on the line; the list opens outside the button, as prose.
       expect(toggle).toHaveTextContent('2 questions')
       const items = screen.getAllByRole('listitem')
       expect(items.map((item) => item.textContent)).toEqual([FIRST, SECOND])

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useAppStore } from '../../store'
-import { useLinkRoutingPreferenceDialog } from '@/components/link-routing-preference-dialog'
+import { useLinkRoutingPreferenceDialog } from '@/components/link-routing-preference-dialog-context'
 import { isWindowsUserAgent } from './pane-helpers'
 import type { SessionRestoredBannerReason } from './session-restored-banner-pane-state'
 import { useTerminalPaneStoreActions } from './use-terminal-pane-store-actions'
@@ -12,7 +12,6 @@ export function useTerminalPaneStoreBindings(controller: TerminalPaneChatControl
     clearRuntimePaneTitle,
     clearTabPtyId,
     consumeTabIssueCommandSplit,
-    consumeTabSetupSplit,
     consumeTabStartupCommand,
     markTerminalBell,
     openSpacePage,
@@ -39,7 +38,6 @@ export function useTerminalPaneStoreBindings(controller: TerminalPaneChatControl
   const [sessionRestoredBannerPaneIds, setSessionRestoredBannerPaneIds] = useState<
     Map<number, SessionRestoredBannerReason>
   >(() => new Map())
-  const [setupSplit] = useState(() => useAppStore.getState().pendingSetupSplitByTabId[tabId])
   const [issueCommandSplit] = useState(
     () => useAppStore.getState().pendingIssueCommandSplitByTabId[tabId]
   )
@@ -69,8 +67,6 @@ export function useTerminalPaneStoreBindings(controller: TerminalPaneChatControl
     sessionRestoredBannerPaneIds,
     setSessionRestoredBannerPaneIds,
     consumeTabStartupCommand,
-    setupSplit,
-    consumeTabSetupSplit,
     issueCommandSplit,
     consumeTabIssueCommandSplit
   }

@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useAppStore } from '@/store'
+import { captureLinkOpenIntent } from '@/lib/link-open-intent'
+import { beginLinkOpenRequest } from '@/lib/link-open-request'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { SquareArrowOutUpRight } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ArtifactWriteRequest } from '../../../../shared/artifacts'
@@ -13,6 +16,7 @@ import { basename } from '@/lib/path'
 import { getRuntimeTargetHostId, runtimeTargetEnvironmentId } from '@/runtime/runtime-client-target'
 import { NATIVE_CHAT_VISUAL_RESERVED_HEIGHT, NativeChatVisualFrame } from './NativeChatVisualFrame'
 import { observeTranscriptVisibility } from './NativeChatTranscriptChrome'
+import { NativeChatForwardedGestureContext } from './native-chat-reader-scroll-input'
 import type { NativeChatVisualOwner } from './native-chat-visual-owner'
 import { readNativeChatVisual } from './native-chat-visual-read-client'
 import { useNativeChatVisualDocument } from './use-native-chat-visual-document'
@@ -26,8 +30,14 @@ export function NativeChatVisualUnavailable(): React.JSX.Element {
 }
 
 /** Opens the visual like any HTML file of the chat's workspace: rendered, its source a click away. */
-function openNativeChatVisualFile(worktreeId: string, path: string): void {
-  const plan = openFileInBrowserTab({ filePath: path, worktreeId })
+function openNativeChatVisualFile(owner: NativeChatVisualOwner, path: string): void {
+  const isCurrentRequest = beginLinkOpenRequest()
+  const linkIntent = captureLinkOpenIntent(useAppStore.getState(), owner.worktreeId, owner.tabId)
+  const plan = openFileInBrowserTab({
+    filePath: path,
+    worktreeId: owner.worktreeId,
+    ...(owner.tabId ? { linkContext: { linkIntent, isCurrentRequest } } : {})
+  })
   if (plan.status === 'unsupported') {
     toast.error(plan.message)
   }
@@ -62,10 +72,7 @@ async function readNativeChatVisualShareRequest(
   }
 }
 
-/**
- * A visual inside an assistant reply. Its frame mounts once the reply scrolls near it and stays
- * mounted, so what the reader did in it survives scrolling away and back.
- */
+/** Mount near the viewport, then keep the frame mounted so interactive state survives scrolling away. */
 export function NativeChatInlineVisual({
   owner,
   file,
@@ -80,6 +87,7 @@ export function NativeChatInlineVisual({
   const [retired, setRetired] = useState(false)
   // Share's popover is portalled, so hover and focus-within can't keep the toolbar shown.
   const [shareOpen, setShareOpen] = useState(false)
+  const forwardGesture = useContext(NativeChatForwardedGestureContext)
   const state = useNativeChatVisualDocument(
     { target: owner.target, sessionId: owner.sessionId, file },
     near
@@ -104,18 +112,13 @@ export function NativeChatInlineVisual({
   const openLabel = translate('components.native-chat.visualOpenInNewTab', 'Open in new tab')
 
   return (
-    <div ref={boxRef} className="group/visual relative my-3">
+    <div ref={boxRef} className="group/visual my-3">
       {state.status === 'ready' && near ? (
         <>
-          <NativeChatVisualFrame
-            document={state.document}
-            title={label}
-            themeScope={boxRef}
-            onRetired={() => setRetired(true)}
-          />
+          {/* Above the frame, not over it: the page owns every pixel of its box. */}
           <div
             data-share-open={shareOpen}
-            className="absolute top-2 right-2 flex items-center gap-1 transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100 data-[share-open=true]:opacity-100"
+            className="flex items-center justify-end gap-1 pb-1 transition-opacity can-hover:opacity-0 group-hover/visual:opacity-100 focus-within:opacity-100 data-[share-open=true]:opacity-100"
           >
             <Tooltip>
               <TooltipTrigger asChild>
@@ -123,7 +126,7 @@ export function NativeChatInlineVisual({
                   variant="outline"
                   size="icon-xs"
                   aria-label={openLabel}
-                  onClick={() => openNativeChatVisualFile(owner.worktreeId, state.document.path)}
+                  onClick={() => openNativeChatVisualFile(owner, state.document.path)}
                 >
                   <SquareArrowOutUpRight />
                 </Button>
@@ -141,6 +144,13 @@ export function NativeChatInlineVisual({
               onOpenChange={setShareOpen}
             />
           </div>
+          <NativeChatVisualFrame
+            document={state.document}
+            title={label}
+            themeScope={boxRef}
+            onRetired={() => setRetired(true)}
+            onReaderGesture={forwardGesture ?? undefined}
+          />
         </>
       ) : (
         <div

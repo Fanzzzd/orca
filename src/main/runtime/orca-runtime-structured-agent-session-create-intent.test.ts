@@ -1,4 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { agentSessionConversationView } from '../../shared/agent-session-conversation-view'
+import { prepareAdoptedTranscript } from '../native-chat/agent-session-wire/structured-agent-session-adopted-import'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +9,9 @@ const applyAgentWorkspaceTrust = vi.hoisted(() => vi.fn(async () => ({})))
 vi.mock('../agent-workspace-trust', () => ({ applyAgentWorkspaceTrust }))
 
 import { OrcaRuntimeService } from './orca-runtime'
+import { setStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
+import type { StructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-host'
+import { agentSessionRecordFixture } from '../../shared/agent-session-record.test-fixture'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../shared/constants'
 import { attachFingerprintFields } from '../native-chat/agent-session-wire/structured-agent-session-attach'
 
@@ -15,6 +20,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setStructuredAgentSessionHost(null)
   vi.unstubAllEnvs()
 })
 
@@ -70,8 +76,8 @@ describe('structured Codex folder trust', () => {
     expect(attachFingerprintFields(intent)).not.toHaveProperty('hostLaunchDirectory')
   })
 
-  it('pre-trusts the chat folder before launch preparation, as a Codex terminal launch does', async () => {
-    const { prepareCodexStructuredLaunch, createIntent } = createCodexIntentRuntime({})
+  it('pre-trusts the chat folder in the account home launch preparation selected', async () => {
+    const { createIntent } = createCodexIntentRuntime({})
 
     await createIntent()
 
@@ -79,11 +85,9 @@ describe('structured Codex folder trust', () => {
       env: expect.any(Object),
       claudeAuth: null,
       wslDistro: null,
-      connectionId: null
+      connectionId: null,
+      codexHome: '/accounts/selected/home'
     })
-    expect(applyAgentWorkspaceTrust.mock.invocationCallOrder[0]).toBeLessThan(
-      prepareCodexStructuredLaunch.mock.invocationCallOrder[0]
-    )
   })
 
   it('writes nothing with the setting off, and still prepares the launch', async () => {
@@ -99,6 +103,72 @@ describe('structured Codex folder trust', () => {
 })
 
 describe('structured agent-session create intent', () => {
+  it('returns the recorded owner, once no terminal still runs it, before launch support or account preparation', async () => {
+    const record = agentSessionRecordFixture()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: early ownership admission only reads the host's record list.
+    setStructuredAgentSessionHost({
+      deps: { store: { listConversations: () => [agentSessionConversationView(record)] } }
+    } as unknown as StructuredAgentSessionHost)
+    const runtime = new OrcaRuntimeService()
+    const support = vi
+      .spyOn(runtime, 'getStructuredAgentSessionCreateSupport')
+      .mockRejectedValue(new Error('fresh launch is unavailable'))
+    const writers = vi
+      .spyOn(runtime, 'assertStructuredAdoptionTerminalWritersExited')
+      .mockResolvedValue()
+    await expect(
+      runtime.resolveStructuredAgentSessionCreateIntent({
+        envelope: { sessionId: 'new-chat', clientOperationId: 'operation-1' },
+        worktree: 'id:another-workspace',
+        agent: 'claude',
+        resumeFrom: { providerSessionId: 'provider-session-alpha-1' }
+      })
+    ).rejects.toMatchObject({
+      refusal: {
+        code: 'agent_session_conflict',
+        details: {
+          reason: 'conversationHeldElsewhere',
+          owner: { sessionId: record.sessionId, workspaceId: record.location.workspaceId }
+        }
+      }
+    })
+    expect(support).not.toHaveBeenCalled()
+    expect(writers).toHaveBeenCalledWith('claude', 'provider-session-alpha-1', undefined)
+  })
+
+  it('refuses a switch out of a live terminal before naming the chat that owns the conversation', async () => {
+    const record = agentSessionRecordFixture()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: early ownership admission only reads the host's record list.
+    setStructuredAgentSessionHost({
+      deps: { store: { listConversations: () => [agentSessionConversationView(record)] } }
+    } as unknown as StructuredAgentSessionHost)
+    const runtime = new OrcaRuntimeService()
+    const writers = vi.spyOn(runtime, 'assertStructuredAdoptionTerminalWritersExited')
+    const intent = () =>
+      runtime.resolveStructuredAgentSessionCreateIntent({
+        envelope: { sessionId: 'new-chat', clientOperationId: 'operation-1' },
+        worktree: 'id:another-workspace',
+        agent: 'claude',
+        resumeFrom: {
+          providerSessionId: 'provider-session-alpha-1',
+          cliSource: { workspaceId: 'another-workspace', paneKey: 'pane-1' }
+        }
+      })
+    const liveWriter = Object.assign(new Error('live'), {
+      refusal: { code: 'agent_session_conflict', details: { reason: 'conversationHeldElsewhere' } }
+    })
+    writers.mockRejectedValueOnce(liveWriter)
+    await expect(intent()).rejects.toBe(liveWriter)
+    writers.mockResolvedValueOnce()
+    await expect(intent()).rejects.toMatchObject({
+      refusal: { details: { owner: { sessionId: record.sessionId } } }
+    })
+    expect(writers).toHaveBeenCalledWith('claude', 'provider-session-alpha-1', {
+      workspaceId: 'another-workspace',
+      paneKey: 'pane-1'
+    })
+  })
+
   it('pins the selected Codex launch home after normal launch preparation', async () => {
     const prepareCodexStructuredLaunch = vi.fn(() => '/accounts/selected/home')
     const runtime = new OrcaRuntimeService(
@@ -179,8 +249,7 @@ describe('structured agent-session create intent', () => {
 
     const accountHome = await runtime.resolveStructuredAgentAccountHome('codex')
 
-    // A read must not run launch preparation: no home sync, no session bridge,
-    // no cleared account selection — the read-only sibling answers instead.
+    // Reads must not sync homes, bridge sessions or clear account selections; use read-only home resolution.
     expect(prepareCodexStructuredLaunch).not.toHaveBeenCalled()
     expect(resolveCodexStructuredLaunchHome).toHaveBeenCalledWith({
       launchEnv: expect.objectContaining({ CODEX_HOME: '/configured/home' })
@@ -238,7 +307,6 @@ describe('structured agent-session create intent', () => {
     })
 
     expect(prepareCodexStructuredLaunch).not.toHaveBeenCalled()
-    // Claude was never pre-trusted for a structured chat.
     expect(applyAgentWorkspaceTrust).not.toHaveBeenCalled()
     expect(intent.accountHome).toEqual({
       variable: 'CLAUDE_CONFIG_DIR',
@@ -250,7 +318,6 @@ describe('structured agent-session create intent', () => {
       fastMode: 'true',
       permissionMode: 'ask'
     })
-    // createSupport reports this same seed, so a paired client's picker shows what create runs.
     expect(runtime.structuredAgentSessionLaunchSeedOptions('claude')).toEqual(intent.options)
   })
 
@@ -311,7 +378,7 @@ describe('structured agent-session create intent', () => {
 
 describe('adopting a conversation recorded outside Orca', () => {
   it('resolves OMP history with the configured launch environment', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'orca-omp-create-intent-'))
+    const root = await mkdtemp(join(await realpath(tmpdir()), 'orca-omp-create-intent-'))
     try {
       const accountHome = join(root, 'account', 'agent')
       const ambientData = join(root, 'ambient-data')
@@ -398,7 +465,6 @@ describe('adopting a conversation recorded outside Orca', () => {
       runtime.resolveStructuredAgentSessionCreateIntent({
         envelope: { sessionId: 'session-1', clientOperationId: 'operation-1' },
         worktree: 'id:workspace-1',
-        // Every registered agent adopts; an unregistered one has no importer.
         agent: 'hermes',
         resumeFrom: { providerSessionId: 'provider-1' }
       })
@@ -412,7 +478,7 @@ describe('adopting a conversation recorded outside Orca', () => {
   })
 
   it('adopts the original Pi file into a folder workspace and refuses another folder', async () => {
-    const accountHome = await mkdtemp(join(tmpdir(), 'orca-pi-adopt-intent-'))
+    const accountHome = await mkdtemp(join(await realpath(tmpdir()), 'orca-pi-adopt-intent-'))
     vi.stubEnv('PI_CODING_AGENT_DIR', accountHome)
     try {
       const file = join(
@@ -456,18 +522,24 @@ describe('adopting a conversation recorded outside Orca', () => {
       expect(intent.accountHome).toEqual({ variable: 'PI_CODING_AGENT_DIR', path: accountHome })
       expect(intent.adopt).toEqual({
         providerHandle: { transport: 'jsonl-rpc', agent: 'pi', nativeId: file },
-        transcriptPath: file
+        transcriptPath: file,
+        source: {
+          providerSessionId: '0198c2a4-7d1e-7c3a-9a4b-1f2e3d4c5b6a',
+          workspaceCwd: '/repos/workspace-1'
+        }
       })
 
       workspaceDirectory = '/different-folder'
-      await expect(
-        runtime.resolveStructuredAgentSessionCreateIntent({
-          envelope: { sessionId: 'session-2', clientOperationId: 'operation-2' },
-          worktree: 'id:workspace-1',
-          agent: 'pi',
-          resumeFrom: { providerSessionId: '0198c2a4-7d1e-7c3a-9a4b-1f2e3d4c5b6a' }
-        })
-      ).rejects.toMatchObject({ refusal: { code: 'agent_session_identity_required' } })
+      const refused = await runtime.resolveStructuredAgentSessionCreateIntent({
+        envelope: { sessionId: 'session-2', clientOperationId: 'operation-2' },
+        worktree: 'id:workspace-1',
+        agent: 'pi',
+        resumeFrom: { providerSessionId: '0198c2a4-7d1e-7c3a-9a4b-1f2e3d4c5b6a' }
+      })
+      expect(await prepareAdoptedTranscript(refused)).toMatchObject({
+        ok: false,
+        refusal: { code: 'agent_session_identity_required' }
+      })
     } finally {
       vi.unstubAllEnvs()
       await rm(accountHome, { recursive: true, force: true })

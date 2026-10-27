@@ -1,7 +1,4 @@
-// Window parity: for each stored profile, the window's startup hydration of the session as stored
-// and of the shared Loader's rewrite of it (load then save) must show the same thing. Where they
-// differ today, the difference is listed below with the Loader rule that causes it: as work to
-// do, or as accepted with the reason it is not a bug.
+// Compare window startup from disk with the Loader round trip. Enumerate each divergence as a known defect or accepted difference with its reason.
 
 import { describe, expect, it, vi } from 'vitest'
 import type * as AgentStatusModule from '@/lib/agent-status'
@@ -14,11 +11,24 @@ import { saveWorkspaceLayout } from '../../../shared/workspace-layout/workspace-
 import { createStoreSessionMockApi } from '../store/slices/store-session-test-harness'
 import { createTestStore } from '../store/slices/store-test-helpers'
 import {
+  ACCEPTED_DIFFERENCES,
+  GIT,
+  KNOWN_DIFFERENCES,
+  sweptAtStartup
+} from './startup-window-parity-differences.test-fixture'
+import {
   bootWindowFromPartitions,
   diffStartupWindowViews,
   projectStartupWindowView
 } from './startup-window-view.test-fixture'
 
+// Use legacy window boot as the oracle for main-owned layout loading.
+const layoutOwner = vi.hoisted(() => ({ isMain: false }))
+vi.mock('../../../shared/layout-owner-switch', () => ({
+  get ORCA_LAYOUT_OWNER_IS_MAIN() {
+    return layoutOwner.isMain
+  }
+}))
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/agent-status', async (importOriginal) => {
   const actual = await importOriginal<typeof AgentStatusModule>()
@@ -27,83 +37,19 @@ vi.mock('@/lib/agent-status', async (importOriginal) => {
 
 createStoreSessionMockApi()
 
-const GIT = 'repo-1::/Users/dev/orca'
-const terminal = (tabId: string) =>
-  ['phone and CLI title', 'panes', 'focused pane', 'reattaches'].map(
-    (field) => `${GIT} terminal ${tabId} ${field}`
-  )
-
-type KnownDifference = {
-  fixture: string
-  /** The Loader rule that makes the window show something else. */
-  rule: string
-  /** View paths that differ; see `projectStartupWindowView`. */
-  paths: string[]
-}
-
-/** Differences to fix. Entries may only be removed: fix the rule, then delete its entry. */
-const KNOWN_DIFFERENCES: readonly KnownDifference[] = [
-  {
-    fixture: 'row without a tab-bar entry or a terminal',
-    rule: 'ghost tab: the Loader gives every row a tab-bar entry; the window adopts only rows it can reattach',
-    paths: [`${GIT} group 0 tabs`, `${GIT} tab tab-b`, ...terminal('tab-b')]
-  }
-]
-
-type AcceptedDifference = Omit<KnownDifference, 'paths'> & {
-  reason: string
-  /** Each differing view path with its stored and normalized values; absent means not shown. */
-  values: Record<string, { stored?: unknown; normalized?: unknown }>
-}
-
-/** Differences that are not bugs: the user sees the same thing, or the window is the outlier. */
-const ACCEPTED_DIFFERENCES: readonly AcceptedDifference[] = [
-  {
-    fixture: 'row terminal differs from its focused pane’s',
-    rule: 'row.ptyId rewrite: the Loader sets the row terminal to its focused pane’s, which changes what the tab reattaches',
-    reason: 'the pane’s own terminal binding wins on mount, so the user sees the same terminal',
-    values: { [`${GIT} terminal tab-a reattaches`]: { stored: 'pty-stale', normalized: 'pty-a' } }
-  },
-  {
-    fixture: 'row with no terminal while its pane has one',
-    rule: 'row.ptyId rewrite: the Loader sets the row terminal to its focused pane’s, which changes what the tab reattaches',
-    reason: 'the pane’s own terminal binding wins on mount, so the user sees the same terminal',
-    values: { [`${GIT} terminal tab-a reattaches`]: { stored: null, normalized: 'pty-a' } }
-  },
-  {
-    fixture: 'legacy surface tombstone on a pane still showing its terminal',
-    rule: 'tombstones: the Loader closes a pane a legacy surface tombstone names; the window ignores the tombstone and shows the pane',
-    reason: 'the window is the outlier: main already retires panes these tombstones name',
-    values: {
-      [`${GIT} group 0 tabs`]: { stored: ['tab-a', 'tab-b'], normalized: ['tab-a'] },
-      [`${GIT} tab tab-b`]: {
-        stored: { kind: 'terminal', shows: 'tab-b', group: 0, label: 'Terminal 2' }
-      },
-      [`${GIT} terminal tab-b phone and CLI title`]: { stored: 'Terminal 2' },
-      [`${GIT} terminal tab-b panes`]: { stored: { pane: 'pty-b' } },
-      [`${GIT} terminal tab-b focused pane`]: { stored: 'root' },
-      [`${GIT} terminal tab-b reattaches`]: { stored: 'pty-b' }
-    }
-  },
-  {
-    fixture: 'tab-bar label differing from the row title',
-    rule: 'label over title: the Loader writes the tab-bar label into the row title',
-    reason:
-      'the desktop tab shows the label, which is unchanged; only phones and the CLI show the row title',
-    values: {
-      [`${GIT} terminal tab-a phone and CLI title`]: { stored: 'Terminal 1', normalized: 'vim' }
-    }
-  }
-]
-
-/** The shared Loader's round trip, as main would persist it. */
+/** Main's startup sweep, then the shared Loader's round trip, as main would persist it. */
 function normalize(hostId: ExecutionHostId, session: WorkspaceSessionState): WorkspaceSessionState {
   let next = 0
-  const loaded = loadWorkspaceLayout(hostId, structuredClone(session), {
-    mintId: () => `minted-${++next}`,
-    mintLeafId: () => `00000000-0000-4000-9000-${String(++next).padStart(12, '0')}`
-  })
-  return saveWorkspaceLayout(loaded)
+  layoutOwner.isMain = true
+  try {
+    const loaded = loadWorkspaceLayout(hostId, sweptAtStartup(hostId, structuredClone(session)), {
+      mintId: () => `minted-${++next}`,
+      mintLeafId: () => `00000000-0000-4000-9000-${String(++next).padStart(12, '0')}`
+    })
+    return saveWorkspaceLayout(loaded)
+  } finally {
+    layoutOwner.isMain = false
+  }
 }
 
 const PROFILES = [...WORKSPACE_LAYOUT_PROFILES, ...LEGACY_WORKSPACE_LAYOUT_PROFILES]

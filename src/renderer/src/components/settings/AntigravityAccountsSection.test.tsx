@@ -10,7 +10,9 @@ import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import type { AntigravityAccountState } from '../../../../shared/antigravity-account-types'
 
 vi.mock('@/runtime/runtime-antigravity-accounts-client', () => ({
-  callAntigravityAccounts: vi.fn()
+  callAntigravityAccounts: vi.fn(),
+  callAntigravityChatSignIn: vi.fn(),
+  subscribeAntigravityChatSignIn: vi.fn()
 }))
 vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc: vi.fn() }))
 vi.mock('@/lib/agent-catalog', () => ({ AgentIcon: () => null }))
@@ -68,6 +70,25 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('native Antigravity Accounts', () => {
+  it('saves a signed-in account with unknown identity and displays the confirmed account', async () => {
+    const save = Promise.withResolvers<AntigravityAccountState>()
+    vi.mocked(callAntigravityAccounts)
+      .mockResolvedValueOnce({
+        accounts: [],
+        activeAccountId: null,
+        selectedAccountId: null,
+        currentAccount: { email: null, subject: null, authMethod: 'consumer', identityKnown: false }
+      })
+      .mockReturnValueOnce(save.promise)
+    render(<AntigravityAccountsSection owner={owner} target={target} label="This device" />)
+    await screen.findByText('Signed-in identity unavailable')
+    await userEvent.click(screen.getByRole('button', { name: 'Save current account' }))
+    expect(screen.getByRole('button', { name: 'Save current account' })).toBeDisabled()
+    save.resolve({ ...state, selectedAccountId: null })
+    await screen.findByText('Native account')
+    expect(screen.getAllByText('synthetic@example.invalid')).toHaveLength(2)
+  })
+
   it.each(['Refresh accounts', 'Save current account'])(
     'hides the previous account quota when %s observes a different native identity',
     async (action) => {

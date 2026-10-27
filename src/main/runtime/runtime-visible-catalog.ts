@@ -1,8 +1,4 @@
-/**
- * The projects a client may list: the same rows the desktop sidebar shows. A converted SSH host's
- * source rows and a WSL host's moved rows stay in the store for a downgrade, but the server that
- * now owns them lists them. Internal callers (routing, selectors, migration) keep the full store.
- */
+/** Client listings hide retained SSH/WSL source rows kept for downgrades; internal routing, selectors and migration use the full store. */
 import {
   LOCAL_EXECUTION_HOST_ID,
   getRepoExecutionHostId,
@@ -13,15 +9,21 @@ import type { FolderWorkspace } from '../../shared/folder-workspace-types'
 import type { ProjectGroup } from '../../shared/project-group-types'
 import type { Repo } from '../../shared/repo-types'
 import {
+  createRepoRowExecutionHostLookup,
+  resolveWorktreeExecutionHost
+} from '../../shared/worktree-execution-host-resolution'
+import type { ProjectHostSetup } from '../../shared/project-types'
+import {
   visibleFolderWorkspaces,
   visibleProjectGroups,
+  visibleProjectHostSetups,
   visibleRepos
 } from '../ssh/orcad-retained-source'
 import type { RuntimeStore } from './runtime-store-contract'
 
 type CatalogSource = Pick<
   RuntimeStore,
-  'getRepos' | 'getProjectGroups' | 'getFolderWorkspaces' | 'getSshTargets'
+  'getRepos' | 'getProjectGroups' | 'getFolderWorkspaces' | 'getSshTargets' | 'getProjectHostSetups'
 >
 
 // Headless orcad has no SSH targets, so nothing of its own is ever a retained source.
@@ -30,7 +32,8 @@ function catalogStore(store: CatalogSource) {
     getRepos: () => store.getRepos(),
     getProjectGroups: () => store.getProjectGroups?.() ?? [],
     getFolderWorkspaces: () => store.getFolderWorkspaces?.() ?? [],
-    getSshTargets: () => store.getSshTargets?.() ?? []
+    getSshTargets: () => store.getSshTargets?.() ?? [],
+    getProjectHostSetups: () => store.getProjectHostSetups?.() ?? []
   }
 }
 
@@ -42,22 +45,61 @@ export function runtimeVisibleProjectGroups(store: CatalogSource | null): Projec
   return store ? visibleProjectGroups(catalogStore(store)) : []
 }
 
+export function runtimeVisibleProjectHostSetups(store: CatalogSource | null): ProjectHostSetup[] {
+  return store ? visibleProjectHostSetups(catalogStore(store)) : []
+}
+
 export function runtimeVisibleFolderWorkspaces(store: CatalogSource | null): FolderWorkspace[] {
   return store ? visibleFolderWorkspaces(catalogStore(store)) : []
 }
 
-/** Repos in the store that clients must not see; empty in the common case of nothing hidden. */
-export function runtimeHiddenRepoIds(store: CatalogSource | null): ReadonlySet<string> {
+export type RuntimeHiddenRepos = {
+  readonly size: number
+  hasRepo: (repo: Pick<Repo, 'id' | 'connectionId' | 'executionHostId'>) => boolean
+  hasWorktree: (worktree: { repoId: string; hostId?: string | null }) => boolean
+}
+
+const NOTHING_HIDDEN: RuntimeHiddenRepos = {
+  size: 0,
+  hasRepo: () => false,
+  hasWorktree: () => false
+}
+
+const repoRowKey = (repoId: string, hostId: ExecutionHostId): string => `${hostId}\0${repoId}`
+
+/** Hidden repo rows are host-qualified: the same repo id may remain visible on another host. */
+export function runtimeHiddenRepos(store: CatalogSource | null): RuntimeHiddenRepos {
   if (!store) {
-    return new Set()
+    return NOTHING_HIDDEN
   }
   const all = store.getRepos()
   const visible = runtimeVisibleRepos(store)
   if (visible.length === all.length) {
-    return new Set()
+    return NOTHING_HIDDEN
   }
-  const visibleIds = new Set(visible.map((repo) => repo.id))
-  return new Set(all.filter((repo) => !visibleIds.has(repo.id)).map((repo) => repo.id))
+  const keyOf = (repo: Pick<Repo, 'id' | 'connectionId' | 'executionHostId'>): string =>
+    repoRowKey(repo.id, getRepoExecutionHostId(repo))
+  const visibleKeys = new Set(visible.map(keyOf))
+  const hiddenKeys = new Set(all.map(keyOf).filter((key) => !visibleKeys.has(key)))
+  if (hiddenKeys.size === 0) {
+    return NOTHING_HIDDEN
+  }
+  const lookup = createRepoRowExecutionHostLookup(all)
+  const hasRepo = (repo: Pick<Repo, 'id' | 'connectionId' | 'executionHostId'>): boolean =>
+    hiddenKeys.has(keyOf(repo))
+  return {
+    size: hiddenKeys.size,
+    hasRepo,
+    hasWorktree: (worktree) => {
+      const resolution = resolveWorktreeExecutionHost(lookup, worktree)
+      if (resolution.kind === 'resolved') {
+        return hiddenKeys.has(repoRowKey(worktree.repoId, resolution.hostId))
+      }
+      // No single owning host: hidden only when every row carrying the id is.
+      const rows = all.filter((repo) => repo.id === worktree.repoId)
+      return rows.length > 0 && rows.every(hasRepo)
+    }
+  }
 }
 
 function folderHostId(folder: FolderWorkspace): ExecutionHostId | null {
@@ -67,12 +109,9 @@ function folderHostId(folder: FolderWorkspace): ExecutionHostId | null {
   return folder.connectionId ? toSshExecutionHostId(folder.connectionId) : null
 }
 
-/**
- * Hosts known only through hidden rows. A client listing must not name them as "not covered":
- * that would send a user or agent to list a host whose rows are hidden on purpose.
- */
+/** Exclude hosts known only through hidden rows from not-covered listings, or clients would be directed to intentionally hidden sources. */
 export function runtimeHiddenHostIds(store: CatalogSource | null): ReadonlySet<ExecutionHostId> {
-  const hiddenRepos = runtimeHiddenRepoIds(store)
+  const hiddenRepos = runtimeHiddenRepos(store)
   if (!store) {
     return new Set()
   }
@@ -92,7 +131,7 @@ export function runtimeHiddenHostIds(store: CatalogSource | null): ReadonlySet<E
     }
   }
   for (const repo of store.getRepos()) {
-    note(getRepoExecutionHostId(repo), hiddenRepos.has(repo.id))
+    note(getRepoExecutionHostId(repo), hiddenRepos.hasRepo(repo))
   }
   for (const folder of folders) {
     note(folderHostId(folder), !visibleFolderIds.has(folder.id))

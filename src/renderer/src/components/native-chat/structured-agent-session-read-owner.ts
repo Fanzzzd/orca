@@ -3,15 +3,13 @@ import type { AgentProviderSessionMetadata } from '../../../../shared/agent-sess
 import { agentProviderSessionsEqual } from '../../../../shared/agent-session-resume'
 import {
   AGENT_SESSION_HISTORY_MAX_LIMIT,
-  type AgentSessionHistoryPage,
   type AgentSessionHistoryResult
 } from '../../../../shared/agent-session-wire'
 import {
   EMPTY_STRUCTURED_AGENT_SESSION,
   oldestStructuredAgentSessionCursor,
   reduceStructuredAgentSession,
-  type StructuredAgentSessionAction,
-  type StructuredAgentSessionState
+  type StructuredAgentSessionAction
 } from '../../../../shared/structured-agent-session-reducer'
 import type { RuntimeClientTarget } from '../../../../shared/runtime-client-target'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
@@ -21,26 +19,16 @@ import {
   readStructuredAgentSessionOlderPage
 } from './structured-agent-session-older-page-read'
 import { startStructuredAgentSessionReadTransport } from './structured-agent-session-read-transport'
+import { createStructuredAgentSessionPRLinkObserver } from './structured-agent-session-pr-link-observer'
 
-export type StructuredAgentSessionReadSnapshot = {
-  state: StructuredAgentSessionState
-  loadingOlder: boolean
-  /** Bumped whenever older-page reads are invalidated (open, snapshot, reset, dispose). */
-  olderHistoryGeneration: number
-  providerSession?: AgentProviderSessionMetadata
-  /** Whether `state` is the host's present: false from when reading stops or contact is lost
-   *  until the read has caught up again. */
-  current: boolean
-}
-
-export type StructuredAgentSessionReadOwner = {
-  publishCreated: (page: AgentSessionHistoryPage) => void
-  activate: () => () => void
-  dispose: () => void
-  getSnapshot: () => StructuredAgentSessionReadSnapshot
-  loadOlder: () => Promise<NativeChatOlderPageResult>
-  subscribe: (listener: () => void) => () => void
-}
+import type {
+  StructuredAgentSessionReadSnapshot,
+  StructuredAgentSessionReadOwner
+} from './structured-agent-session-read-owner-contract'
+export type {
+  StructuredAgentSessionReadSnapshot,
+  StructuredAgentSessionReadOwner
+} from './structured-agent-session-read-owner-contract'
 
 import {
   adoptStructuredReadOwner,
@@ -74,6 +62,7 @@ function createReadOwner(
   let captureActiveHistoryReadGuard = (): (() => boolean) => retiredHistoryRead
   const activations = new Set<symbol>()
   const listeners = new Set<() => void>()
+  const observePRLinks = createStructuredAgentSessionPRLinkObserver(sessionId, target)
 
   const emit = (): void => {
     for (const listener of listeners) {
@@ -181,8 +170,7 @@ function createReadOwner(
       if (shouldStop()) {
         return
       }
-      // A live batch that head-trimmed past the anchor makes this page discontiguous;
-      // the reducer drops it, so re-anchor rather than chase a moving window forever.
+      // Bound re-anchoring when head trimming makes older pages discontiguous.
       if (oldestStructuredAgentSessionCursor(snapshot.state)?.sequence !== oldest.sequence) {
         anchorSlides += 1
         if (anchorSlides >= OLDER_PAGE_ANCHOR_ATTEMPTS) {
@@ -198,18 +186,23 @@ function createReadOwner(
     }
   }
 
-  let olderPage: { shouldStop: () => boolean; promise: Promise<NativeChatOlderPageResult> } | null =
-    null
+  let olderPage: {
+    shouldStop: () => boolean
+    promise: Promise<NativeChatOlderPageResult>
+  } | null = null
 
   const start = (): void => {
     if (snapshot.state.epoch === null) {
       apply({ type: 'loading' })
     }
     const transport = startStructuredAgentSessionReadTransport({
-      applyEvent: (event, options) => apply({ type: 'event', event, ...options }),
+      applyRequests: apply,
+      applyEvent: (event, options) => {
+        apply({ type: 'event', event, ...options })
+        observePRLinks(event)
+      },
       applyError: (message, refusal) => {
-        // Once loaded, a failure with no host refusal attached is treated as lost contact: the
-        // transport retries it and the chat stays as it is. A refusal is the host's answer: shown.
+        // After loading, transport failures retain history while retrying; host refusals are explicit answers to show.
         if (snapshot.state.epoch !== null && refusal === undefined) {
           return
         }
@@ -266,8 +259,7 @@ function createReadOwner(
     },
     getSnapshot: () => snapshot,
     loadOlder: () => {
-      // Concurrent callers (scroll-to-top, the button, a rail jump) share one page
-      // and its result rather than reading a refusal as "no progress".
+      // Share concurrent page requests so another caller’s refusal cannot look like exhaustion.
       if (olderPage && !olderPage.shouldStop()) {
         return olderPage.promise
       }

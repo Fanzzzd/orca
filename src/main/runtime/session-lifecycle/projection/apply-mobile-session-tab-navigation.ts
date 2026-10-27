@@ -12,9 +12,7 @@ import {
   activateClientSessionTabSelection,
   deriveClientSessionTabSelection,
   projectClientSessionTabSelection
-} from '../../client-session-tab-selection'
-import { makePaneKey } from '../../../../shared/stable-pane-id'
-import { runtimeWorktreeIdsEqual } from '../../runtime-worktree-path-identity'
+} from '../../client-session-tab-selection-projection'
 import {
   buildHeadlessMobileSessionTabGroups,
   cloneTerminalLayoutSnapshot
@@ -36,7 +34,7 @@ export abstract class OrcaRuntimeWithApplyMobileSessionTabNavigation extends Orc
   ): RuntimeMobileSessionTabsResult {
     let callerSnapshot: RuntimeMobileSessionTabsResult | null = null
     if (navigationTargetsClients(navigation)) {
-      // Why: follow is live intent; disconnected devices must not inherit stale navigation on reconnect.
+      // Follow is live intent; reconnecting devices must not inherit stale navigation.
       const ids = new Set(
         [...this.mobileSessionTabListeners]
           .map((subscription) => subscription.clientNavigationId)
@@ -57,7 +55,7 @@ export abstract class OrcaRuntimeWithApplyMobileSessionTabNavigation extends Orc
         }
       }
     } else if (clientNavigationId) {
-      // Why: follow-host still starts as caller navigation; the host is an additional target, not a replacement owner.
+      // Follow-host adds the host as a target without replacing caller navigation.
       callerSnapshot = this.clientSessionTabSelections.activate(
         this.withSessionTabsHolds(snapshot, clientNavigationId),
         clientNavigationId,
@@ -79,11 +77,7 @@ export abstract class OrcaRuntimeWithApplyMobileSessionTabNavigation extends Orc
     return snapshot
   }
 
-  /**
-   * Records a tab a create just published as one paired client's selection, as a create does for
-   * its own tab. Not the tap path: a tap is a wake gesture that may respawn a non-ready pane.
-   * Returns false when the tab is not in the snapshot.
-   */
+  /** Select a newly created tab for one client; false if absent. Unlike a tap, this never wakes or respawns a pending pane. */
   selectCreatedMobileSessionTabForClient(
     worktreeId: string,
     surface: { tabId: string; leafId: string } | { sessionId: string },
@@ -102,29 +96,6 @@ export abstract class OrcaRuntimeWithApplyMobileSessionTabNavigation extends Orc
     }
     this.applyMobileSessionTabNavigation(snapshot, tab.id, 'caller', clientNavigationId)
     return true
-  }
-
-  /**
-   * Whether persistence proves this pane's PTY was deliberately taken down and parked
-   * (workspace sleep or completed-agent hibernation) rather than lost and awaiting reconnect.
-   * Why: `pending-handle` alone cannot tell those apart — a parked pane publishes it
-   * indefinitely — and respawning a parked pane re-launches its agent behind the user.
-   * Only an automatic activation consults this; a user opening the tab is the wake gesture.
-   */
-  protected isDeliberatelyParkedPane(
-    worktreeId: string,
-    tab: RuntimeMobileSessionTerminalTab
-  ): boolean {
-    const record =
-      this.getWorkspaceSessionForWorktree(worktreeId)?.sleepingAgentSessionsByPaneKey?.[
-        makePaneKey(tab.parentTabId, tab.leafId)
-      ]
-    // Why: 'live'/'quit' captures describe a pane that was still running, so a reconnect
-    // must still mint its replacement PTY (#11542). Only a worktree-owned capture records
-    // a deliberate takedown the user did not ask to undo.
-    return (
-      record?.origin === 'worktree-sleep' && runtimeWorktreeIdsEqual(record.worktreeId, worktreeId)
-    )
   }
 
   protected shouldMaterializeHeadlessMobileSessionTab(

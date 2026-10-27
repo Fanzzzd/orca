@@ -49,8 +49,8 @@ const LAYOUT_ORACLE_PREFIXES = [
   'src/renderer/src/store/slices/recently-closed-tabs.ts',
   // The client the oracle reads every view through.
   'src/cli/runtime/client.ts',
-  'src/shared/remote-runtime-client.ts',
-  'src/shared/remote-runtime-subscription-transport.ts',
+  'src/shared/remote-runtime/remote-runtime-client.ts',
+  'src/shared/remote-runtime/requests/remote-runtime-subscription-transport.ts',
   'src/shared/paired-runtime-connection.ts',
   'src/shared/pairing.ts',
   // The harness: the oracle imports most of the shared e2e helpers, not just its own.
@@ -62,6 +62,7 @@ const LAYOUT_ORACLE_PREFIXES = [
   '.github/scripts/e2e-with-window-manager.sh',
   // The job itself: the called workflow, its window-spec lane picker, and this route.
   '.github/workflows/e2e.yml',
+  '.github/scripts/prepare-ubuntu-apt.sh',
   'config/scripts/ci-e2e-job-selection.mjs',
   'config/scripts/pr-layout-oracle-route.mjs'
 ]
@@ -72,7 +73,11 @@ const RUNTIME_LAYOUT_WRITERS = [
   'src/main/runtime/terminal/launch/terminal-split-surface.ts',
   'src/main/runtime/terminal/stop/worktree-terminal-stop.ts',
   'src/main/runtime/workspaces/workspace-file-session-targets.ts',
-  'src/main/runtime/workspaces/persisted-surfaces/has-exact-persisted-terminal-surface-identity.ts'
+  'src/main/runtime/workspaces/persisted-surfaces/has-exact-persisted-terminal-surface-identity.ts',
+  'src/main/runtime/runtime-terminal-orphan-adoption.ts',
+  'src/main/runtime/terminal/adoption/adopt-terminal-orphans-from-inventory.ts',
+  'src/main/runtime/session-tabs/mobile-session-membership.ts',
+  'src/main/runtime/session-tabs/pty-backed-session-publication.ts'
 ]
 
 // Runtime matches only the modules that create, move, close, persist or publish layout.

@@ -10,7 +10,10 @@ import type { RuntimeStore } from './runtime-store-contract'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import type { TerminalCreateOptions } from './runtime-terminal-contracts'
 import { resolveBareAgentLaunchCommand } from './runtime-agent-launch-resolution'
-import { planExecutionHostStartupWithPromptCandidate } from '../opencode/opencode-model-startup-plan'
+import {
+  buildExecutionHostAgentStartupPlan,
+  planExecutionHostStartupWithPromptCandidate
+} from '../opencode/opencode-model-startup-plan'
 import { agentPromptRidesLaunchCommand } from '../../shared/tui-agent-startup'
 import {
   launchHostProvesAgentInFront,
@@ -34,6 +37,9 @@ import { resolveStartupShell } from '../../shared/tui-agent-startup-shell'
 import { resolveWslSessionContext } from '../daemon/wsl-session-context'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 
+/** No launch command could be built for a requested `startupAgent`. */
+export class AgentLaunchUnbuildableError extends Error {}
+
 type AgentTerminalPlanHost = {
   store: RuntimeStore | null | undefined
   hostIdentity: string
@@ -42,19 +48,14 @@ type AgentTerminalPlanHost = {
   ) => Record<string, SessionOptionValue> | undefined
 }
 
-/**
- * Every host terminal create passes here. An agent the host plans (requested or typed bare) is
- * quoted for the workspace's one runtime fact and spawns with it. A command the caller quoted keeps
- * the spawn's own shell rule unless the caller passes the fact it quoted with.
- */
+/** Host-planned requested/bare agents use the workspace's resolved runtime; caller-quoted commands keep spawn shell rules unless given their quoting runtime. */
 export async function resolveAgentTerminalCreateOptions(
   workspace: TerminalWorkspaceLaunchScope,
   opts: TerminalCreateOptions,
   host: AgentTerminalPlanHost
 ): Promise<TerminalCreateOptions> {
   const store = host.store ?? undefined
-  // Why: raw shell commands like `codex exec` must remain user-authored shell.
-  // Only unmanaged, repo-backed, bare agent launches get Settings defaults.
+  // Preserve raw commands such as codex exec; Settings defaults apply only to unmanaged repo-backed bare agents.
   const callerSuppliedLaunch =
     opts.env ||
     opts.launchConfig ||
@@ -72,8 +73,7 @@ export async function resolveAgentTerminalCreateOptions(
         })
       : null)
   const launchAgent = plannedAgent ?? opts.launchAgent
-  // Before any early return: a host that cannot apply the requested shell must refuse rather than
-  // spawn another one. Judged against the runtime this PTY's shell will come from.
+  // Refuse unsupported requested shells before any return, using the runtime that will spawn this PTY.
   const shellRefusal = terminalShellOverrideRefusal({
     shellOverride: opts.shellOverride,
     connectionId: workspace.connectionId,
@@ -91,9 +91,7 @@ export async function resolveAgentTerminalCreateOptions(
     throw shellRefusal
   }
   if (opts.startupAgent) {
-    // Why: falling through unresolved would spawn a bare shell that can only time out waiting for
-    // an agent. A caller-supplied launch contradicts the agent: `command` would be overwritten,
-    // `resumeProviderSession` would pair resume identity with a fresh launch.
+    // Missing plans must not fall through to a shell that never becomes ready; supplied commands/resume identities contradict fresh launch plans.
     if (callerSuppliedLaunch || opts.command || opts.resumeProviderSession) {
       throw new Error(
         `startupAgent ${opts.startupAgent} cannot combine with a caller-supplied launch.`
@@ -132,10 +130,7 @@ export async function resolveAgentTerminalCreateOptions(
   return runtime ? { ...qoderLaunch, launchRuntime: runtime } : qoderLaunch
 }
 
-/**
- * The desktop-selected account env over the launch's plan, as a desktop launch's `accountEnv`
- * rides over it; what the caller itself passed (`env`, `accountEnv`) still wins.
- */
+/** Desktop-selected account env overrides the launch plan; explicit caller env/accountEnv still wins. */
 export function withHostAccountLaunchEnv(
   requested: Pick<TerminalCreateOptions, 'env' | 'accountEnv'>,
   launch: TerminalCreateOptions,
@@ -163,15 +158,14 @@ async function buildRuntimeAgentTerminalStartupOptions(
   runtime: AgentLaunchRuntime,
   host: AgentTerminalPlanHost
 ): Promise<TerminalCreateOptions> {
-  // Why: `workspace.repo` is display metadata and may be a row from another host; the launch
-  // shape must match the PTY route this scope already resolved.
+  // Repo display metadata may belong to another host; use the already-resolved PTY route for launch.
   const isRemote = Boolean(workspace.connectionId)
-  // A prompt this launch command cannot carry has nowhere to go from here — the create returns
-  // options, not a live PTY — so refuse rather than spawn the agent and drop the text.
-  if (opts.startupPrompt && !agentPromptRidesLaunchCommand(agent)) {
+  const forceLine = opts.startupPromptCarry === 'force-line'
+  // Create has no live PTY for later prompt delivery; refuse uncarryable text. force-line preserves createAgentSession's clean launch.
+  if (opts.startupPrompt && !forceLine && !agentPromptRidesLaunchCommand(agent)) {
     throw new Error(`Agent ${agent} does not take a startup prompt on its launch command.`)
   }
-  const { plan: startupPlan, promptCarried } = await planExecutionHostStartupWithPromptCandidate({
+  const scope = {
     inputs: resolveAgentStartupPlanInputs({
       agent,
       settings,
@@ -179,27 +173,43 @@ async function buildRuntimeAgentTerminalStartupOptions(
       isRemote,
       ...(opts.agentArgs !== undefined ? { agentArgs: opts.agentArgs } : {}),
       shell: agentLaunchQuotingShell(runtime),
-      sessionOptions: host.toSessionOptions(opts.launchPreferences)
+      sessionOptions: host.toSessionOptions(opts.launchPreferences),
+      ...(opts.suppressStartupUpdatePrompt ? { suppressStartupUpdatePrompt: true } : {})
     }),
     prompt: opts.startupPrompt ?? '',
     cwd: resolveTerminalStartupCwd(workspace.path, opts.cwd) ?? workspace.path,
     hostIdentity: host.hostIdentity,
-    host: {
-      shellName: nameLocalTypedLineShell({
-        isRemote,
-        ...(runtime.pty.shellOverride ? { shellOverride: runtime.pty.shellOverride } : {})
-      }),
-      provesAgentInFront: launchHostProvesAgentInFront({
-        isRemote,
-        launchPlatform: runtime.platform
-      })
-    }
-  })
+    signal: opts.signal
+  }
+  // TEMPORARY (createAgentSession parity, removed with force-line): a draft skips the carry rule.
+  const { plan: startupPlan, promptCarried } =
+    opts.startupPromptDelivery === 'draft' || forceLine
+      ? {
+          plan: await buildExecutionHostAgentStartupPlan({
+            ...scope,
+            promptDelivery: opts.startupPromptDelivery
+          }),
+          promptCarried: agentPromptRidesLaunchCommand(agent)
+        }
+      : await planExecutionHostStartupWithPromptCandidate({
+          ...scope,
+          host: {
+            shellName: nameLocalTypedLineShell({
+              isRemote,
+              ...(runtime.pty.shellOverride ? { shellOverride: runtime.pty.shellOverride } : {})
+            }),
+            provesAgentInFront: launchHostProvesAgentInFront({
+              isRemote,
+              launchPlatform: runtime.platform
+            })
+          }
+        })
   if (!startupPlan) {
-    // Why: an explicit agent that yields no plan would otherwise spawn a bare
-    // shell that never reaches agent readiness.
+    // Explicit agents without plans must not become bare shells that never reach readiness.
     if (opts.startupAgent) {
-      throw new Error(`Could not build launch command for ${opts.startupAgent}.`)
+      throw new AgentLaunchUnbuildableError(
+        `Could not build launch command for ${opts.startupAgent}.`
+      )
     }
     return opts
   }

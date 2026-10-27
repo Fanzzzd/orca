@@ -1,6 +1,5 @@
 import '../unused-default-rpc-methods.test-fixture'
-// The create route's pre-commit boundary: a failure before `attach` must reach the client as a
-// refusal it can classify, and a failure at or after `attach` must not.
+// Before attach, classify no-effects refusal; at/after attach, failure cannot prove no session exists.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-host'
@@ -81,8 +80,7 @@ async function create(
 ): Promise<RpcResponse> {
   const runtime = {
     getRuntimeId: () => 'runtime-1',
-    // The structured surface is settings-gated for every caller; these fixtures probe the
-    // pre-commit boundary, which only runs once the gate admits the call.
+    // Fixtures pass capability admission so they exercise the pre-commit refusal boundary.
     getClientSettings: () => ({ experimentalNativeChat: true }),
     registerSubscriptionCleanup: vi.fn(),
     cleanupSubscription: vi.fn(),
@@ -131,18 +129,20 @@ afterEach(() => {
 })
 
 describe('a create refused before it commits', () => {
-  it('answers missing history before commit as a definite failed attempt', async () => {
+  it('answers an ownership refusal before commit as a definite failed attempt', async () => {
+    const code = 'agent_session_conflict'
+    const details = {
+      reason: 'conversationHeldElsewhere' as const,
+      owner: { sessionId: 'owner', workspaceId: 'workspace' }
+    }
     const response = await create({
       resolveStructuredAgentSessionCreateIntent: vi.fn(async () => {
-        throw agentSessionRefusalError('agent_session_identity_required', {
-          reason: 'transcriptNotFound'
-        })
+        throw agentSessionRefusalError(code, details)
       })
     })
-
     expect(refusalOf(response)).toMatchObject({
-      code: 'agent_session_identity_required',
-      details: { reason: 'transcriptNotFound' },
+      code,
+      details,
       createAttemptRefusedBeforeCommit: true
     })
     expect(attach).not.toHaveBeenCalled()

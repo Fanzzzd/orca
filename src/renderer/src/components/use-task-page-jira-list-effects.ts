@@ -1,11 +1,11 @@
 import { translate } from '@/i18n/i18n'
 import { isRuntimeProviderSearchQueryWithinLimit } from '@/runtime/runtime-provider-search-bounds'
-import { withCurrentSprintClause } from '../../../shared/jira-jql-predicate'
+import { withCurrentSprintClause } from '../../../shared/jira/jira-jql-predicate'
 import {
   buildJiraStatusCatalog,
   getJiraStatusCatalogScopeKey
 } from './task-page-jira-status-catalog'
-import type { TaskPageLinearCollectionEffectsModel } from './use-task-page-linear-collection-effects'
+import type { TaskPageLinearCollectionEffectsModel } from './task-page/linear/use-task-page-linear-collection-effects'
 import { useEffect, useMemo, useRef } from 'react'
 import {
   getSingleJiraProjectScope,
@@ -15,11 +15,12 @@ import {
 } from '@/components/task-page-jira-status-order'
 import { createTaskPageJiraLoadFailureState } from '@/components/task-page-jira-load-state'
 import { searchTaskPageJiraIssues } from '@/components/task-page-jira-search'
-import { JIRA_ITEM_LIMIT, TASK_SEARCH_DEBOUNCE_MS } from './task-page-source-context'
+import { JIRA_ITEM_LIMIT } from './task-page/task-page-source-context'
+import { useTaskSearchDebouncedApply } from './task-page/use-task-search-debounced-apply'
 import { readLinkedJiraIssues } from './task-page-jira-linked-issues'
 import { ipcOrRuntimeTargetForHostId } from '@/runtime/runtime-client-target'
-import { buildJiraPresetJql } from '../../../shared/jira-preset-jql'
-import { restrictJiraQueryToProject } from '../../../shared/jira-project-reference'
+import { buildJiraPresetJql } from '../../../shared/jira/jira-preset-jql'
+import { restrictJiraQueryToProject } from '../../../shared/jira/jira-project-reference'
 export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffectsModel) {
   const {
     accountBackedTaskSourceHostId,
@@ -57,6 +58,7 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     jiraSavedFiltersLoading,
     selectedJiraStatuses,
     jiraQuickFiltersLoading,
+    jiraFavouriteFilter,
     setJiraStatusCatalog,
     setJiraProjectStatusOrder,
     displayedJiraIssues
@@ -70,15 +72,7 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     jiraTaskSourceScopeKey,
     statusOrderOwner
   )
-  useEffect(() => {
-    if (!taskResumeApplied) {
-      return
-    }
-    const timeout = window.setTimeout(() => {
-      setAppliedJiraSearch(jiraSearchInput)
-    }, TASK_SEARCH_DEBOUNCE_MS)
-    return () => window.clearTimeout(timeout)
-  }, [jiraSearchInput, taskResumeApplied, setAppliedJiraSearch])
+  useTaskSearchDebouncedApply(jiraSearchInput, taskResumeApplied, setAppliedJiraSearch)
   useEffect(() => {
     if (!taskResumeApplied) {
       return
@@ -87,11 +81,10 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
       jiraSearchPersistReadyRef.current = true
       return
     }
-    setTaskResumeState({
-      jiraQuery: appliedJiraSearch.trim()
-    })
+    setTaskResumeState({ jiraQuery: appliedJiraSearch.trim() })
   }, [appliedJiraSearch, setTaskResumeState, taskResumeApplied, jiraSearchPersistReadyRef])
-  const jiraRemoteSearch = jiraHasWorkspace ? '' : appliedJiraSearch
+  const favourite = jiraHasWorkspace ? null : jiraFavouriteFilter
+  const jiraRemoteSearch = jiraHasWorkspace ? '' : (favourite?.jql ?? appliedJiraSearch)
   const previousJiraRefreshNonceRef = useRef(jiraRefreshNonce)
   useEffect(() => {
     if (!taskResumeApplied) {
@@ -115,13 +108,30 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     const savedFilter = jiraSavedFilters.find((filter) => filter.id === jiraActiveSavedFilterId)
     const exactSavedJql = savedFilter?.jql === trimmed
     const searchWithinLimit = async (query: string) => {
+      if (
+        favourite &&
+        (!jiraTaskSourceContext ||
+          selectedJiraSiteId !== favourite.siteId ||
+          (jiraProjectFilter && jiraProjectFilter.siteId !== favourite.siteId))
+      ) {
+        throw new Error(
+          translate(
+            'jira.favourites.siteMismatch',
+            'Choose a project from the favourite’s Jira site, or clear the project filter.'
+          )
+        )
+      }
       if (!isRuntimeProviderSearchQueryWithinLimit(query)) {
         queryTooLong = true
         throw new Error('Query exceeds the request limit.')
       }
       return searchJiraIssues(query, JIRA_ITEM_LIMIT, {
         sourceContext: jiraTaskSourceContext,
-        ...(jiraProjectFilter ? { siteId: jiraProjectFilter.siteId } : {}),
+        ...(favourite
+          ? { siteId: favourite.siteId }
+          : jiraProjectFilter
+            ? { siteId: jiraProjectFilter.siteId }
+            : {}),
         force
       })
     }
@@ -137,7 +147,7 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
                 : sprintJql
               return searchWithinLimit(query)
             },
-            exactSavedJql ? 'jql' : 'input'
+            favourite || exactSavedJql ? 'jql' : 'input'
           ).then((result) => ({ ...result, error: null }))
         : jiraProjectFilter
           ? searchWithinLimit(
@@ -225,7 +235,7 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- linkedJiraIssueRefsSignature stands in for the refs array, which re-derives on unrelated workspace churn; store actions and setters are stable.
   }, [
     taskSource,
     jiraConnected,
@@ -242,6 +252,7 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     jiraSavedFiltersLoading,
     selectedJiraStatuses,
     jiraQuickFiltersLoading,
+    favourite,
     taskResumeApplied,
     jiraTaskSourceContext,
     jiraTaskSourceScopeKey,
@@ -279,7 +290,7 @@ export function useTaskPageJiraListEffects(model: TaskPageLinearCollectionEffect
     setSelectedJiraIssueKey
   ])
 
-  // Why: Linear ids are strings (e.g. "ENG-123") but the provider-generic shape needs a numeric number, so the adapter uses 0 as placeholder.
+  // Linear string IDs need the provider-generic numeric placeholder 0.
   return model
 }
 export type TaskPageJiraListEffectsModel = ReturnType<typeof useTaskPageJiraListEffects>

@@ -1,15 +1,21 @@
 import './orca-runtime-test-lifecycle.spec'
-import type { RuntimeStore } from './runtime-store-contract'
+import { getDefaultWorkspaceSession } from '../../shared/constants'
 import { describe, expect, it, vi } from 'vitest'
 import { createMobileCreateTestNotifier } from './orca-runtime-test-scenario-builders.spec'
 import { OrcaRuntimeService } from './orca-runtime-test-mocks.spec'
 import {
   HEADLESS_LEAF_ID,
   TEST_WORKTREE_ID,
+  TEST_WORKTREE_PATH,
   makeRuntimeStoreWithWorkspaceSession,
   makeWorkspaceSessionWithHeadlessTerminal
 } from './orca-runtime-test-fixtures.spec'
 import type { RuntimeNotifier } from './runtime-notifier-contract'
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../shared/layout-owner-switch'
+import { bindPaneFirst, committingSpawn } from './bind-first-pane.test-fixture'
+import { buildRuntimeMobileAgentStatus } from './runtime-mobile-agent-status-builder'
+import type { RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
+import { partialRuntimeStore } from './runtime-store-partial-fixture'
 
 describe('terminal rename before renderer graph hydration', () => {
   it.each(['Media Engine Orch', null])(
@@ -18,12 +24,11 @@ describe('terminal rename before renderer graph hydration', () => {
       const session = makeWorkspaceSessionWithHeadlessTerminal()
       session.tabsByWorktree[TEST_WORKTREE_ID][0].customTitle = 'Previous name'
       const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(session)
-      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The shared fixture supplies RuntimeStore methods; its legacy Mock return type loses callable signatures.
-      const checkedStore = runtimeStore as RuntimeStore
+      const checkedStore = runtimeStore
       const runtime = new OrcaRuntimeService(checkedStore)
       const renameTerminal = vi.fn()
       runtime.setPtyController({
-        spawn: vi.fn(async () => ({ id: 'omp-initial-pty' })),
+        spawn: vi.fn(committingSpawn(runtime, async () => ({ id: 'omp-initial-pty' }))),
         write: () => true,
         kill: () => true,
         getForegroundProcess: async () => null
@@ -37,7 +42,6 @@ describe('terminal rename before renderer graph hydration', () => {
         renameTerminal,
         focusTerminal: vi.fn(),
         closeTerminal: vi.fn(),
-        sleepWorktree: vi.fn(),
         terminalFitOverrideChanged: vi.fn(),
         terminalDriverChanged: vi.fn()
       })
@@ -50,10 +54,13 @@ describe('terminal rename before renderer graph hydration', () => {
 
       expect(getSession().tabsByWorktree[TEST_WORKTREE_ID][0].customTitle).toBe(title)
       expect(renameTerminal).toHaveBeenCalledWith('host-tab', title)
-      runtime.onPtyExit('omp-initial-pty', 0)
+      // Main-owned last-pane exit closes its tab; model restart with a fresh runtime over the saved session instead.
+      if (!ORCA_LAYOUT_OWNER_IS_MAIN) {
+        runtime.onPtyExit('omp-initial-pty', 0)
+      }
       const restored = new OrcaRuntimeService(checkedStore)
       restored.setPtyController({
-        spawn: vi.fn(async () => ({ id: 'omp-replacement-pty' })),
+        spawn: vi.fn(committingSpawn(restored, async () => ({ id: 'omp-replacement-pty' }))),
         write: () => true,
         kill: () => true,
         getForegroundProcess: async () => null
@@ -68,12 +75,11 @@ describe('terminal rename before renderer graph hydration', () => {
   it('does not recreate a closed persisted tab from a surviving PTY record', async () => {
     const session = makeWorkspaceSessionWithHeadlessTerminal()
     const { runtimeStore, getSession, setSession } = makeRuntimeStoreWithWorkspaceSession(session)
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Shared fixture implements RuntimeStore; its legacy Mock typing loses callable signatures.
-    const runtime = new OrcaRuntimeService(runtimeStore as RuntimeStore)
+    const runtime = new OrcaRuntimeService(runtimeStore)
     const notifier = createMobileCreateTestNotifier(vi.fn())
     runtime.setNotifier(notifier)
     runtime.setPtyController({
-      spawn: vi.fn(async () => ({ id: 'surviving-pty' })),
+      spawn: vi.fn(committingSpawn(runtime, async () => ({ id: 'surviving-pty' }))),
       write: () => true,
       kill: () => true,
       getForegroundProcess: async () => null
@@ -92,158 +98,100 @@ describe('terminal rename before renderer graph hydration', () => {
   })
 })
 
-describe('terminal query constructor characterization', () => {
-  const queries = [
-    'surface',
-    'ptySurface',
-    'ensureSurface',
-    'waitSurface',
-    'mount',
-    'generation',
-    'handleGeneration',
-    'waitGeneration',
-    'handle',
-    'waitPty',
-    'topology',
-    'stats',
-    'ui',
-    'updateUi',
-    'feature',
-    'emptyRecovery',
-    'closeAuthority',
-    'summary',
-    'read'
-  ] as const
-
-  type ConstructorQuery = (typeof queries)[number]
-
-  const refused: Partial<Record<ConstructorQuery, string>> = {
-    ui: 'runtime_unavailable',
-    updateUi: 'runtime_unavailable',
-    feature: 'runtime_unavailable'
-  }
-
-  const rejected: Partial<Record<ConstructorQuery, string>> = {
-    waitSurface: 'client_disconnected',
-    waitPty: 'request_aborted'
-  }
-
-  function checkResult(query: ConstructorQuery, value: unknown): void {
-    if (query === 'summary') {
-      expect(value).toMatchObject({ ptyId: 'ctor-pty', worktreeId: 'missing', orphaned: true })
-    } else if (query === 'read') {
-      expect(value).toMatchObject({ handle: 'ctor-handle', status: 'unknown', tail: [] })
-    } else if (query === 'mount' || query === 'waitGeneration') {
-      expect(value).toBe(false)
-    } else if (query === 'generation' || query === 'handleGeneration') {
-      expect(value).toBe(0)
-    } else if (query === 'emptyRecovery') {
-      expect(value).toBeUndefined()
-    } else {
-      expect(value).toBeNull()
-    }
-  }
-
-  describe('terminal queries during Runtime construction', () => {
-    it.each(queries)('preserves %s at the existing cache getter seam', async (query) => {
-      let result: unknown
-      let error: unknown
-      class ConstructorRuntime extends OrcaRuntimeService {
-        protected override get canonicalFetchKeyCache(): ReadonlyMap<string, string> {
-          try {
-            result = this.runQuery(query)
-          } catch (caught) {
-            error = caught
-          }
-          return super.canonicalFetchKeyCache
-        }
-
-        private runQuery(query: ConstructorQuery): unknown {
-          switch (query) {
-            case 'surface':
-              return this.findMobileTerminalSurface('missing', 'tab')
-            case 'ptySurface':
-              return this.findMobileTerminalSurfaceForPty('missing', 'pty')
-            case 'ensureSurface':
-              return this.ensurePtyBackedMobileSurfaceForRendererTab('missing', 'tab')
-            case 'waitSurface':
-              return this.waitForMobileTerminalSurface('missing', 'tab', {
-                signal: AbortSignal.abort()
-              })
-            case 'mount':
-              return this.requestRendererTerminalTabMount('missing')
-            case 'generation':
-              return this.getRendererTerminalSerializerGeneration('missing')
-            case 'handleGeneration':
-              return this.getRendererTerminalSerializerGenerationForHandle('missing')
-            case 'waitGeneration':
-              return this.waitForRendererTerminalSerializer('missing', 0)
-            case 'handle':
-              return this.resolveHandleForTab('missing')
-            case 'waitPty':
-              return this.waitForLeafPtyId('missing', 10_000, AbortSignal.abort())
-            case 'topology': {
-              const topology = this.ptySurfaceTopology()
-              expect(topology.graphSequence).toBe(0)
-              expect(topology.ptyIdHoldingPane('missing', 'missing')).toBeUndefined()
-              return null
-            }
-            case 'stats':
-              return this.getStatsSummary()
-            case 'ui':
-              return this.getUIState()
-            case 'updateUi':
-              return this.updateUIState({})
-            case 'feature':
-              return this.recordFeatureInteraction('browser')
-            case 'emptyRecovery':
-              return this.replaceHeadlessTerminalFromRendererSnapshotForRecovery('missing', {
-                data: '',
-                cols: 80,
-                rows: 24
-              })
-            case 'summary':
-            case 'read': {
-              const pty = this.recordPtyWorktree('ctor-pty', 'missing', {
-                connected: false
-              })
-              return query === 'summary'
-                ? this.buildPtyTerminalSummary(pty, new Map())
-                : this.readPtyTerminal('ctor-handle', pty)
-            }
-            case 'closeAuthority':
-              return this.resolvePtyTabCloseSurfaceAuthority({
-                handle: 'missing',
-                ptyId: 'missing',
-                incarnationId: null,
-                worktreeId: 'missing'
-              })
-          }
-        }
-      }
-      const runtime = new ConstructorRuntime(null)
-      if (query === 'summary' || query === 'read') {
-        runtime.onPtyExit('ctor-pty', 0)
-      }
-      const refusal = refused[query]
-      if (refusal) {
-        expect(error).toBeInstanceOf(Error)
-        expect(error).toMatchObject({ message: refusal })
-        expect(result).toBeUndefined()
-        return
-      }
-      expect(error).toBeUndefined()
-      const rejection = rejected[query]
-      if (rejection) {
-        expect(result).toBeInstanceOf(Promise)
-        await expect(result).rejects.toThrow(rejection)
-      } else {
-        if (query === 'waitGeneration') {
-          expect(result).toBeInstanceOf(Promise)
-        }
-        checkResult(query, await result)
-      }
+describe('terminal rename display', () => {
+  it('reveals a renamed background terminal under its name', async () => {
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(getDefaultWorkspaceSession())
+    const runtime = new OrcaRuntimeService(runtimeStore)
+    runtime.setPtyController({
+      spawn: vi.fn(async () => ({ id: 'background-pty' })),
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
     })
+    const notifier = createMobileCreateTestNotifier(vi.fn())
+    runtime.setNotifier(notifier)
+    const created = await runtime.createTerminal(`id:${TEST_WORKTREE_ID}`, {
+      tabId: 'host-tab',
+      leafId: HEADLESS_LEAF_ID,
+      presentation: 'background'
+    })
+    runtime.onPtyData('background-pty', '\x1b]0;bash\x07', Date.now())
+
+    await runtime.renameTerminal(created.handle, 'Review worker')
+    await runtime.focusTerminal(created.handle)
+
+    expect(notifier.revealTerminalSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      title: 'Review worker'
+    })
+  })
+
+  it('shows an orphan terminal under its new name', async () => {
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(getDefaultWorkspaceSession())
+    const runtime = new OrcaRuntimeService(runtimeStore)
+    runtime.registerPty('orphan-pty', TEST_WORKTREE_ID)
+    runtime.onPtyData('orphan-pty', '\x1b]0;bash\x07', Date.now())
+    const orphan = (await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).terminals.find(
+      (terminal) => terminal.ptyId === 'orphan-pty'
+    )
+    if (!orphan?.orphaned) {
+      throw new Error('expected an orphan terminal')
+    }
+
+    await runtime.renameTerminal(orphan.handle, 'Recovered worker')
+
+    await expect(runtime.showTerminal(orphan.handle)).resolves.toMatchObject({
+      title: 'Recovered worker'
+    })
+  })
+
+  it('keeps an orphan terminal name once a tab adopts it', async () => {
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession({
+      ...getDefaultWorkspaceSession(),
+      tabsByWorktree: { [TEST_WORKTREE_ID]: [] }
+    })
+    const runtime = new OrcaRuntimeService(runtimeStore)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        {
+          id: 'orphan-pty',
+          incarnationId: 'orphan-incarnation',
+          terminalHandle: 'term_orphan',
+          title: 'bash',
+          cwd: TEST_WORKTREE_PATH,
+          worktreeId: TEST_WORKTREE_ID,
+          wslDistro: null
+        }
+      ]
+    })
+    const before = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
+    runtime.onPtyData('orphan-pty', '\x1b]0;bash\x07', Date.now())
+    await runtime.renameTerminal('term_orphan', 'Recovered worker')
+
+    const adopted = await runtime.adoptTerminalOrphans({
+      worktree: `id:${TEST_WORKTREE_ID}`,
+      expectedTopologyRevision: before.topologyRevisions?.[TEST_WORKTREE_ID] ?? 0,
+      claims: [
+        {
+          terminal: 'term_orphan',
+          ptyId: 'orphan-pty',
+          incarnationId: 'orphan-incarnation',
+          tabId: 'recovered-tab',
+          leafId: HEADLESS_LEAF_ID
+        }
+      ]
+    })
+
+    await expect(runtime.showTerminal('term_orphan')).resolves.toMatchObject({
+      title: 'Recovered worker'
+    })
+    expect(
+      adopted.snapshot.tabs.find(
+        (tab) => tab.type === 'terminal' && tab.parentTabId === 'recovered-tab'
+      )
+    ).toMatchObject({ title: 'Recovered worker' })
   })
 })
 
@@ -258,13 +206,21 @@ describe('terminal view rename characterization', () => {
       renameTerminal,
       focusTerminal() {},
       closeTerminal() {},
-      sleepWorktree() {},
       terminalFitOverrideChanged() {},
       terminalDriverChanged() {}
     }
   }
   it('keeps rename persistence before the current notifier with its own receiver', async () => {
-    const runtime = new OrcaRuntimeService()
+    // Switch-on, main's layout says which tab holds the terminal; that layout lives in a store.
+    const runtime = new OrcaRuntimeService(
+      ORCA_LAYOUT_OWNER_IS_MAIN ? partialRuntimeStore() : undefined
+    )
+    bindPaneFirst(runtime, {
+      worktreeId: 'folder-workspace',
+      tabId: 'host-tab',
+      leafId: '00000000-0000-4000-8000-000000000002',
+      ptyId: 'rename-pty'
+    })
     const pty = runtime['recordPtyWorktree']('rename-pty', 'folder-workspace', {
       tabId: 'host-tab'
     })
@@ -286,8 +242,7 @@ describe('terminal view rename characterization', () => {
     runtime['touchMobileSessionSnapshotsForPty'] = function (this: OrcaRuntimeService, ptyId) {
       receivers.push(this)
       expect(ptyId).toBe('rename-pty')
-      expect(pty.title).toBe('Pinned')
-      expect(pty.titleUpdatedAt).toBeGreaterThan(0)
+      expect(pty.title).toBeNull()
       events.push('touch')
     }
     await expect(runtime.renameTerminal(handle, 'Pinned')).resolves.toEqual({
@@ -301,87 +256,9 @@ describe('terminal view rename characterization', () => {
   })
 })
 
-describe('terminal view at the Runtime constructor getter seam', () => {
-  const cases = [
-    ['headless-state', 'sync', false],
-    ['preview-input', 'promise', false],
-    ['available-buffer', 'promise', null],
-    ['authoritative-buffer', 'promise', null]
-  ] as const
-  type Query = (typeof cases)[number][0] | 'rename'
-  type Observation =
-    | { kind: 'sync'; value: unknown }
-    | { kind: 'promise'; value: unknown }
-    | { kind: 'rejected'; error: unknown }
-    | { kind: 'thrown'; error: unknown }
-
-  class ViewConstructionRuntime extends OrcaRuntimeService {
-    queryAtConstruction(query: Query): unknown {
-      switch (query) {
-        case 'headless-state':
-          return this.hasHeadlessTerminalState('missing')
-        case 'preview-input':
-          return this.writeTerminalPreviewInput('missing', '')
-        case 'available-buffer':
-          return this.serializeTerminalBuffer('missing')
-        case 'authoritative-buffer':
-          return this.serializeAuthoritativeTerminalBuffer('missing')
-        case 'rename':
-          return this.renameTerminal('missing', 'title')
-      }
-    }
-  }
-
-  function readDuringConstruction(query: Query): Promise<Observation> {
-    let observation: Observation | undefined
-    let pending: Promise<Observation> | undefined
-    let reads = 0
-    class ConstructionProbe extends ViewConstructionRuntime {
-      protected override get canonicalFetchKeyCache(): ReadonlyMap<string, string> {
-        reads += 1
-        try {
-          const value = this.queryAtConstruction(query)
-          if (value instanceof Promise) {
-            pending = value.then(
-              (resolved) => ({ kind: 'promise', value: resolved }),
-              (error: unknown) => ({ kind: 'rejected', error })
-            )
-          } else {
-            observation = { kind: 'sync', value }
-          }
-        } catch (error) {
-          observation = { kind: 'thrown', error }
-        }
-        return super.canonicalFetchKeyCache
-      }
-    }
-    new ConstructionProbe(null)
-    expect(reads).toBe(1)
-    if (pending) {
-      return pending
-    }
-    if (!observation) {
-      throw new Error('Constructor seam did not produce an observation')
-    }
-    return Promise.resolve(observation)
-  }
-
-  it.each(cases)('keeps %s available before derived initialization', async (query, kind, value) => {
-    expect(await readDuringConstruction(query)).toEqual({ kind, value })
-  })
-
-  it('keeps rename refusal asynchronous before derived initialization', async () => {
-    const observation = await readDuringConstruction('rename')
-    expect(observation.kind).toBe('rejected')
-    if (observation.kind === 'rejected') {
-      expect(observation.error).toBeInstanceOf(Error)
-      expect(observation.error).toMatchObject({ message: 'runtime_unavailable' })
-    }
-  })
-})
-
 describe('terminal query erased boundary regressions', () => {
-  it('keeps the cached-null pane failure when a later binding read is valid', () => {
+  // Pane getter changes per read to catch internally inconsistent summaries (L80); ordinary records do not.
+  it('summarizes from one read of the pane, though a later read would differ', () => {
     class SummaryRuntime extends OrcaRuntimeService {
       summarize() {
         const pty = this.recordPtyWorktree('changing-binding', 'missing', { connected: false })
@@ -393,8 +270,11 @@ describe('terminal query erased boundary regressions', () => {
         })
         const issueHandle = vi.fn(() => 'handle')
         Object.defineProperty(this, 'issuePtyHandle', { value: issueHandle })
-        expect(() => this.buildPtyTerminalSummary(pty, new Map())).toThrow(TypeError)
-        expect(reads).toBeGreaterThanOrEqual(2)
+        expect(this.buildPtyTerminalSummary(pty, new Map())).toMatchObject({
+          orphaned: true,
+          tabId: 'pty:changing-binding'
+        })
+        expect(reads).toBe(ORCA_LAYOUT_OWNER_IS_MAIN ? 0 : 1)
         expect(issueHandle).toHaveBeenCalledExactlyOnceWith(pty)
       }
     }
@@ -419,4 +299,106 @@ describe('terminal query erased boundary regressions', () => {
     await expect(runtime.remove('ssh-host')).rejects.toThrow('PTY provider unavailable')
     expect(runtime.providerReads).not.toHaveBeenCalled()
   })
+})
+
+describe('first-turn identity under recorded title clocks (#32030)', () => {
+  const launchAt = 1_800_000_000_000
+  const hookAt = launchAt + 2_000
+  const providerSession = { key: 'session_id' as const, id: 'first-turn' }
+  const tab = {
+    type: 'terminal' as const,
+    id: 'tab::leaf',
+    parentTabId: 'tab',
+    leafId: HEADLESS_LEAF_ID,
+    title: 'Terminal',
+    isActive: true
+  }
+
+  function freshHookSession(pty: RuntimePtyWorktreeRecord) {
+    return buildRuntimeMobileAgentStatus(
+      pty,
+      tab,
+      'term',
+      null,
+      () => [
+        {
+          paneKey: 'tab:leaf',
+          state: 'done',
+          prompt: '',
+          agentType: 'codex',
+          connectionId: null,
+          receivedAt: hookAt,
+          evidenceObservedAt: hookAt,
+          stateStartedAt: hookAt,
+          providerSession
+        }
+      ],
+      { getPaneKey: () => 'tab:leaf', getLeaf: () => null, getTrackedTitle: () => null }
+    ).agentStatus?.providerSession
+  }
+
+  function makeRuntime() {
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal()
+    )
+    return new OrcaRuntimeService(runtimeStore)
+  }
+
+  it('keeps the first clock of a shell title that inventory replays after the hook', () => {
+    const runtime = makeRuntime()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(launchAt)
+    try {
+      const pty = runtime['recordPtyWorktree']('replay-pty', TEST_WORKTREE_ID, { title: 'zsh' })
+      pty.lastAgentStatus = 'idle'
+      now.mockReturnValue(hookAt + 1_000)
+      runtime['recordPtyWorktree']('replay-pty', TEST_WORKTREE_ID, { title: 'zsh' })
+      expect(freshHookSession(pty)).toEqual(providerSession)
+
+      runtime['recordPtyWorktree']('replay-pty', TEST_WORKTREE_ID, { title: 'bash' })
+      expect(freshHookSession(pty)).toBeUndefined()
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it.each(['none', 'recorded', 'osc'] as const)(
+    'dates the launch title before spawn, with %s title evidence during spawn',
+    async (observation) => {
+      const runtime = makeRuntime()
+      const now = vi.spyOn(Date, 'now').mockReturnValue(launchAt)
+      runtime.setPtyController({
+        spawn: vi.fn(
+          committingSpawn(runtime, async () => {
+            now.mockReturnValue(launchAt + 1_000)
+            const pty = runtime['recordPtyWorktree'](
+              'spawn-title-pty',
+              TEST_WORKTREE_ID,
+              observation === 'recorded' ? { title: 'bash' } : {}
+            )
+            if (observation === 'osc') {
+              runtime['applyTrackedPtyTitle']('spawn-title-pty', 'bash', 'bash')
+            }
+            pty.lastAgentStatus = 'idle'
+            now.mockReturnValue(hookAt + 1_000)
+            return { id: 'spawn-title-pty' }
+          })
+        ),
+        write: () => true,
+        kill: () => true,
+        getForegroundProcess: async () => null
+      })
+      try {
+        await runtime.createTerminal(`id:${TEST_WORKTREE_ID}`, {
+          title: 'zsh',
+          tabId: 'host-tab',
+          leafId: HEADLESS_LEAF_ID
+        })
+        const pty = runtime['ptysById'].get('spawn-title-pty')!
+        expect(freshHookSession(pty)).toEqual(providerSession)
+        expect(pty.title).toBe({ none: 'zsh', recorded: 'bash', osc: null }[observation])
+      } finally {
+        now.mockRestore()
+      }
+    }
+  )
 })

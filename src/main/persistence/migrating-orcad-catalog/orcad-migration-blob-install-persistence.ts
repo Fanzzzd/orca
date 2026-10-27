@@ -1,10 +1,15 @@
-import type { OrcadMigrationManifest } from '../../../shared/orcad-migration-manifest'
+import { ORCAD_MIGRATION_BLOB_KIND_CONTRACTS } from '../../../shared/orcad-migration/orcad-migration-blob-transfer'
+import type { OrcadMigrationManifest } from '../../../shared/orcad-migration/orcad-migration-manifest'
 import type { PersistedState } from '../../../shared/persisted-state-types'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
 import { getHistoryRoot } from '../../terminal-history-paths'
 import type { StoreRuntimeState } from '../loading-store/store-runtime-state'
-import { findOrcadMigrationImportReceipt } from './orcad-catalog-receipt-ledger'
+import {
+  findOrcadMigrationImportReceipt,
+  isOrcadMigrationCommitDurable
+} from './orcad-catalog-receipt-ledger'
 import { installOrcadMigrationReceivedBlobs } from './orcad-migration-blob-installers'
+import { listOrcadMigrationReceivedBlobNames } from './orcad-migration-blob-staging'
 import type { OrcadMigrationRequestIdentity } from './orcad-migration-staged-file'
 
 type OrcadMigrationBlobInstallRuntime = Pick<
@@ -14,11 +19,14 @@ type OrcadMigrationBlobInstallRuntime = Pick<
   | 'orcadTerminalRestoreHints'
   | 'paneShellPath'
   | 'deferredShellHistoryWorktreeIds'
+  | 'writeGeneration'
+  | 'lastDurableWriteGeneration'
+  | 'orcadMigrationCommitWriteGenerations'
 >
 
 type ClockOptions = { now?: () => Date }
 type InstallOptions = ClockOptions & {
-  /** The runtime's live-shell check; a moved history waits while a shell runs in its worktree. */
+  /** Defer history installation while shells run in its worktree. */
   worktreeHasLiveShells?: (worktreeId: string) => boolean
 }
 
@@ -27,7 +35,6 @@ type OrcadMigrationBlobInstallContext = {
   runtime: OrcadMigrationBlobInstallRuntime
 }
 
-/** The destination's committed migration blobs, installed into host-local state and consumed. */
 export class OrcadMigrationBlobInstallPersistence {
   readonly [orcadMigrationBlobInstallContext]: OrcadMigrationBlobInstallContext
 
@@ -35,11 +42,7 @@ export class OrcadMigrationBlobInstallPersistence {
     this[orcadMigrationBlobInstallContext] = { runtime }
   }
 
-  /**
-   * Run only once the commit is durable: installing first and then losing the commit would leave
-   * live hints or history for a catalog this host never received. A no-op before commit and on
-   * repeats.
-   */
+  /** Wait for durable commit or a restart could lose both the catalog and its consumed blobs. */
   installOrcadMigrationReceivedBlobs(
     manifest: OrcadMigrationManifest,
     options: InstallOptions = {}
@@ -54,7 +57,7 @@ export class OrcadMigrationBlobInstallPersistence {
     installCommitted(this[orcadMigrationBlobInstallContext].runtime, manifest, options)
   }
 
-  /** Finishes installs a crash or failed write left behind; every receipt on disk is durable. */
+  /** Recover interrupted installs; disk-loaded receipts already prove durability. */
   installPendingOrcadMigrationReceivedBlobs(options: InstallOptions = {}): void {
     const { runtime } = this[orcadMigrationBlobInstallContext]
     for (const receipt of [
@@ -72,7 +75,21 @@ export class OrcadMigrationBlobInstallPersistence {
     }
   }
 
-  /** Retries a history install that waited on this worktree's shells; a no-op for any other. */
+  /** Only the runtime installs pending shell history. */
+  hasPendingOrcadMigrationShellHistory(): boolean {
+    const { runtime } = this[orcadMigrationBlobInstallContext]
+    return [
+      ...(runtime.state.orcadMigrationImportReceipts ?? []),
+      ...(runtime.state.orcadMigrationEvictedReceipts ?? [])
+    ].some((receipt) =>
+      listOrcadMigrationReceivedBlobNames(
+        runtime.orcadMigrationBlobRoot,
+        receipt,
+        'shell-history'
+      ).some((key) => ORCAD_MIGRATION_BLOB_KIND_CONTRACTS['shell-history'].key.test(key))
+    )
+  }
+
   installDeferredOrcadMigrationShellHistory(
     worktreeId: string,
     options: InstallOptions = {}
@@ -83,7 +100,7 @@ export class OrcadMigrationBlobInstallPersistence {
     }
   }
 
-  /** The moved pane's last folder while its hint is installed for this worktree; never removes it. */
+  /** Read without consuming. */
   peekOrcadMigrationTerminalRestoreHint(
     paneKey: string,
     worktreeId: string,
@@ -96,7 +113,7 @@ export class OrcadMigrationBlobInstallPersistence {
     )
   }
 
-  /** Called once the pane spawned: whatever cwd that create used, it was the restore. */
+  /** Consume after spawn, even if it used a different cwd. */
   consumeOrcadMigrationTerminalRestoreHint(paneKey: string, options: ClockOptions = {}): void {
     this[orcadMigrationBlobInstallContext].runtime.orcadTerminalRestoreHints.consume(
       paneKey,
@@ -110,6 +127,9 @@ function installCommitted(
   migration: OrcadMigrationRequestIdentity,
   options: InstallOptions
 ): void {
+  if (!isOrcadMigrationCommitDurable(runtime, migration)) {
+    return
+  }
   installOrcadMigrationReceivedBlobs({
     migration,
     root: runtime.orcadMigrationBlobRoot,
@@ -127,7 +147,6 @@ function clock(options: ClockOptions): number {
   return (options.now ?? (() => new Date()))().getTime()
 }
 
-// The commit merged the moved session in with its worktree ids unchanged.
 function findPaneWorktreeId(state: PersistedState, paneKey: string): string | null {
   const tabId = parsePaneKey(paneKey)?.tabId
   if (!tabId) {
