@@ -1,42 +1,32 @@
 package expo.modules.iroh
 
-import expo.modules.kotlin.exception.CodedException
+import computer.iroh.IrohAndroid
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-private const val NOT_IMPLEMENTED = "iroh_android_not_implemented"
-
-class IrohAndroidNotImplementedException :
-  CodedException(NOT_IMPLEMENTED, "Iroh is not implemented on Android yet", null)
-
 class ExpoIrohModule : Module() {
+  private val client = IrohClient { name, body -> sendEvent(name, body) }
+
   override fun definition() = ModuleDefinition {
     Name("ExpoIroh")
-
     Events("onMessage", "onPathChanged", "onClosed")
 
-    AsyncFunction("irohStart") {
-      throw IrohAndroidNotImplementedException()
+    OnCreate {
+      val context = requireNotNull(appContext.reactContext).applicationContext
+      IrohAndroid.installAndroidContext(context)
     }
+    OnDestroy { client.destroy() }
 
-    AsyncFunction("irohConnect") { _: String, _: String?, _: List<String>? ->
-      throw IrohAndroidNotImplementedException()
+    AsyncFunction("irohStart") Coroutine { ->
+      mapOf("endpointId" to client.start())
     }
-
-    AsyncFunction("irohSend") { _: String, _: String ->
-      throw IrohAndroidNotImplementedException()
+    AsyncFunction("irohConnect") Coroutine { id: String, relay: String?, addresses: List<String>? ->
+      mapOf("connectionId" to client.connect(id, relay, addresses.orEmpty()))
     }
-
-    AsyncFunction("irohPathInfo") { _: String ->
-      throw IrohAndroidNotImplementedException()
-    }
-
-    AsyncFunction("irohClose") { _: String ->
-      throw IrohAndroidNotImplementedException()
-    }
-
-    AsyncFunction("irohStop") {
-      throw IrohAndroidNotImplementedException()
-    }
+    AsyncFunction("irohSend") Coroutine { id: String, payload: String -> client.send(id, payload) }
+    AsyncFunction("irohPathInfo") Coroutine { id: String -> client.pathInfo(id) }
+    AsyncFunction("irohClose") Coroutine { id: String -> client.close(id) }
+    AsyncFunction("irohStop") Coroutine { -> client.stop() }
   }
 }

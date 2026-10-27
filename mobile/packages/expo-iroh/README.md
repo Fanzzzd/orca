@@ -4,12 +4,12 @@ Local Expo module: Iroh QUIC pipe for Orca mobile ↔ desktop.
 
 See [USAGE.md](./USAGE.md).
 
-| Item | Value |
-| --- | --- |
-| ALPN | `orca-mobile-rpc/1` |
+| Item    | Value                                                                     |
+| ------- | ------------------------------------------------------------------------- |
+| ALPN    | `orca-mobile-rpc/1`                                                       |
 | IrohLib | **1.1.0** (`n0-computer/iroh-ffi`) vendored via podspec `prepare_command` |
-| iOS | full implementation (min iOS 17.5) |
-| Android | compile stub (`iroh_android_not_implemented`) |
+| iOS     | full implementation (min iOS 17.5)                                        |
+| Android | full implementation on `computer.iroh:iroh-android:1.2.0` (min API 24)    |
 
 ## Why not SPM in the podspec?
 

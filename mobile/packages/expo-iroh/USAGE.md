@@ -5,8 +5,7 @@ frames them (4-byte big-endian u32 length + payload, max 1 MiB) on a single
 long-lived bi-stream per connection.
 
 **ALPN:** `orca-mobile-rpc/1`  
-**Platforms:** iOS (IrohLib 1.1.0). Android methods reject with
-`iroh_android_not_implemented`.
+**Platforms:** iOS (IrohLib 1.1.0) and Android (`computer.iroh:iroh-android:1.2.0`).
 
 ## Install (already wired in mobile/)
 
@@ -85,16 +84,18 @@ in vitest so tests never open real UDP).
 Filter device logs with **`[iroh]`** (rpc_open / endpoint_started /
 irohConnect_ok / path_changed / session_closed / rpc_open_module_unavailable).
 
-| Symptom | Check |
-| --- | --- |
-| Pairing dials `ws://…` instead of iroh | The QR was not an Iroh-mode offer — re-generate with the Iroh option selected (and desktop must not run with `ORCA_DISABLE_IROH=1`) |
-| `rpc_open_module_unavailable` / `native_module_unavailable` | Need custom dev client with ExpoIroh (not Expo Go); rebuild app |
-| All paths fail immediately on **cellular only** | **iOS Wireless Data gate:** Settings → Orca → **Wireless Data** → **WLAN & Cellular**. Newly installed apps can be Cellular-off; the OS blocks *all* sockets and we cannot detect it reliably. Immediate “network unreachable” on LAN + iroh is a strong hint. |
-| Connected but path stays `relayed` | Hole punching can take a few seconds; check `path_changed` events — NAT type may force relay permanently |
+| Symptom                                                     | Check                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pairing dials `ws://…` instead of iroh                      | The QR was not an Iroh-mode offer — re-generate with the Iroh option selected (and desktop must not run with `ORCA_DISABLE_IROH=1`)                                                                                                                            |
+| `rpc_open_module_unavailable` / `native_module_unavailable` | Need custom dev client with ExpoIroh (not Expo Go); rebuild app                                                                                                                                                                                                |
+| All paths fail immediately on **cellular only**             | **iOS Wireless Data gate:** Settings → Orca → **Wireless Data** → **WLAN & Cellular**. Newly installed apps can be Cellular-off; the OS blocks _all_ sockets and we cannot detect it reliably. Immediate “network unreachable” on LAN + iroh is a strong hint. |
+| Connected but path stays `relayed`                          | Hole punching can take a few seconds; check `path_changed` events — NAT type may force relay permanently                                                                                                                                                       |
 
 ## Notes
 
 - Path updates emit ~every 2s only when the snapshot changes. Do **not** call
   `Connection.watchPaths` — it panics off-Tokio (iroh-ffi#277).
 - Module does no auth; transport layer owns pairing/E2EE.
-- Android methods reject with `iroh_android_not_implemented` (compile stub only).
+- Android: the app's build.gradle must drop the desktop natives that
+  `computer.iroh:iroh` ships as Java resources (~65 MB). The
+  `mobile/plugins/android-drop-iroh-desktop-natives.js` config plugin does this.

@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' }
-}))
+const platform = vi.hoisted((): { OS: string } => ({ OS: 'ios' }))
+vi.mock('react-native', () => ({ Platform: platform }))
 
 import {
   hostHasIrohEndpoint,
@@ -51,7 +50,14 @@ describe('mobile iroh availability', () => {
     expect(inferIrohPathMode(host())).toBe('off')
   })
 
-  it('treats iOS as the only iroh-native platform', () => {
-    expect(isIrohNativePlatform()).toBe(true)
+  it('treats iOS and Android as iroh-native platforms', () => {
+    for (const [os, native] of [
+      ['ios', true],
+      ['android', true],
+      ['web', false]
+    ] as const) {
+      platform.OS = os
+      expect(isIrohNativePlatform()).toBe(native)
+    }
   })
 })

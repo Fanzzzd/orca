@@ -21,7 +21,8 @@ if (useManagedAndroidSdkVersions) {
   project.android {
     compileSdkVersion safeExtGet("compileSdkVersion", 34)
     defaultConfig {
-      minSdkVersion safeExtGet("minSdkVersion", 21)
+      // iroh-android's native libraries need API 24.
+      minSdkVersion Math.max(safeExtGet("minSdkVersion", 24), 24)
       targetSdkVersion safeExtGet("targetSdkVersion", 34)
     }
   }
@@ -36,4 +37,9 @@ android {
   lintOptions {
     abortOnError false
   }
+}
+
+dependencies {
+  // Ships libiroh_ffi.so for all four app ABIs plus the JNA Android runtime.
+  implementation "computer.iroh:iroh-android:1.2.0"
 }

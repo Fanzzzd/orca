@@ -132,13 +132,13 @@ final class IrohClient {
     // leak the losing endpoint's UDP socket and hand JS a dead endpoint id.
     let (task, gen) = locked { () -> (Task<Endpoint, Error>, Int) in
       if let existing = startTask { return (existing, generation) }
+      // Why no online(): it waits for a relay and would block a QR's direct-address
+      // hints on an offline LAN.
       let created = Task {
-        let ep = try await Endpoint.bind(options: EndpointOptions(
+        try await Endpoint.bind(options: EndpointOptions(
           preset: presetN0(),
           alpns: [Self.alpn]
         ))
-        await ep.online()
-        return ep
       }
       startTask = created
       return (created, generation)
@@ -172,7 +172,9 @@ final class IrohClient {
         await self.drop(connectionId: live.id, reason: "stream_ended")
       } catch {
         if !Task.isCancelled {
-          await self.drop(connectionId: live.id, reason: String(describing: error))
+          // Why: a peer close fails the read first; its reason carries the app close code (4001 auth).
+          let reason = live.connection.closeReason() ?? String(describing: error)
+          await self.drop(connectionId: live.id, reason: reason)
         }
       }
     }
