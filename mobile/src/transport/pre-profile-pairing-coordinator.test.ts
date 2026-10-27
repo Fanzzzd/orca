@@ -3,6 +3,7 @@ import type { MobileRelayCredentialBundle } from './mobile-relay-credential-bund
 import type { connectMobileRelayForPairing } from './mobile-relay-physical-client'
 import type { MobileRelayPairingJournal } from './mobile-relay-pairing-journal'
 import { racePairingCandidates } from './pairing-candidate-race'
+import { IROH_PAIRING_UNSUPPORTED_MESSAGE } from './pairing-dial-candidate'
 import { startPreProfilePairing } from './pre-profile-pairing-coordinator'
 import type { ConnectionLogEntry, HostProfile, PairingOffer, RpcResponse } from './types'
 import type { connect, RpcClient } from './rpc-client'
@@ -318,6 +319,21 @@ describe('pre-profile pairing coordinator', () => {
     await expect(attempt.result).resolves.toEqual({ hostId: `host-${now}` })
     expect(deps.connectIroh).toHaveBeenCalledOnce()
     expect(events).toEqual(['connect', 'save-host', 'record-descriptor'])
+  })
+
+  it('refuses an iroh-only offer without the native module instead of dialing iroh:// as a WebSocket', async () => {
+    const events: string[] = []
+    const deps = dependencies(fakeClient([success({ version: '1.0.0' })]), events)
+
+    const attempt = startPreProfilePairing({
+      offer: { ...irohOffer, endpoint: `iroh://${irohOffer.iroh!.endpointId}` },
+      timeoutMs: 5_000,
+      dependencies: deps
+    })
+
+    await expect(attempt.result).rejects.toThrow(IROH_PAIRING_UNSUPPORTED_MESSAGE)
+    expect(deps.connectDirect).not.toHaveBeenCalled()
+    expect(deps.savePairedHost).not.toHaveBeenCalled()
   })
 
   it('does not race iroh for relay offers (journal implies direct/relay paths)', async () => {

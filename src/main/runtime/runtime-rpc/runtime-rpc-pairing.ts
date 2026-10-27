@@ -189,16 +189,14 @@ export class RuntimeRpcPairing extends RuntimeRpcNetworkExposure {
     }
     const rawEndpoint = this.getWebSocketEndpoint()
     let endpoint: string
-    if (!rawEndpoint) {
-      if (!iroh) {
-        return pairingUnavailable(
-          'websocket_unavailable',
-          'WebSocket pairing is unavailable. Inspect preceding runtime errors and choose an unused --port if the listener failed.'
-        )
-      }
+    // Iroh offers dial by key; a LAN address here would point at a WS listener iroh mode never exposes.
+    if (iroh) {
       endpoint = `iroh://${iroh.endpointId}`
-    } else if (iroh && !args.address) {
-      endpoint = `iroh://${iroh.endpointId}`
+    } else if (!rawEndpoint) {
+      return pairingUnavailable(
+        'websocket_unavailable',
+        'WebSocket pairing is unavailable. Inspect preceding runtime errors and choose an unused --port if the listener failed.'
+      )
     } else {
       const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, args.address)
       if (!advertised.ok) {

@@ -401,7 +401,8 @@ export function MobilePane(): React.JSX.Element {
       />
 
       <WindowsFirewallNotice
-        pairingReady={pairingUrl != null}
+        // Iroh QRs never point at the WS listener the firewall rule covers.
+        pairingReady={pairingUrl != null && connectionMode !== 'iroh'}
         address={selectedAddress}
         usingRelay={connectionMode === 'automatic'}
       />

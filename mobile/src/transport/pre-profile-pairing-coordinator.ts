@@ -191,7 +191,6 @@ async function runPairing(
   const dialCandidate = openPairingDialCandidate({
     offer,
     hasJournal: journal !== null,
-    platform: dependencies.platform,
     connectDirect: dependencies.connectDirect,
     connectIroh: dependencies.connectIroh,
     ...(connectOptions ? { connectOptions } : {})

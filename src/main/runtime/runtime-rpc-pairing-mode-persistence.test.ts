@@ -457,6 +457,8 @@ describe('OrcaRuntimeRpcServer', () => {
         throw new Error('WebSocket pairing unavailable')
       }
       expect(offer.connectionMode).toBe('iroh')
+      // Iroh mode never exposes the WS listener, so the address must not become the endpoint.
+      expect(offer.endpoint).toBe(`iroh://${endpointId}`)
       expect(createPairingRelay).not.toHaveBeenCalled()
       const parsed = parsePairingCode(offer.pairingUrl)
       expect(parsed).toEqual(
