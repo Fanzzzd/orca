@@ -49,12 +49,14 @@ pool, so the daemon keeps answering RPCs.
 
 ## Prevention
 
-On macOS the daemon posts one short `pbkdf2` job per pool worker every 60
-seconds (`threadpool-waiter-refresh.ts`). A burst of N jobs, each about a
-millisecond long, needs N distinct workers, so every parked worker wakes and
-parks again at the current generation. Aging to the boundary inside one interval
-would need about 140,000 pool operations per second. A round is skipped while
-the previous one is unfinished, so a stalled or saturated pool gets no extra work.
+On macOS the daemon holds every pool worker once every 60 seconds
+(`threadpool-waiter-refresh.ts`). It posts one blocking read per worker on a
+private FIFO and writes the bytes that release them 20 ms later. A worker holding
+one read cannot take another, so the reads occupy distinct workers. Every parked
+worker wakes and parks again at the current generation. Aging to the boundary
+inside one interval would need about 140,000 pool operations per second. A round
+is skipped while the previous one is unfinished, so a stalled pool gets no extra
+work. The cost is one 20 ms pause of pool work per minute.
 
 This prevents the stall. It cannot recover a pool that is already past the
 boundary, because signals no longer reach the kernel. That daemon still needs the
@@ -128,10 +130,11 @@ The refresh has unit tests for its round, skip and platform rules. Two manual
 checks on macOS 26.2 arm64 cover the mechanism:
 
 - An `lldb` read of an idle Node 24.22.1 process showed all four workers' wait
-  generations move to the current value after one refresh round.
+  generations move to the current value after one refresh round. A unit test
+  checks that pool work posted during a round waits for the release.
 - A pthread model of the pool, aged with 1 ns timed waits on the pool mutex
   (the method in libuv PR 5351), stalled with 0/4 jobs done after 2^23 + 4,096
-  steps. With one ~1 ms job per worker every 1M steps, all four jobs completed.
+  steps. Holding one job per worker for 1 ms every 1M steps let all four complete.
 
 Serial `fs.promises.stat` on stock Node 24.22.1 with four workers stalled
 naturally after 40,262,072 operations (21 minutes). The trigger is intermittent:

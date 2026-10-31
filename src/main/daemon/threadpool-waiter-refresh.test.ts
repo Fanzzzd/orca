@@ -1,51 +1,68 @@
+import { stat } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { libuvThreadpoolSize, startThreadpoolWaiterRefresh } from './threadpool-waiter-refresh'
+import {
+  createFifoHoldRound,
+  libuvThreadpoolSize,
+  startThreadpoolWaiterRefresh,
+  THREADPOOL_WAITER_HOLD_MS,
+  type RefreshRound
+} from './threadpool-waiter-refresh'
 
 afterEach(() => vi.useRealTimers())
 
 describe('threadpool waiter refresh', () => {
-  it('posts one job per worker each interval so every parked worker wakes', async () => {
+  it.runIf(process.platform === 'darwin')(
+    'holds every worker at once, so no worker can take two of a round’s reads',
+    async () => {
+      const round = await createFifoHoldRound()
+      if (!round) {
+        throw new Error('mkfifo hold was not created')
+      }
+      const startedAt = Date.now()
+      let roundDoneAt = 0
+      const roundDone = new Promise<void>((resolve) =>
+        round(libuvThreadpoolSize(), () => {
+          roundDoneAt = Date.now()
+          resolve()
+        })
+      )
+      // Pool work posted during the hold only runs once all of the round's reads are released.
+      const statDoneAt = await new Promise<number>((resolve) =>
+        stat('/', () => resolve(Date.now()))
+      )
+      await roundDone
+      expect(statDoneAt - startedAt).toBeGreaterThanOrEqual(THREADPOOL_WAITER_HOLD_MS - 2)
+      expect(roundDoneAt - startedAt).toBeGreaterThanOrEqual(THREADPOOL_WAITER_HOLD_MS - 2)
+    }
+  )
+
+  it('runs one round per interval and adds no work while a round is unfinished', async () => {
     vi.useFakeTimers()
-    const runJob = vi.fn((done: () => void) => done())
+    const finish: (() => void)[] = []
+    const round = vi.fn<RefreshRound>((_threads, done) => void finish.push(done))
     const stop = startThreadpoolWaiterRefresh({
       platform: 'darwin',
-      threads: 4,
+      threads: 3,
       intervalMs: 1_000,
-      runJob
+      createRound: async () => round
     })
-    await vi.advanceTimersByTimeAsync(3_000)
-    expect(runJob).toHaveBeenCalledTimes(12)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(round).toHaveBeenCalledTimes(1)
+    expect(round).toHaveBeenCalledWith(3, expect.any(Function))
+    finish[0]()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(round).toHaveBeenCalledTimes(2)
     stop()
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('adds no work to a pool that has not finished the previous round', async () => {
+  it('does nothing off macOS or when the hold cannot be created', async () => {
     vi.useFakeTimers()
-    const finish: (() => void)[] = []
-    const runJob = vi.fn((done: () => void) => void finish.push(done))
-    const stop = startThreadpoolWaiterRefresh({
-      platform: 'darwin',
-      threads: 2,
-      intervalMs: 1_000,
-      runJob
-    })
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(runJob).toHaveBeenCalledTimes(2)
-    finish[0]()
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(runJob).toHaveBeenCalledTimes(2)
-    finish[1]()
-    await vi.advanceTimersByTimeAsync(1_000)
-    expect(runJob).toHaveBeenCalledTimes(4)
-    stop()
-  })
-
-  it('does nothing off macOS', async () => {
-    vi.useFakeTimers()
-    const runJob = vi.fn()
-    startThreadpoolWaiterRefresh({ platform: 'linux', intervalMs: 1_000, runJob })
+    const createRound = vi.fn(async () => null)
+    startThreadpoolWaiterRefresh({ platform: 'linux', intervalMs: 1_000, createRound })
+    expect(createRound).not.toHaveBeenCalled()
+    startThreadpoolWaiterRefresh({ platform: 'darwin', intervalMs: 1_000, createRound })
     await vi.advanceTimersByTimeAsync(5_000)
-    expect(runJob).not.toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(0)
   })
 
